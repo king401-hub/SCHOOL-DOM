@@ -9381,7 +9381,10 @@ def lesson_resource_list(request):
     if search:
         resources_qs = resources_qs.filter(Q(title__icontains=search) | Q(description__icontains=search) | Q(grade_level__icontains=search))
 
-    resources = list(resources_qs.order_by("subject__name", "title")[:100])
+    # The picker fetches the whole catalog unfiltered (to group by subject
+    # client-side), so this cap just needs to comfortably cover the entire
+    # global bank rather than a single subject's worth.
+    resources = list(resources_qs.order_by("subject__name", "title")[:2000])
     return Response({"success": True, "resources": [_lesson_resource_summary_payload(resource) for resource in resources]})
 
 

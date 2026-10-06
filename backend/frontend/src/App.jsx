@@ -4050,7 +4050,7 @@ function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassCo
   );
 }
 
-function LessonResourcePickerDialog({ open, session, subjectId, onClose, onPick, itemLabel = "Lesson plan" }) {
+function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel = "Lesson plan" }) {
   const [resources, setResources] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -4061,8 +4061,7 @@ function LessonResourcePickerDialog({ open, session, subjectId, onClose, onPick,
     let cancelled = false;
     setLoading(true);
     setError("");
-    const query = subjectId ? `?subject_id=${encodeURIComponent(subjectId)}` : "";
-    requestJson(session, "GET", `/api/app/academic/lesson-resources/${query}`)
+    requestJson(session, "GET", "/api/app/academic/lesson-resources/")
       .then((response) => {
         if (!cancelled) setResources(response?.resources || []);
       })
@@ -4073,9 +4072,24 @@ function LessonResourcePickerDialog({ open, session, subjectId, onClose, onPick,
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [open, session, subjectId]);
+  }, [open, session]);
 
   if (!open) return null;
+
+  // Grouped in the order the backend already returns them (subject name,
+  // then title) rather than re-sorting, so this stays in sync with it.
+  const groups = [];
+  const groupsBySubject = new Map();
+  for (const resource of resources) {
+    const key = resource.subject || "Other";
+    let group = groupsBySubject.get(key);
+    if (!group) {
+      group = { subject: key, items: [] };
+      groupsBySubject.set(key, group);
+      groups.push(group);
+    }
+    group.items.push(resource);
+  }
 
   const handlePick = async (resource) => {
     setApplyingId(resource.id);
@@ -4109,25 +4123,32 @@ function LessonResourcePickerDialog({ open, session, subjectId, onClose, onPick,
         {error ? <p className="form-feedback error">{error}</p> : null}
         {loading ? (
           <p className="panel-empty">Loading templates...</p>
-        ) : resources.length === 0 ? (
-          <p className="panel-empty">No templates available for this subject yet.</p>
+        ) : groups.length === 0 ? (
+          <p className="panel-empty">No templates available yet.</p>
         ) : (
-          <div className="lesson-plan-dialog-sections">
-            {resources.map((resource) => (
-              <section key={resource.id} className="scheme-plan-section">
-                <button
-                  type="button"
-                  className="lesson-resource-option"
-                  disabled={applyingId === resource.id}
-                  onClick={() => handlePick(resource)}
-                >
-                  <div className="lesson-resource-option-head">
-                    <span>{resource.subject}{resource.grade_level ? ` - ${resource.grade_level}` : ""}</span>
-                    <em>{applyingId === resource.id ? "Loading..." : "Use this template"}</em>
-                  </div>
-                  <strong>{resource.title}</strong>
-                  {resource.description ? <small>{resource.description}</small> : null}
-                </button>
+          <div className="lesson-resource-groups">
+            {groups.map((group) => (
+              <section key={group.subject} className="lesson-resource-group">
+                <h4 className="lesson-resource-group-title">{group.subject}</h4>
+                <div className="lesson-plan-dialog-sections">
+                  {group.items.map((resource) => (
+                    <section key={resource.id} className="scheme-plan-section">
+                      <button
+                        type="button"
+                        className="lesson-resource-option"
+                        disabled={applyingId === resource.id}
+                        onClick={() => handlePick(resource)}
+                      >
+                        <div className="lesson-resource-option-head">
+                          <span>{resource.grade_level || " "}</span>
+                          <em>{applyingId === resource.id ? "Loading..." : "Use this template"}</em>
+                        </div>
+                        <strong>{resource.title}</strong>
+                        {resource.description ? <small>{resource.description}</small> : null}
+                      </button>
+                    </section>
+                  ))}
+                </div>
               </section>
             ))}
           </div>
@@ -4210,8 +4231,15 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
   };
 
   const handleUseResource = (resource) => {
+    // The template's subject_id belongs to the global resource bank's own
+    // Subject rows, not this teacher's school - match by name against the
+    // teacher's own subject options instead of trusting the id directly.
+    const matchedSubject = (planning?.options?.subjects || []).find(
+      (item) => item.name?.toLowerCase() === resource.subject?.toLowerCase()
+    );
     setForm((prev) => ({
       ...prev,
+      subject_id: matchedSubject ? String(matchedSubject.id) : prev.subject_id,
       title: resource.title || prev.title,
       objectives: resource.objectives || prev.objectives,
       activities: resource.activities || prev.activities,
@@ -4219,7 +4247,11 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
       assessment: resource.assessment || prev.assessment,
     }));
     setResourcePickerOpen(false);
-    setFeedback(`Applied the "${resource.title}" template. Review it below, then attach your own file if you have one.`);
+    setFeedback(
+      matchedSubject || !resource.subject
+        ? `Applied the "${resource.title}" template. Review it below, then attach your own file if you have one.`
+        : `Applied the "${resource.title}" template. Your school doesn't have a "${resource.subject}" subject set up, so the subject field was left as-is - check it before saving.`
+    );
   };
 
   const handleNoteSubmit = async (event) => {
@@ -4464,7 +4496,6 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
     <LessonResourcePickerDialog
       open={resourcePickerOpen}
       session={session}
-      subjectId={form.subject_id}
       onClose={() => setResourcePickerOpen(false)}
       onPick={handleUseResource}
       itemLabel={planningItemLabel}

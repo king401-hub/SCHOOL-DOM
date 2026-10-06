@@ -19750,6 +19750,33 @@ body[data-theme="dark"] .lesson-resource-option small {
   color: rgba(255, 255, 255, 0.72);
 }
 
+.lesson-resource-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.lesson-resource-group-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 0.3rem;
+  padding: 0.3rem 0.1rem;
+  background: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #1d4ed8;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+body[data-theme="dark"] .lesson-resource-group-title {
+  background: #0b1f44;
+  color: #93c5fd;
+  border-bottom-color: rgba(147, 197, 253, 0.16);
+}
+
 .scheme-plan-body {
   display: grid;
   gap: 8px;
