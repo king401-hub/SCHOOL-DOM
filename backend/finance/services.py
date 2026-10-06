@@ -3968,6 +3968,47 @@ def sync_student_class_fees(student_profile, actor=None):
     return count
 
 
+def drop_stale_fees_for_class_change(student_profile, actor=None):
+    """Remove a moved student's unpaid fee from the class they just left.
+
+    Called right after an admin changes a student's class (the deliberate
+    action, not a raw DB edit - see OutstandingBillLabelTests for what still
+    happens when a class change bypasses this, e.g. a bulk import: the old
+    invoice is kept and merely labelled "Outstanding bill" rather than
+    dropped, because nothing has confirmed it is safe to forget). Here, at
+    the moment the admin acts, a fee nobody has paid anything toward and the
+    admin never hand-edited is just noise - the student now carries both
+    the old class's bill and the new one's for no reason. Anything with a
+    payment or is_customized=True is left exactly alone; that money/edit is
+    real and must never silently disappear.
+    """
+    if not student_profile:
+        return 0
+
+    current_class_id = student_profile.current_class_id
+    candidates = (
+        SchoolFee.objects.filter(student=student_profile, is_customized=False)
+        .filter(Q(bill__isnull=False) | Q(class_fee__isnull=False))
+        .select_related("class_fee")
+        .prefetch_related("bill__classes")
+    )
+
+    stale_ids = []
+    for fee in candidates:
+        if fee.bill_id:
+            if current_class_id and current_class_id in {c.id for c in fee.bill.classes.all()}:
+                continue
+        elif fee.class_fee_id:
+            if fee.class_fee.school_class_id == current_class_id:
+                continue
+        if fee_paid_amount(fee) <= Decimal("0.00"):
+            stale_ids.append(fee.id)
+
+    if stale_ids:
+        SchoolFee.objects.filter(id__in=stale_ids).delete()
+    return len(stale_ids)
+
+
 def sync_tenant_class_fees(tenant, actor=None):
     """Refresh generated school fees for active class fees in a tenant.
 

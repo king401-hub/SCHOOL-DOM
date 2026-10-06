@@ -2598,6 +2598,173 @@ class OutstandingBillLabelTests(TestCase):
         self.assertFalse(fees["JSS 1 Term Fee"]["is_outstanding_bill"])
 
 
+class ClassChangeDropsStaleFeesTests(TestCase):
+    """The admin deliberately moving a student to a new class (Edit Student,
+    or bulk Promote) is different from the raw class edits OutstandingBillLabelTests
+    covers: at that exact moment we KNOW the old class's bill no longer
+    applies, so a fee nobody has paid anything toward and nobody hand-edited
+    is dropped outright instead of lingering as a merely-labelled
+    "outstanding bill" - the student ends up carrying only the new class's
+    fee, not both. A fee with a payment or is_customized=True is never
+    touched either way - that's real money/an admin's deliberate edit, and
+    must not silently disappear just because the class changed."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Class Change School", schema_name="class_change_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@classchange.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.jss1 = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="1")
+        self.jss2 = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="2")
+        student_user = User.objects.create_user(
+            email="bola@classchange.edu", password="StudentPass123", first_name="Bola", last_name="Ade",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=student_user, student_id="CCS001", admission_number="ADM-CCS-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.jss1,
+        )
+
+    def _publish_bill(self, title, school_class, amount):
+        from finance.services import sync_bill_invoices
+
+        bill = Bill.objects.create(
+            tenant=self.school, title=title, status=Bill.STATUS_PUBLISHED, created_by=self.admin_user,
+            published_at=timezone.now(), due_date=timezone.localdate(),
+        )
+        bill.classes.set([school_class])
+        BillItem.objects.create(bill=bill, description="Tuition", amount=Decimal(amount))
+        sync_bill_invoices(bill, actor=self.admin_user)
+        return bill
+
+    def test_moving_class_drops_the_unpaid_old_bill_and_keeps_only_the_new_one(self):
+        from finance.services import drop_stale_fees_for_class_change, sync_bill_invoices
+
+        self._publish_bill("JSS 1 Term Fee", self.jss1, "60000")
+        jss2_bill = self._publish_bill("JSS 2 Term Fee", self.jss2, "48000")
+        self.student.current_class = self.jss2
+        self.student.save(update_fields=["current_class"])
+        # The student wasn't in JSS 2 when that bill was published, so (as in
+        # production, where _sync_student_finance_for_class re-syncs the new
+        # class's bills before dropping stale ones) it has to be re-synced now.
+        sync_bill_invoices(jss2_bill, actor=self.admin_user)
+
+        drop_stale_fees_for_class_change(self.student, actor=self.admin_user)
+
+        fees = SchoolFee.objects.filter(student=self.student)
+        self.assertEqual(list(fees.values_list("title", flat=True)), ["JSS 2 Term Fee"])
+
+    def test_a_paid_old_bill_is_kept_not_dropped(self):
+        from finance.services import drop_stale_fees_for_class_change
+
+        self._publish_bill("JSS 1 Term Fee", self.jss1, "60000")
+        record_cash_payment(self.student, Decimal("60000.00"), actor=self.admin_user)
+        self.student.current_class = self.jss2
+        self.student.save(update_fields=["current_class"])
+
+        dropped = drop_stale_fees_for_class_change(self.student, actor=self.admin_user)
+
+        self.assertEqual(dropped, 0)
+        self.assertTrue(SchoolFee.objects.filter(student=self.student, title="JSS 1 Term Fee").exists())
+
+    def test_a_part_paid_old_bill_is_kept_not_dropped(self):
+        from finance.services import drop_stale_fees_for_class_change
+
+        self._publish_bill("JSS 1 Term Fee", self.jss1, "60000")
+        record_cash_payment(self.student, Decimal("20000.00"), actor=self.admin_user)
+        self.student.current_class = self.jss2
+        self.student.save(update_fields=["current_class"])
+
+        dropped = drop_stale_fees_for_class_change(self.student, actor=self.admin_user)
+
+        self.assertEqual(dropped, 0)
+        self.assertTrue(SchoolFee.objects.filter(student=self.student, title="JSS 1 Term Fee").exists())
+
+    def test_a_customized_old_bill_is_kept_not_dropped(self):
+        from finance.services import drop_stale_fees_for_class_change
+
+        self._publish_bill("JSS 1 Term Fee", self.jss1, "60000")
+        fee = SchoolFee.objects.get(student=self.student, title="JSS 1 Term Fee")
+        fee.is_customized = True
+        fee.save(update_fields=["is_customized"])
+        self.student.current_class = self.jss2
+        self.student.save(update_fields=["current_class"])
+
+        dropped = drop_stale_fees_for_class_change(self.student, actor=self.admin_user)
+
+        self.assertEqual(dropped, 0)
+        self.assertTrue(SchoolFee.objects.filter(student=self.student, title="JSS 1 Term Fee").exists())
+
+    def test_the_same_cleanup_applies_to_class_fee_based_fees(self):
+        from finance.services import drop_stale_fees_for_class_change, sync_student_class_fees
+
+        ClassFee.objects.create(school_class=self.jss1, title="JSS 1 Levy", amount=Decimal("5000.00"), due_date=timezone.localdate())
+        ClassFee.objects.create(school_class=self.jss2, title="JSS 2 Levy", amount=Decimal("4000.00"), due_date=timezone.localdate())
+        sync_student_class_fees(self.student, actor=self.admin_user)
+
+        self.student.current_class = self.jss2
+        self.student.save(update_fields=["current_class"])
+        sync_student_class_fees(self.student, actor=self.admin_user)
+        drop_stale_fees_for_class_change(self.student, actor=self.admin_user)
+
+        fees = SchoolFee.objects.filter(student=self.student)
+        self.assertEqual(list(fees.values_list("title", flat=True)), ["JSS 2 Levy"])
+
+    def test_moving_a_student_off_bill_classes_entirely_drops_the_unpaid_fee(self):
+        from finance.services import drop_stale_fees_for_class_change
+
+        self._publish_bill("JSS 1 Term Fee", self.jss1, "60000")
+        self.student.current_class = None
+        self.student.save(update_fields=["current_class"])
+
+        dropped = drop_stale_fees_for_class_change(self.student, actor=self.admin_user)
+
+        self.assertEqual(dropped, 1)
+        self.assertFalse(SchoolFee.objects.filter(student=self.student).exists())
+
+    def test_editing_the_student_via_the_admin_endpoint_drops_the_old_bill(self):
+        """End-to-end: the actual "Edit Student" flow an admin uses in the UI."""
+        self._publish_bill("JSS 1 Term Fee", self.jss1, "60000")
+        self._publish_bill("JSS 2 Term Fee", self.jss2, "48000")
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.patch(
+            f"/api/app/students/{self.student.id}/", {"class_id": str(self.jss2.id)}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        fees = SchoolFee.objects.filter(student=self.student)
+        self.assertEqual(list(fees.values_list("title", flat=True)), ["JSS 2 Term Fee"])
+
+    def test_bulk_promotion_also_drops_the_old_bill(self):
+        """Promotion doesn't sync the destination class's Bill invoices at all
+        (a separate, pre-existing gap from this fix - it only syncs ClassFee-
+        based fees) - so there's no new Bill invoice to find here. What
+        matters for this fix is that the stale JSS 1 one is gone either way,
+        not left behind for the student to carry alongside their new class."""
+        self._publish_bill("JSS 1 Term Fee", self.jss1, "60000")
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        payload = {
+            "action": "apply",
+            "confirm": True,
+            "scope": "class",
+            "source_class_id": str(self.jss1.id),
+            "target_class_id": str(self.jss2.id),
+        }
+        response = client.post("/api/app/classes/promotions/", payload, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(SchoolFee.objects.filter(student=self.student, title="JSS 1 Term Fee").exists())
+
+
 class BillInvoiceEditTests(TestCase):
     """Editing one student's bill invoice (Finance > Student Fees > Edit) has to
     stick. It used to be reset to the bill's amount the next time the bill
