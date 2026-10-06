@@ -360,8 +360,11 @@ def _exam_section(student_profile):
 
 
 def _finance_section(student_profile):
-    from finance.models import BankPayment, FeeAllocation, SchoolFee
+    from finance.models import BankPayment, FeeAllocation, SchoolFee, Wallet
     from finance.services import bulk_fee_paid_amounts
+
+    wallet = Wallet.objects.filter(user=student_profile.user).first()
+    wallet_balance = Decimal(str(wallet.balance)) if wallet else Decimal("0.00")
 
     fees = list(
         SchoolFee.objects.filter(student=student_profile)
@@ -471,6 +474,13 @@ def _finance_section(student_profile):
             "outstanding": _float(max(total_billed - total_paid, Decimal("0.00"))),
             "invoice_count": len(invoices),
             "payment_count": len(payments),
+            # Wallet.user is CASCADE - this is the only trace left of a
+            # credit balance once the student (and so the wallet row itself)
+            # is gone. Deletion itself is guarded separately when this balance
+            # is positive (see student_detail's DELETE branch); this is the
+            # historical record for a graduate, or for a deletion an admin
+            # explicitly confirmed despite the balance.
+            "wallet_balance_at_archive": _float(wallet_balance),
         },
         "invoices": invoices,
         "payments": sorted(payments, key=lambda row: str(row.get("paid_at") or ""), reverse=True),

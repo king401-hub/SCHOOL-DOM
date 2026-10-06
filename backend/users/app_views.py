@@ -1274,9 +1274,14 @@ def _parent_payload(parent_profile, request=None, outstanding_student_ids=None):
 
 
 def _sync_guardian_parent(student_profile, name, phone, email="", relation="Guardian"):
+    """Returns (parent_profile, found_existing) - found_existing tells the
+    caller whether this landed on an already-known parent account (a
+    deliberate reassignment) versus freshly creating one (nobody on file
+    matched - most often a phone/email typo fix for the SAME real guardian,
+    which must not be treated as a handover to someone new)."""
     phone_key = _guardian_phone_key(phone)
     if not phone_key:
-        return None
+        return None, False
 
     tenant = student_profile.user.tenant
     first_name, last_name = _split_guardian_name(name or relation or "Parent")
@@ -1287,6 +1292,7 @@ def _sync_guardian_parent(student_profile, name, phone, email="", relation="Guar
     parent_user = _find_parent_user_by_phone(tenant, phone_key) or (
         User.objects.filter(role="parent", tenant=tenant, email__iexact=email).first() if email else None
     )
+    found_existing = parent_user is not None
 
     if not parent_user:
         tenant_key = str(getattr(tenant, "id", "") or "school").replace("-", "")[:12]
@@ -1324,7 +1330,7 @@ def _sync_guardian_parent(student_profile, name, phone, email="", relation="Guar
 
     parent_profile, _ = ParentProfile.objects.get_or_create(user=parent_user)
     parent_profile.children.add(student_profile)
-    return parent_profile
+    return parent_profile, found_existing
 
 
 def _sync_student_finance_for_class(student_profile, actor=None):
@@ -1352,13 +1358,26 @@ def _sync_student_finance_for_class(student_profile, actor=None):
 
 
 def _sync_student_guardians_to_parent_directory(student_profile):
-    primary = _sync_guardian_parent(
+    previous_parent_ids = set(
+        ParentProfile.objects.filter(children=student_profile).values_list("id", flat=True)
+    )
+    primary, found_existing = _sync_guardian_parent(
         student_profile,
         student_profile.guardian_name,
         student_profile.guardian_phone,
         student_profile.guardian_email,
         student_profile.guardian_relation,
     )
+    if primary and found_existing:
+        # The guardian now resolves to a different, already-known parent
+        # account - a deliberate reassignment (e.g. a custody change), not a
+        # typo fix (that would find no match and create a fresh account
+        # instead, leaving this empty and the old guardian untouched). The
+        # old guardian must not keep dashboard visibility or virtual-account
+        # payment routing to a child that is no longer theirs.
+        stale_ids = previous_parent_ids - {primary.id}
+        for stale_parent in ParentProfile.objects.filter(id__in=stale_ids):
+            stale_parent.children.remove(student_profile)
     return [item for item in (primary,) if item]
 
 
@@ -6571,6 +6590,25 @@ def student_detail(request, student_id):
     student_user = student_profile.user
 
     if request.method == "DELETE":
+        from finance.models import Wallet
+
+        wallet = Wallet.objects.filter(user=student_user).first()
+        if wallet and wallet.balance > 0 and not _to_bool(request.data.get("confirm_wallet_forfeit"), default=False):
+            # Wallet.user is CASCADE - deleting the student silently destroys
+            # any credit balance (overpayment, etc.) with it, with no refund,
+            # no alert, and nothing in the archive to show it ever existed.
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        f"{student_user.get_full_name() or student_user.email} has a wallet credit balance of "
+                        f"₦{wallet.balance} - deleting them forfeits it permanently with no record. "
+                        "Refund or resolve it first, or resend with confirm_wallet_forfeit=true to delete anyway."
+                    ),
+                    "wallet_balance": str(wallet.balance),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         student_user.delete()
         return Response({"success": True, "message": "Student deleted."})
 

@@ -8382,3 +8382,225 @@ class ResetStudentPasswordsCommandTests(TestCase):
 
         with self.assertRaises(CommandError):
             self._reset(school="no_such_school")
+
+
+class GuardianReassignmentRevokesOldParentAccessTests(TestCase):
+    """Editing a student's guardian phone/name/email to a DIFFERENT, already-
+    known parent account (e.g. a custody change) used to only ever ADD the
+    new parent as a link - _sync_guardian_parent never removed the old one,
+    so a de-authorized guardian kept full dashboard visibility and virtual-
+    account payment routing to a child that was no longer theirs."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Guardian Swap School", schema_name="guardian_swap_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@guardianswap.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="1")
+        student_user = User.objects.create_user(
+            email="child@guardianswap.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=student_user, student_id="GSW001", admission_number="ADM-GSW-001",
+            admission_date=timezone.localdate(), current_class=self.school_class,
+            guardian_name="Old Guardian", guardian_phone="2348011110000", guardian_relation="Father",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin_user)
+
+        # Establish the primary guardian as a real, already-known parent -
+        # mirrors what student creation/first edit already does in production.
+        from users.app_views import _sync_student_guardians_to_parent_directory
+
+        _sync_student_guardians_to_parent_directory(self.student)
+        self.old_parent_profile = ParentProfile.objects.get(children=self.student)
+
+        # A second, already-known parent account the student will be
+        # reassigned to - created the same way (so "already known" is real,
+        # not just a coincidence of this test's setup).
+        other_student_user = User.objects.create_user(
+            email="other.child@guardianswap.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.other_student = StudentProfile.objects.create(
+            user=other_student_user, student_id="GSW002", admission_number="ADM-GSW-002",
+            admission_date=timezone.localdate(), current_class=self.school_class,
+            guardian_name="New Guardian", guardian_phone="2348022220000", guardian_relation="Mother",
+        )
+        _sync_student_guardians_to_parent_directory(self.other_student)
+        self.new_parent_profile = ParentProfile.objects.get(children=self.other_student)
+
+    def test_reassigning_to_a_different_known_parent_revokes_the_old_ones_access(self):
+        response = self.client.patch(
+            f"/api/app/students/{self.student.id}/",
+            {"guardian_name": "New Guardian", "guardian_phone": "2348022220000", "guardian_relation": "Mother"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        self.assertFalse(self.old_parent_profile.children.filter(id=self.student.id).exists())
+        self.assertTrue(self.new_parent_profile.children.filter(id=self.student.id).exists())
+
+    def test_a_phone_typo_fix_does_not_revoke_the_existing_guardian(self):
+        """No existing account matches the corrected number, so a fresh one
+        is created and the original (correct) guardian is left untouched -
+        this is a pre-existing, separate quirk of phone-based matching, not
+        something this fix should make worse by also revoking access."""
+        response = self.client.patch(
+            f"/api/app/students/{self.student.id}/",
+            {"guardian_name": "Old Guardian", "guardian_phone": "2348011119999", "guardian_relation": "Father"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        self.old_parent_profile.refresh_from_db()
+        self.assertTrue(self.old_parent_profile.children.filter(id=self.student.id).exists())
+
+    def test_editing_an_unrelated_field_does_not_touch_guardian_links(self):
+        response = self.client.patch(
+            f"/api/app/students/{self.student.id}/",
+            {"admission_date": "2026-01-15"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(self.old_parent_profile.children.filter(id=self.student.id).exists())
+
+
+class StudentDeletionWalletGuardTests(TestCase):
+    """Wallet.user is CASCADE - deleting a student used to silently destroy
+    any credit balance (overpayment, etc.) sitting in their wallet, with no
+    refund, no alert, and nothing anywhere to show it ever existed."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Wallet Guard School", schema_name="wallet_guard_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@walletguard.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="1")
+        self.student_user = User.objects.create_user(
+            email="pupil@walletguard.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="WGT001", admission_number="ADM-WGT-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin_user)
+
+    def _credit_wallet(self, amount):
+        from finance.services import credit_wallet, ensure_student_wallet, generate_reference
+        from finance.models import Transaction
+
+        wallet = ensure_student_wallet(self.student_user)
+        credit_wallet(wallet, Decimal(amount), Transaction.ADJUSTMENT_CREDIT, generate_reference("TEST"), "test credit")
+        return wallet
+
+    def test_deleting_a_student_with_a_wallet_balance_is_blocked(self):
+        self._credit_wallet("5000.00")
+
+        response = self.client.delete(f"/api/app/students/{self.student.id}/")
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertTrue(StudentProfile.objects.filter(id=self.student.id).exists())
+
+    def test_deleting_a_student_with_zero_balance_proceeds_normally(self):
+        response = self.client.delete(f"/api/app/students/{self.student.id}/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(StudentProfile.objects.filter(id=self.student.id).exists())
+
+    def test_confirm_wallet_forfeit_allows_the_deletion_to_proceed(self):
+        self._credit_wallet("5000.00")
+
+        response = self.client.delete(
+            f"/api/app/students/{self.student.id}/", {"confirm_wallet_forfeit": True}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(StudentProfile.objects.filter(id=self.student.id).exists())
+
+    def test_the_archive_captures_the_wallet_balance_at_deletion(self):
+        from alumni.models import ArchivedStudentRecord
+
+        self._credit_wallet("5000.00")
+        self.client.delete(f"/api/app/students/{self.student.id}/", {"confirm_wallet_forfeit": True}, format="json")
+
+        archived = ArchivedStudentRecord.objects.get(student_id="WGT001")
+        self.assertEqual(
+            archived.snapshot["finance"]["summary"]["wallet_balance_at_archive"], 5000.0
+        )
+
+
+class GraduatedStudentsExcludedFromActiveFinanceReportingTests(TestCase):
+    """A graduated/withdrawn student's unpaid fee is deliberately never
+    cleaned up (that money may still legitimately be owed), but their
+    guardian must not keep getting dunned forever, and the Finance
+    Dashboard's totals must not keep counting a departed student forever
+    either - graduate_student_to_alumni deactivates the user precisely to
+    mark "no longer active", and both reporting paths now respect that."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Grad Reporting School", schema_name="grad_reporting_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@gradreporting.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="SS", section="3")
+        self.student_user = User.objects.create_user(
+            email="grad@gradreporting.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="GRD001", admission_number="ADM-GRD-001",
+            admission_date=timezone.localdate(), current_class=self.school_class,
+            guardian_name="Guardian", guardian_relation="Parent", guardian_email="guardian@gradreporting.edu",
+        )
+        from finance.models import SchoolFee
+
+        self.fee = SchoolFee.objects.create(
+            student=self.student, title="Term Fee", amount=Decimal("20000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin_user)
+
+    def _graduate(self):
+        from alumni.services import graduate_student_to_alumni
+
+        graduate_student_to_alumni(self.student, actor=self.admin_user)
+        self.student_user.refresh_from_db()
+
+    def test_a_graduates_unpaid_fee_still_exists_untouched(self):
+        from finance.models import SchoolFee
+
+        self._graduate()
+        self.assertTrue(SchoolFee.objects.filter(id=self.fee.id, status=SchoolFee.STATUS_PENDING).exists())
+
+    def test_a_graduate_is_excluded_from_fee_reminders(self):
+        from finance.services import send_fee_reminders
+
+        self._graduate()
+        sent = send_fee_reminders()
+        self.assertEqual(sent, [])
+
+    def test_a_currently_enrolled_student_still_gets_reminded(self):
+        from finance.services import send_fee_reminders
+
+        sent = send_fee_reminders()
+        self.assertEqual(len(sent), 1)
+
+    def test_a_graduate_is_excluded_from_the_finance_dashboard_totals(self):
+        before = self.client.get("/api/finance/admin/overview/").data
+        self.assertEqual(before["expected_fee_amount"], Decimal("20000.00"))
+
+        self._graduate()
+
+        after = self.client.get("/api/finance/admin/overview/").data
+        self.assertEqual(after["expected_fee_amount"], Decimal("0.00"))
