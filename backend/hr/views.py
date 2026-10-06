@@ -1432,6 +1432,22 @@ def process_payroll(staff, year, month, allowances, deductions, amount_paid, pay
         raise ValueError("amount_paid cannot exceed net salary.")
     if pay_with_flutterwave and amount_paid <= 0:
         raise ValueError("There is no salary amount to pay.")
+    if pay_with_flutterwave:
+        # Unlike admin_withdraw's queue-based path (deduped by amount+bank
+        # payload before it ever debits), nothing here stops a double-click
+        # or client retry from firing a second real Flutterwave transfer for
+        # the same period - update_or_create below only dedupes the RECORD,
+        # not the transfer, and the transfer amount is the full amount_paid
+        # figure each time, not an incremental top-up. Once any money has
+        # actually moved for (staff, year, month), block a repeat transfer.
+        already_paid = PayrollRecord.objects.filter(
+            staff=staff, year=year, month=month, amount_paid__gt=0
+        ).exists()
+        if already_paid:
+            raise ValueError(
+                f"Salary for {staff.full_name} ({year}-{month:02d}) has already been paid or part-paid - "
+                "resolve this manually instead of sending another transfer."
+            )
     bank_code = str(bank_overrides.get("bank_code") or staff.bank_code or "").strip()
     bank_account_number = str(bank_overrides.get("bank_account_number") or staff.bank_account_number or "").strip()
     bank_account_name = str(bank_overrides.get("bank_account_name") or staff.bank_account_name or staff.full_name or "").strip()

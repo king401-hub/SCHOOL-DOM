@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
@@ -564,3 +565,99 @@ class BackfillTeacherStaffProfilesCommandTests(TestCase):
 
         with self.assertRaises(CommandError):
             self._run(school="no_such_school")
+
+
+class PayrollFlutterwaveDoublePaymentGuardTests(TestCase):
+    """Unlike admin_withdraw's queue-based path (deduped by amount+bank
+    payload before it ever debits), nothing used to stop a double-click or
+    client retry on "Pay salary via Flutterwave" from firing a second real
+    bank transfer for the same staff/month - update_or_create on
+    PayrollRecord only dedupes the record, not the transfer itself."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(name="Payroll Guard School", schema_name="payroll_guard_school", is_active=True)
+        self.admin = User.objects.create_user(
+            email="admin@payrollguard.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        staff_user = User.objects.create_user(
+            email="staff@payrollguard.edu", password="StaffPass123", role="staff",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.staff = StaffProfile.objects.create(
+            tenant=self.school, user=staff_user, staff_code="PGT001",
+            first_name="Pay", last_name="Roll", email=staff_user.email,
+            staff_type=StaffProfile.NON_TEACHING, role="Officer",
+            base_salary=Decimal("100000.00"),
+            bank_code="044", bank_account_number="0123456789", bank_account_name="Pay Roll",
+        )
+        self.client.force_authenticate(user=self.admin)
+        self.today = timezone.localdate()
+
+    def _pay(self):
+        return self.client.post(
+            "/api/hr/payroll/create/",
+            data={
+                "staff_id": str(self.staff.id), "year": self.today.year, "month": self.today.month,
+                "pay_with_flutterwave": True,
+            },
+            format="json",
+        )
+
+    @patch("hr.views.initiate_admin_withdrawal")
+    def test_a_second_flutterwave_call_for_the_same_period_is_rejected(self, mock_withdraw):
+        from django.core.cache import cache
+
+        mock_withdraw.return_value = {"status": "success", "reference": "SALTEST001"}
+
+        first = self._pay()
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(mock_withdraw.call_count, 1)
+
+        # Real double-clicks/retries happen well past the 10s idempotency
+        # window (that's a separate, already-correct safeguard for an exact
+        # byte-identical retry) - clear it so this exercises the new guard
+        # itself rather than just replaying the first call's cached response.
+        cache.clear()
+        second = self._pay()
+
+        self.assertEqual(second.status_code, 400, second.data)
+        self.assertEqual(mock_withdraw.call_count, 1)
+        self.assertEqual(PayrollRecord.objects.filter(staff=self.staff, year=self.today.year, month=self.today.month).count(), 1)
+
+    @patch("hr.views.initiate_admin_withdrawal")
+    def test_a_different_months_payroll_is_not_blocked(self, mock_withdraw):
+        mock_withdraw.return_value = {"status": "success", "reference": "SALTEST002"}
+        self._pay()
+
+        next_month = self.today.month + 1 if self.today.month < 12 else 1
+        next_year = self.today.year if self.today.month < 12 else self.today.year + 1
+        response = self.client.post(
+            "/api/hr/payroll/create/",
+            data={
+                "staff_id": str(self.staff.id), "year": next_year, "month": next_month,
+                "pay_with_flutterwave": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(mock_withdraw.call_count, 2)
+
+    @patch("hr.views.initiate_admin_withdrawal")
+    def test_a_non_flutterwave_payslip_record_is_not_blocked_by_itself(self, mock_withdraw):
+        """admin_expense_payslip_create always calls process_payroll with
+        pay_with_flutterwave=False - bookkeeping-only calls must stay
+        repeatable (mark_fully_paid etc.), only the real-transfer path guards."""
+        bookkeeping = self.client.post(
+            "/api/hr/payroll/create/",
+            data={"staff_id": str(self.staff.id), "year": self.today.year, "month": self.today.month, "amount_paid": "50000"},
+            format="json",
+        )
+        self.assertEqual(bookkeeping.status_code, 201, bookkeeping.data)
+        mock_withdraw.assert_not_called()
+
+        paid = self._pay()
+        self.assertEqual(paid.status_code, 400, paid.data)
+        mock_withdraw.assert_not_called()
