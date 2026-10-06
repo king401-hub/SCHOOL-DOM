@@ -4066,7 +4066,7 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
         if (!cancelled) setResources(response?.resources || []);
       })
       .catch((loadError) => {
-        if (!cancelled) setError(loadError.message || "Could not load the template library.");
+        if (!cancelled) setError(loadError.message || "Could not load the NERDC Curriculum.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -4098,7 +4098,7 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
       const response = await requestJson(session, "GET", `/api/app/academic/lesson-resources/${resource.id}/`);
       if (response?.resource) onPick(response.resource);
     } catch (pickError) {
-      setError(pickError.message || "Could not load that template.");
+      setError(pickError.message || "Could not load that NERDC Curriculum topic.");
     } finally {
       setApplyingId(null);
     }
@@ -4115,16 +4115,16 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
       >
         <div className="lesson-plan-dialog-head">
           <div>
-            <h3 id="lesson-resource-dialog-title">Start from a template</h3>
-            <small>Pick a {itemLabel.toLowerCase()} template to pre-fill the form below - you can still edit everything and attach your own file.</small>
+            <h3 id="lesson-resource-dialog-title">NERDC Curriculum</h3>
+            <small>Pick a topic from the government-approved NERDC Curriculum to pre-fill the {itemLabel.toLowerCase()} form below - you can still edit everything and attach your own file.</small>
           </div>
           <button type="button" className="table-action ghost" onClick={onClose}>Close</button>
         </div>
         {error ? <p className="form-feedback error">{error}</p> : null}
         {loading ? (
-          <p className="panel-empty">Loading templates...</p>
+          <p className="panel-empty">Loading the NERDC Curriculum...</p>
         ) : groups.length === 0 ? (
-          <p className="panel-empty">No templates available yet.</p>
+          <p className="panel-empty">No NERDC Curriculum content available yet.</p>
         ) : (
           <div className="lesson-resource-groups">
             {groups.map((group) => (
@@ -4141,7 +4141,7 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
                       >
                         <div className="lesson-resource-option-head">
                           <span>{resource.grade_level || " "}</span>
-                          <em>{applyingId === resource.id ? "Loading..." : "Use this template"}</em>
+                          <em>{applyingId === resource.id ? "Loading..." : "Use this"}</em>
                         </div>
                         <strong>{resource.title}</strong>
                         {resource.description ? <small>{resource.description}</small> : null}
@@ -4249,8 +4249,8 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
     setResourcePickerOpen(false);
     setFeedback(
       matchedSubject || !resource.subject
-        ? `Applied the "${resource.title}" template. Review it below, then attach your own file if you have one.`
-        : `Applied the "${resource.title}" template. Your school doesn't have a "${resource.subject}" subject set up, so the subject field was left as-is - check it before saving.`
+        ? `Applied "${resource.title}" from the NERDC Curriculum. Review it below, then attach your own file if you have one.`
+        : `Applied "${resource.title}" from the NERDC Curriculum. Your school doesn't have a "${resource.subject}" subject set up, so the subject field was left as-is - check it before saving.`
     );
   };
 
@@ -4313,7 +4313,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
         <form className="panel-form" onSubmit={handlePlanSubmit}>
           <div className="panel-form-actions">
             <button type="button" className="pill-button ghost" onClick={() => setResourcePickerOpen(true)}>
-              Start from a template
+              NERDC Curriculum
             </button>
           </div>
           <div className="panel-form-grid">
