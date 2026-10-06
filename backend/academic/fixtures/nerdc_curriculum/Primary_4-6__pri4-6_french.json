@@ -1,0 +1,356 @@
+{
+  "subject": "French",
+  "resources": [
+    {
+      "title": "SUJET #1",
+      "grade_level": "Primary 4",
+      "description": "Theme: SE PRÉSENTER | Content: CONTENU",
+      "objectives": "OBJECTIFS COMMUNICATIFS",
+      "activities": "Teacher: ACTIVITÉS",
+      "resources": "RESSOURCES PÉDAGOGIQUES",
+      "assessment": "GUIDE D’ÉVALUATION"
+    },
+    {
+      "title": "Pourquoi apprendre le français ?",
+      "grade_level": "Primary 4",
+      "description": "Theme: SE PRÉSENTER | Content: Avantages du français : (voyages, carrière, commerce, etc.)",
+      "objectives": "L’apprenant devrait finir par s’intéresser au français",
+      "activities": "Teacher: L’enseignant présente les avantages du français\n\nStudents: L’apprenant donne ses points de vue",
+      "resources": "Les photos de personnes célèbres qui ont eu du succès dans leur carrière grâce au français.",
+      "assessment": "Résumé des avantages du français"
+    },
+    {
+      "title": "Saluer",
+      "grade_level": "Primary 4",
+      "description": "Theme: SE PRÉSENTER | Content: Des expressions de salutation : Bonjour Monsieur/Madame/ Mademoiselle ; Bonne nuit ; Ça va ? Ça va bien ?",
+      "objectives": "L’apprenant devrait être capable de saluer",
+      "activities": "Teacher: L’enseignant adopte une méthode de stimulation appropriée comme : la chanson\n\nStudents: L’apprenant imite et répète.",
+      "resources": "Dialogue, jeux de rôle",
+      "assessment": "Les apprenants se saluent - production du dialogue"
+    },
+    {
+      "title": "Se présenter",
+      "grade_level": "Primary 4",
+      "description": "Theme: SE PRÉSENTER | Content: Les expressions de présentation : Je m’appelle, Voici… Voilà ….",
+      "objectives": "L’apprenant devrait être capable de se présenter",
+      "activities": "Teacher: L’enseignant se présente, et demande aux apprenants de se présenter\n\nStudents: L’apprenant se présente",
+      "resources": "Photos, images, CD, vidéo, les outils TIC pertinents.",
+      "assessment": "Exercices de présentation"
+    },
+    {
+      "title": "Prendre congé",
+      "grade_level": "Primary 4",
+      "description": "Theme: SE PRÉSENTER | Content: Expressions : au revoir, à bientôt, à demain,…..",
+      "objectives": "L’apprenant devrait être capable de prendre congé",
+      "activities": "Teacher: L‘enseignant présente en dialogue les expressions\n\nStudents: L’apprenant écoute et répète",
+      "resources": "Dialogue, photos, images",
+      "assessment": "Exercices de production"
+    },
+    {
+      "title": "SUJET #2",
+      "grade_level": "Primary 4",
+      "description": "Theme: LA VIE SOCIALE | Content: CONTENU",
+      "objectives": "OBJECTIFS COMMUNICATIFS",
+      "activities": "Teacher: ACTIVITÉS",
+      "resources": "RESSOURCES PÉDAGOGIQUES",
+      "assessment": "GUIDE D’ÉVALUATION"
+    },
+    {
+      "title": "Présenter les membres de la famille proche",
+      "grade_level": "Primary 4",
+      "description": "Theme: LA VIE SOCIALE | Content: Vocabulaire de la famille proche: père, mère, frère, sœur Voici/Voilà…",
+      "objectives": "L’apprenant devrait être capable de parler de sa famille proche",
+      "activities": "Teacher: L’enseignant présente une famille proche sur une photo, et les mots nouveaux en prononciation\n\nStudents: L’apprenant est encouragé à produire oralement les nouveaux mots",
+      "resources": "Photos, vidéos illustratives, autres documents",
+      "assessment": "Résumé de la présentation"
+    },
+    {
+      "title": "Parler de l’école",
+      "grade_level": "Primary 4",
+      "description": "Theme: LA VIE SOCIALE | Content: Expressions de présentation : il y a …école, bâtiments, jardin, cour, directeur, élèves, gardien, professeur, dortoir, salle de classe, bibliothèque",
+      "objectives": "L’apprenant devrait être capable de parler d’une école type",
+      "activities": "Teacher: L’enseignant présente l’école en se servant de ‘il y a ….’\n\nStudents: L’apprenant, lui aussi, répète",
+      "resources": "Photo/image de l’école",
+      "assessment": "L’apprenant dessine l’école et nomme les différentes sections de l’école"
+    },
+    {
+      "title": "SUJET #3",
+      "grade_level": "Primary 4",
+      "description": "Theme: COMPTER | Content: CONTENU",
+      "objectives": "OBJECTIFS COMMUNICATIFS",
+      "activities": "Teacher: ACTIVITÉS",
+      "resources": "RESSOURCES PÉDAGOGIQUES",
+      "assessment": "GUIDE D’ÉVALUATION"
+    },
+    {
+      "title": "Compter de 0 à 20",
+      "grade_level": "Primary 4",
+      "description": "Theme: COMPTER | Content: Vocabulaire et expressions liés aux chiffres 0 à 20",
+      "objectives": "L’apprenant devrait être capable de compter de 0 à 20",
+      "activities": "Teacher: L’enseignant présente les chiffres oralement\n\nStudents: L’apprenant répète après l’enseignant",
+      "resources": "Photos, vidéos illustratives, autres documents, comptines",
+      "assessment": "L’apprenant compte de 0 à 20"
+    },
+    {
+      "title": "Dire l’heure",
+      "grade_level": "Primary 4",
+      "description": "Theme: COMPTER | Content: Expressions liées à l’heure : Quelle heure est-il ?, il est…,",
+      "objectives": "L’apprenant devrait être capable de demander et d’indiquer l’heure",
+      "activities": "Teacher: L’enseignant présente l’heure dans ses grandes lignes, y compris ‘midi’ et ‘minuit’\n\nStudents: L’apprenant répète et répond",
+      "resources": "Jeux de rôle, montre, horloge, emploi de temps",
+      "assessment": "Exercices d’association, l’apprenant répond aux questions sur l’heure"
+    },
+    {
+      "title": "Identifier les aliments et les repas",
+      "grade_level": "Primary 4",
+      "description": "Theme: COMPTER | Content: Vocabulaire clé :- petit-déjeuner, déjeuner, dîner, foufou, riz, haricots, igname, plantain Verbes : manger, boire, prendre",
+      "objectives": "L’apprenant devrait être capable de nommer les principaux repas",
+      "activities": "Teacher: L’enseignant nomme les différents repas et plats : petit déjeuner e.g du pain, déjeuner e.g du foufou, dîner e.g du riz\n\nStudents: L’apprenant reproduit oralement les mots",
+      "resources": "Images, jeux de rôle, horloge, montre",
+      "assessment": "Exercices de reproduction et d’identification : nommer les repas principaux"
+    },
+    {
+      "title": "SUJET #1",
+      "grade_level": "Primary 5",
+      "description": "Theme: PRÉSENTER LES AUTRES | Content: CONTENU",
+      "objectives": "OBJECTIFS COMMUNICATIFS",
+      "activities": "Teacher: ACTIVITÉS",
+      "resources": "RESSOURCES PÉDAGOGIQUES",
+      "assessment": "GUIDE D’ÉVALUATION"
+    },
+    {
+      "title": "Compter de 21 – 60",
+      "grade_level": "Primary 5",
+      "description": "Theme: PRÉSENTER LES AUTRES | Content: Vocabulaire relatif aux nombres : 21 à 60",
+      "objectives": "L’apprenant devrait être capable de compter jusqu’à 60",
+      "activities": "Teacher: L’enseignant présente les nombres oralement\n\nStudents: L’apprenant reproduit oralement les nombres tout en retenant leurs transcriptions écrites",
+      "resources": "Images, jeux de rôle Dialogue Mimes",
+      "assessment": "Exercices de reproduction et d’identification"
+    },
+    {
+      "title": "Présenter les autres",
+      "grade_level": "Primary 5",
+      "description": "Theme: PRÉSENTER LES AUTRES | Content: Vocabulaire : le directeur, le professeur, l’élève, papa, maman, Karim….outils de présentation : voici, voilà",
+      "objectives": "L’apprenant devrait être capable de présenter d’autres personnes que lui-même",
+      "activities": "Teacher: L’enseignant présente les autres en contexte oralement\n\nStudents: L’apprenant répète après l’enseignant L’apprenant écoute et répète",
+      "resources": "Photos, vidéos illustratives, autres documents",
+      "assessment": "Exercices de répétition et d’identification"
+    },
+    {
+      "title": "Identifier les parties du corps humain",
+      "grade_level": "Primary 5",
+      "description": "Theme: PRÉSENTER LES AUTRES | Content: Vocabulaire pertinent : la tête, le cou, le pied, la main, la jambe, le doigt, etc. Outils de présentation : c’est …, ‘voici/voilà’ …",
+      "objectives": "L’apprenant devrait être capable de nommer certaines parties du corps",
+      "activities": "Teacher: L’enseignant se sert des outils de présentation : ‘voici/voilà’\n\nStudents: L’apprenant reproduit oralement les parties du corps",
+      "resources": "Jeux de rôle Question/réponse",
+      "assessment": "L’apprenant est invité à répondre à la question : c’est… ? et à suivre l’instruction : Montre-moi….. (Voici/voilà …)"
+    },
+    {
+      "title": "SUJET #2",
+      "grade_level": "Primary 5",
+      "description": "Theme: LA VIE SOCIALE | Content: CONTENU",
+      "objectives": "OBJECTIFS COMMUNICATIFS",
+      "activities": "Teacher: ACTIVITÉS",
+      "resources": "RESSOURCES PÉDAGOGIQUES",
+      "assessment": "GUIDE D’ÉVALUATION"
+    },
+    {
+      "title": "Parler de la grande famille",
+      "grade_level": "Primary 5",
+      "description": "Theme: LA VIE SOCIALE | Content: Vocabulaire : le grand-père, la grand-mère, l’oncle, la tante. Outils de présentation : voici, voilà",
+      "objectives": "L’apprenant devrait être capable de parler de la grande famille",
+      "activities": "Teacher: L’enseignant présente les membres de la grande famille oralement\n\nStudents: L’apprenant répète après l’enseignant",
+      "resources": "Photos, vidéos illustratives, autres documents",
+      "assessment": "Résumé de la présentation Exercices de répétition et d’identification"
+    },
+    {
+      "title": "Parler des voisins",
+      "grade_level": "Primary 5",
+      "description": "Theme: LA VIE SOCIALE | Content: Vocabulaire et expressions pertinents : Je présente Monsieur/Madame… . ; …s’appelle, voici/voilà …’, c’est ….",
+      "objectives": "L’apprenant devrait être capable de parler des voisins : (nom, âge, adresse, famille, enfants)",
+      "activities": "Teacher: L’enseignant se sert des outils de présentation\n\nStudents: L’apprenant reproduit oralement les séquences",
+      "resources": "Jeux de rôle Question/ réponse",
+      "assessment": "L’apprenant est invité à répondre à la question : c’est… ?"
+    },
+    {
+      "title": "Exprimer la gratitude",
+      "grade_level": "Primary 5",
+      "description": "Theme: LA VIE SOCIALE | Content: Vocabulaire et expressions pertinents : Merci/ Merci beaucoup/ Merci Monsieur/Madame C’est gentil",
+      "objectives": "L’apprenant devrait être capable d’utiliser certaines expressions de gratitude",
+      "activities": "Teacher: L’enseignant présente un dialogue simple\n\nStudents: L’apprenant reproduit oralement les séquences",
+      "resources": "Jeux de rôle Question/ Réponse",
+      "assessment": "Exercices de reproduction orale d’un dialogue"
+    },
+    {
+      "title": "Nommer les jours de la semaine",
+      "grade_level": "Primary 5",
+      "description": "Theme: LA VIE SOCIALE | Content: lundi, mardi, mercredi, jeudi, vendredi, samedi, dimanche Aujourd’hui, c’est ……..",
+      "objectives": "L’apprenant devrait être capable de dire les jours de la semaine",
+      "activities": "Teacher: L’enseignant présente les jours de la semaine en contexte.\n\nStudents: L’apprenant imite la production orale du texte de l’enseignant",
+      "resources": "Calendrier, autres images",
+      "assessment": "Exercices de rappel et de reproduction"
+    },
+    {
+      "title": "SUJET #3",
+      "grade_level": "Primary 5",
+      "description": "Theme: SE RENSEIGNER SUR LES DIRECTIONS | Content: CONTENU",
+      "objectives": "OBJECTIFS COMMUNICATIFS",
+      "activities": "Teacher: ACTIVITÉS",
+      "resources": "RESSOURCES PÉDAGOGIQUES",
+      "assessment": "GUIDE D’ÉVALUATION"
+    },
+    {
+      "title": "Compter de 61 - 100",
+      "grade_level": "Primary 5",
+      "description": "Theme: SE RENSEIGNER SUR LES DIRECTIONS | Content: Les nombres de 61 à 100",
+      "objectives": "L’apprenant devrait être capable de compter en français jusqu’à 100",
+      "activities": "Teacher: L’enseignant rappelle les nombres 21-60 et les exploite pour présenter 61-100\n\nStudents: L’apprenant écoute, reproduit et répète",
+      "resources": "Jeux, mimes, calendrier, objets connus, etc.",
+      "assessment": "Exercices de reproduction orale"
+    },
+    {
+      "title": "Demander les directions",
+      "grade_level": "Primary 5",
+      "description": "Theme: SE RENSEIGNER SUR LES DIRECTIONS | Content: Vocabulaire et expressions pertinents: Où est… l’école /la poste…s’il vous / te plaît ? etc.",
+      "objectives": "L’apprenant devrait être capable de se renseigner sur les directions",
+      "activities": "Teacher: L’enseignant demande des directions\n\nStudents: L’apprenant répète après l’enseignant",
+      "resources": "Photos, vidéos illustratives, autres documents, dialogue",
+      "assessment": "Exercices de présentation orale"
+    },
+    {
+      "title": "Épeler",
+      "grade_level": "Primary 5",
+      "description": "Theme: SE RENSEIGNER SUR LES DIRECTIONS | Content: Les lettres de l’alphabet",
+      "objectives": "L’apprenant devrait être capable d’épeler en français",
+      "activities": "Teacher: L’enseignant présente les lettres de l’alphabet oralement\n\nStudents: L’apprenant reproduit les lettres en suivant l’enseignant",
+      "resources": "Images, objets divers, chansons",
+      "assessment": "Exercices de mémorisation et de prononciation"
+    },
+    {
+      "title": "SUJET (LES OBJETS PHYSIQUES ET LEURS FONCTIONS /LES LIEUX)",
+      "grade_level": "Primary 6",
+      "description": "Theme: LES OBJETS PHYSIQUES ET LEURS FONCTIONS /LES LIEUX | Sub-theme: LES OBJETS PHYSIQUES ET LEURS FONCTIONS /LES LIEUX | Content: CONTENU",
+      "objectives": "OBJECTIFS COMMUNICATIFS",
+      "activities": "Teacher: ACTIVITÉS",
+      "resources": "RESSOURCES PÉDAGOGIQUES",
+      "assessment": "GUIDE D’ÉVALUATION"
+    },
+    {
+      "title": "Identifier les objets et parler de leurs utilités",
+      "grade_level": "Primary 6",
+      "description": "Theme: LES OBJETS PHYSIQUES ET LEURS FONCTIONS /LES LIEUX | Sub-theme: LES OBJETS PHYSIQUES ET LEURS FONCTIONS /LES LIEUX | Content: Les objets dans la classe et à la maison : le livre, la table, le cahier, le stylo, le sac, l’ordinateur, le tableau, la télévision, la radio, le lit, le savon, etc. Ouvre le livre Ferme le livre -Utilités : e.g. On lit le livre ; la table à manger ; le stylo pour écrire ;…",
+      "objectives": "L’apprenant devrait être capable de nommer les objets et de parler de l’utilité de ces objets",
+      "activities": "Teacher: L’enseignant expose les objets ; nomme les objets ; explique leurs utilités ; donne des consignes ;\n\nStudents: L’apprenant regarde, écoute, répète, après l’enseignant, dessine et écrit. Il exécute d’autres consignes",
+      "resources": "Objets divers : images, photos, vidéos, autres documents, dialogue",
+      "assessment": "Faire la liste des objets. Dessiner les objets. Nommer les objets"
+    },
+    {
+      "title": "Visiter les lieux publics",
+      "grade_level": "Primary 6",
+      "description": "Theme: LES OBJETS PHYSIQUES ET LEURS FONCTIONS /LES LIEUX | Sub-theme: LES OBJETS PHYSIQUES ET LEURS FONCTIONS /LES LIEUX | Content: L’école, l’église, la mosquée, l’hôpital, la gare, le marché, la bibliothèque, le poste de police, etc.",
+      "objectives": "L’apprenant devrait être capable d’identifier et de nommer les lieux publics",
+      "activities": "Teacher: L’enseignant fait une visite de lieux publics avec les élèves, il leur explique leurs fonctions\n\nStudents: L’apprenant fait une visite préalable de lieux publics et se renseigne sur leurs fonctions. En classe, il écoute et apprend",
+      "resources": "Livres, CD, cassettes, images, photos, etc. Les lieux publics, la carte d’une ville",
+      "assessment": "Exercices d’identification des lieux publics et d’association des fonctions"
+    },
+    {
+      "title": "SUJET (REPÉRER LES LIEUX, etc.)",
+      "grade_level": "Primary 6",
+      "description": "Theme: REPÉRER LES LIEUX, etc. | Sub-theme: REPÉRER LES LIEUX, etc. | Content: CONTENU",
+      "objectives": "OBJECTIFS COMMUNICATIFS",
+      "activities": "Teacher: ACTIVITÉS",
+      "resources": "RESSOURCES PÉDAGOGIQUES",
+      "assessment": "GUIDE D’ÉVALUATION"
+    },
+    {
+      "title": "Nommer les mois de l’année",
+      "grade_level": "Primary 6",
+      "description": "Theme: REPÉRER LES LIEUX, etc. | Sub-theme: REPÉRER LES LIEUX, etc. | Content: Les mois de l’année : (janvier, février, mars, avril, mai, juin, juillet, août, septembre, octobre, novembre, décembre)",
+      "objectives": "L’apprenant devrait être capable de nommer les mois de l’année -Utiliser les mois de l’année",
+      "activities": "Teacher: L’enseignant présente les mois de l’année les uns après les autres insistant sur la prononciation correcte de chaque mois\n\nStudents: L’apprenant se sert de son expérience des jours de la semaine pour comprendre le sens et la prononciation des mois de l’année",
+      "resources": "Papier, crayon de couleur, calendrier, agenda et autres documents",
+      "assessment": "Exercices de mémorisation et d’application"
+    },
+    {
+      "title": "Repérer les lieux",
+      "grade_level": "Primary 6",
+      "description": "Theme: REPÉRER LES LIEUX, etc. | Sub-theme: REPÉRER LES LIEUX, etc. | Content: -Où est----- -Où se trouve - à droite - à gauche - devant - derrière - là, là-bas - ici, etc.",
+      "objectives": "L’apprenant devrait être capable de : - repérer les lieux publics - donner et réagir aux consignes -se renseigner",
+      "activities": "Teacher: L’enseignant aide à repérer les lieux Exemples : l’école, l’église, la mosquée, le marché, le parc, l’hôpital,…\n\nStudents: L’apprenant donne des exemples des lieux publics chez lui et en parle ex. : À gauche, c’est l’hôpital général À droite, c’est l’église St. André",
+      "resources": "Papier, crayon en couleur, une table, de la colle, des ciseaux, du carton, etc.",
+      "assessment": "Production de la carte d’une ville."
+    },
+    {
+      "title": "Parler de la jeunesse dans la communauté",
+      "grade_level": "Primary 6",
+      "description": "Theme: REPÉRER LES LIEUX, etc. | Sub-theme: REPÉRER LES LIEUX, etc. | Content: -Les lieux fréquentés par les jeunes : (parc, stade, musée, bibliothèque, café. -Les activités de base des jeunes : danser, jouer, lire, manger, boire, faire du sport…",
+      "objectives": "L’apprenant devrait être capable de parler des jeunes dans la communauté",
+      "activities": "Teacher: L’enseignant présente le sujet à l’aide de : dans ma communauté…\n\nStudents: L’apprenant écoute et répète après l’enseignant, répond aux questions",
+      "resources": "Vidéo, etc. jeux de rôle, Équipements de sports et instruments de musique, etc.",
+      "assessment": "Exercices de production orale"
+    },
+    {
+      "title": "SUJET (ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES) #1",
+      "grade_level": "Primary 6",
+      "description": "Theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Sub-theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Content: CONTENU",
+      "objectives": "OBJECTIFS COMMUNICATIFS",
+      "activities": "Teacher: ACTIVITÉS",
+      "resources": "RESSOURCES PÉDAGOGIQUES",
+      "assessment": "GUIDE D’ÉVALUATION"
+    },
+    {
+      "title": "Identifier ce qu’on achète",
+      "grade_level": "Primary 6",
+      "description": "Theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Sub-theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Content: Vocabulaire et expressions relatifs à l’achat : du pain, des bonbons, des biscuits, des livres, des crayons, des cahiers, des vêtements, etc.",
+      "objectives": "L’apprenant devrait être capable d’identifier ce qu’on achète",
+      "activities": "Teacher: L’enseignant montre les objets qu’on achète au marché ; nomme les objets ;\n\nStudents: L’apprenant observe, écoute et répète après l’enseignant",
+      "resources": "-Les objets qu’on achète -Une visite préalable au marché /magasin",
+      "assessment": "Exercices d’identification par rapport à leur prix"
+    },
+    {
+      "title": "Dire les prix des articles",
+      "grade_level": "Primary 6",
+      "description": "Theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Sub-theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Content: Combien coûte…. ?.c’est combien ? Naira, cher / pas cher /bon marché Très cher, je veux….",
+      "objectives": "-L’apprenant devrait être capable de dire les prix des articles -utiliser les expressions des prix et des achats",
+      "activities": "Teacher: L’enseignant prépare une boutique provisoire\n\nStudents: L’apprenant prépare avec l’enseignant une boutique provisoire et discuter des activités au magasin. Il négocie le prix",
+      "resources": "Les objets que l’on achète",
+      "assessment": "Exercices : faire ses courses dans une boutique improvisée"
+    },
+    {
+      "title": "Dire où se trouvent des articles ?",
+      "grade_level": "Primary 6",
+      "description": "Theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Sub-theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Content: Le marché, le supermarché, la boutique, le magasin, la librairie, la pharmacie, la poste, le kiosque, le restaurant….",
+      "objectives": "L’apprenant devrait être capable d’identifier ou de dire où se trouvent certains articles",
+      "activities": "Teacher: L’enseignant aide l’apprenant à identifier et nommer les articles que l’on achète\n\nStudents: L’apprenant fait une visite préalable des lieux où on vend des articles",
+      "resources": "Le marché et d’autres lieux où on vend des articles",
+      "assessment": "Exercices de courses imaginaires"
+    },
+    {
+      "title": "SUJET (ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES) #2",
+      "grade_level": "Primary 6",
+      "description": "Theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Sub-theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Content: CONTENU",
+      "objectives": "OBJECTIFS COMMUNICATIFS",
+      "activities": "Teacher: ACTIVITÉS",
+      "resources": "RESSOURCES PÉDAGOGIQUES",
+      "assessment": "GUIDE D’ÉVALUATION"
+    },
+    {
+      "title": "Parler de ce qu’on aime",
+      "grade_level": "Primary 6",
+      "description": "Theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Sub-theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Content: Les verbes : aimer, préférer, choisir, adorer J’aime… Je préfère… J’adore… J’aime beaucoup… Voici mon choix Je choisis… Oui, bon d’accord",
+      "objectives": "L‘apprenant devrait être capable de dire ce qu’il aime (ses goûts et ses préférences)",
+      "activities": "Teacher: L’enseignant fait la liste de ce que l’on peut aimer, choisir, préférer L’enseignant demande aux élèves de choisir\n\nStudents: Par groupes de deux, les élèves s’interrogent sur ce qu’ils aiment -Dans une liste d’activités (représentées sous forme d’images) chaque élève choisit ce qu’il préfère-(un seul choix) Il pose des questions -Chaque apprenant goute des aliments et dit ce qu’il aime, choisit et préfère",
+      "resources": "Le jeu du goût : le professeur apportera en classe certains aliments simples (chocolat, fruit, pâte d’igname, etc.)",
+      "assessment": "Exercices d’expression du choix et de préférence e.g « Dis ce que tu aimes /préfères » parmi les aliments suivants : du pain, du riz, des haricots, du chocolat…"
+    },
+    {
+      "title": "Parler de ce qu’on n’aime pas",
+      "grade_level": "Primary 6",
+      "description": "Theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Sub-theme: ACHETER ET VENDRE, PRÉFÉRENCES ET NON PRÉFÉRENCES | Content: Vocabulaire et expressions utiles : aimer, détester, je n’aime pas… Je déteste… Non, pas ceci/ pas cela",
+      "objectives": "L’apprenant devrait être capable de dire ce qu’il n’aime pas, et ainsi d’exprimer l’opposition",
+      "activities": "Teacher: L’enseignant fait la liste de ce qu’on peut détester ex. bruit, accident, voleur, être en retard\n\nStudents: L’apprenant imite la production orale de l’enseignant Par groupes de deux, les apprenants s’interrogent sur ce qu’ils n’aiment pas",
+      "resources": "Images, photos, objets divers, fruits",
+      "assessment": "Exercices qui impliquent l’opposition et une attitude négative ex. Tu veux cela ? Pas cela"
+    }
+  ]
+}

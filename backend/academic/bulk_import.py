@@ -41,8 +41,13 @@ def import_lesson_resource(
         tenant=tenant,
         subject=subject,
         title=title,
+        # grade_level is part of the match key, not just a default - the same
+        # topic title legitimately repeats across different grade levels
+        # within one subject (e.g. "Addition and Subtraction" under both JSS
+        # ONE and JSS TWO), and without this a later grade's import would
+        # silently overwrite an earlier grade's resource.
+        grade_level=grade_level,
         defaults={
-            "grade_level": grade_level,
             "description": description,
             "objectives": objectives,
             "activities": activities,
@@ -51,7 +56,6 @@ def import_lesson_resource(
         },
     )
     if not created:
-        resource.grade_level = grade_level
         resource.description = description
         resource.objectives = objectives
         resource.activities = activities

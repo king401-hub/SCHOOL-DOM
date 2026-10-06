@@ -1,0 +1,410 @@
+{
+  "subject": "Igbo",
+  "resources": [
+    {
+      "title": "Ekwumekwu Ịkpọ ihe aha",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ọdịdị ihe ndị dị na gburugburu 2. Ụda ndị a nụrụ na gburugburu 3. akụkụ hụ mm dụ ụfọdụ",
+      "objectives": "Ụmụakwụkwọ ga– enwe ike: 1. ikwu banyere ihe ha hụrụ na gburugburu 2. ikwu banyere ihe ha nụrụ 3. ịkpọ aha akụkụ hu mmadụ ụfọdụ",
+      "activities": "Teacher: 1. Ikwupụta ihe ha hụrụ / nụrụ na gburugburu 2. kparịta ụka gbasara ihe ha hụrụ na ihe ha nụrụ na gburugburu 3. ịkpọpụt sị m rụgosi aku ku hu mm dụ ụfọdụ\n\nStudents: 1. Nkọwa 2. Mkparịta ụka 3. Ajụjụ na azịza 4. Ise eserese 5. Nrụgosi",
+      "resources": "Eserese/ foto Ngwa mmetụaka Ụgbọodee Redio Tepurekọda Televishọn",
+      "assessment": "Ụmụakwụkwọ: 1. Ikwupụta ihe atọ ha hụrụ na ihe atọ ha nụrụ na gburugburu 2. ịgosipụta ihe ha hụrụ na ihe ha nụrụ na gburugburu 3. ịrụgosi aku ku hu mm dụ ụfọdụ tọ n’eserese"
+    },
+    {
+      "title": "Abụ Ụmụaka",
+      "grade_level": "Primary 1-3",
+      "description": "Content: Abụ ụmụaka dị iche iche dịka: abụ e ji eku nwa, abụ egwuregwu, abụ akụkọ ifo.",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ịgụ abụ ụmụaka 2. ije ejije dị na ha 3. izipụta mmasị na obi ụtọ site n’ison e ịgụ abụ ndị",
+      "activities": "Teacher: 1. gụ abụ 2. Ikwe abụ n’isi 3. jụ na ịza ajụjụ 4. Ije ejije 5. gba egwu\n\nStudents: 1. Ọgụgụ 2. Okwukwe 3. Ngosipụt 4. Ejije 5. Ajụjụ na azịza 6. Nkọwa",
+      "resources": "Eserese Ngwa egwu Redio",
+      "assessment": "Ụmụakwụkwọ: 1. ịgụ abụ 2. ikwe abụ 3. ije ejije dị n’abụ ụmụaka"
+    },
+    {
+      "title": "Ekele #1",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ekele ụtụtụ 2. Ekele ehihie 3. Ekele an asị 4. Ekele mgbe ha na-arụ ọrụ 5. Ekele onye meere mmadụ ihe ọma 6. Ekele onye nọ na nsogbu",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ikele ekele dị iche iche 2. ikwu oge e ji ekele ha 3. igosipụta etu e si ekele ha",
+      "activities": "Teacher: 1. Ikwu ekele dị iche iche 2. Ikelerịta onwe ha ekele ndị a site n’ejije 3. gụ uri / egwu ekele\n\nStudents: 1. Ajụjụ ọnụ 2. Nkụzi ekele dị iche iche 3. Nkọwa mgbe e ji ekele ekele ndị a 4. Ejije 5. Uri / Egwu",
+      "resources": "Eserese onye na- ekele ekele dị iche iche",
+      "assessment": "Ụmụakwụkwọ: 1. ikwupụta ekele dị iche iche 2. ikele ekele dị iche iche 3. ịgụ ụrị /egwu ekele"
+    },
+    {
+      "title": "Ime ihe e kwuru #1",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Okwu ndị na- egosi ihe a ga eme dịka: nọdụ, kwụrụ, gbaa, pụọ, kpudo isi, kụọ aka dg. 2. Mmekọzọ",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ime ihe e kwuru dịka: kwụrụ ọtọ, nọdụ ala, gbaa ọsọ, mechie an a, kụọ aka, kpudo isi n’oche 2. ime ka onye ọzọ dịka: onye gafere n’ule, on e nwere ihe nrite, onye na-ebe ekwa dg.",
+      "activities": "Teacher: 1. Ige ntị 2. Ime ihe e kwuru 3. sịrịta onwe ha mee ihe 4. gụ uri dịka: meenụ ihe m mere, an ị ga- eme ihe i mere ugbu a dg. 5. Ime ke on e ọzọ\n\nStudents: 1. Omume 2. Nkọwa 3. Ngosipụta",
+      "resources": "Eserese Kaadị-mgbubam Ụmụaka n’onwe ha",
+      "assessment": "Ụmụakwụkwọ: 1. ịjụ na ịza ajụjụ 2. ịgwa ụmụaka ibe ha ihe ha ga-eme 3. Ngosipụta ihe e kwuru 4. iṅomipụta otu omume dịka onye ọzọ"
+    },
+    {
+      "title": "Egwu (uri)",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Egwu/uri dị iche iche dịka: egwu ọnwa na egwu mmemme dị iche iche 2. Egwu ndị ọzọ dị iche iche dịka: egwu ndị ụka na nke ugbu a",
+      "objectives": "Ụmụakwụkwọ ga–enwe ike: 1. igwu egwu /uri ndị obodo ha 2. ịgba egwu /uri obodo ha dị iche iche 3. ịgụ na ịgba egwu ndị ọzọ dị iche iche",
+      "activities": "Teacher: 1. gụ egwu /uri 2. kụ egwu /uri dị iche iche 3. gba egwu /uri dị iche iche\n\nStudents: 1. Ọgụgụ na ọgbụgba 2. Ngosipụta 3. Nkọwa 4. Mgbazi",
+      "resources": "Ngwa na ejiji egwu dị iche iche dịka: ọsha, ịgba, udu,ekwe, ọja, ogele dg. Eserese",
+      "assessment": "Ụmụakwụkwọ: 1. igu egwu / uri 2. ịkụ egwu /uri ndị obodo ha abụọ 3. ịgba egwu /uri 4. ịza ajụjụ abụọ"
+    },
+    {
+      "title": "Ọnụọgụgụ 1-20",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Mkpọpụta ọnụọgụgụ 2. Ngụtali ọnụọgụgụ 3. Odide ọnụọgụgụ",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ịkpọpụta 1-20 2. ịgụtali ọnụọgụgụ 3. idetali ọnụọgụgụ",
+      "activities": "Teacher: 1. kpọpụta ọnụọgụgụ 2. gụpụta ọnụọgụgụ 3. detali ọnụọgụgụ\n\nStudents: 1. zụ okwe 2. gụpụta ihe 3. kpọ ọga 4. kụ aka 5. tụ okwe 6. Odide 7. Mmakọta",
+      "resources": "Chaatị Akwụkwọ ọgụgụ Mkpụrụ okwe Okwuchi karama",
+      "assessment": "Ụmụakwụkwọ: 1. kpọpụta ọnụ ọgụgụ 1-20 2. gụtali ọnụọgụgụ 3. Idetali ọnụọgụgụ 1 – 20."
+    },
+    {
+      "title": "Akụkọ ifo #1",
+      "grade_level": "Primary 1-3",
+      "description": "Content: Akụkọ ifo dị iche iche dịka: 1. Nke mbe na nke na-akụzi ezi omume 2. Ihe mmụta sị n’akụkọ ifo",
+      "objectives": "Ụmụakwụkwọ ga –enwe ike 1. ịkọ akụkọ ifo dị mfe 2. izipụta nghọta, mmasị, obi ụtọ na ezi agwa dị n’ifo 3. ikwu ihe mmụta si n’akụkọ 4. ijepụta ejije si n’akụkọ",
+      "activities": "Teacher: 1. Ige akụkọ 2. kọ akụkọ 3. Ije ejije 4. jụ na ịza ajụjụ\n\nStudents: 1. Ọ kụkọ 2. Nzipụta 3. Ọmụmaatụ 4. Nkọwa",
+      "resources": "Eserese Akpụrụakpụ Ụmụaka n’onwe ha",
+      "assessment": "Ụmụakwụkwọ: 1. kọ otu akụkọ ifo dị mfe 2. Ikwu ihe mmụta si n’akụkọ a kọrọ 3. za ajụjụ si n’akụkọ ifo."
+    },
+    {
+      "title": "Idebe gburugburu ọcha",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ebe ndị bụ gburugburu an ị dịka: (i) ụlọakwụkwọ (ii) ụlọobibi (iii) okporoụzọ 2. Ụzọ dị iche iche e si edebe gburugburu ọcha 3. Mkpa ọ dị idebe gburugburu ọcha",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ikwu ihe bụ idebe gburugburu ọcha 2. ikwu ụzọ dị iche iche e si edebe gburugburu ọcha 3. ikwu mkpa ọ dị idebe gburugburu ọcha",
+      "activities": "Teacher: 1. Ikwu banyere idebe gburugburu ọcha 2. kparịta ụka 3. jụ na ịza ajụjụ\n\nStudents: 1. Nkọwa 2. Ntụlekọrịta 3. Ọmụmaatụ",
+      "resources": "Eserese Kaadị mgbubam Akwụkwọ ọgụgụ Ngwa ndị e ji edebe gburugburu ọcha",
+      "assessment": "Ụmụakwụkwọ: 1. ịkwupụta ụzọ abụọ e si edebe gburugburu ọcha 2. ịkọwapụta mkpa ọ dị idebe gbugburu ọcha 3. ịjụ na ịza ajụjụ banyere idobe gburugburu ọcha"
+    },
+    {
+      "title": "Mkparịtaụka banyere onwe",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Aha ha 2. Aha nne, nna na ụmụnne ha 3. Aha ebe ha bi 4. Aha obodo ha",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ikwu aha ha 2. ikwu aha nne, nna na ụmụnne ha 3. ikwu ebe ha bi 4. ikwu aha obodo ha",
+      "activities": "Teacher: 1. Ikwu aha ha, nke nne, nna na ụmụnne ha 2. Ikwu aha obodo ha 3. Ikwu aha ebe ha bi 4. Ijụ na ịza ajụjụ\n\nStudents: 1. Ajụjụ na azịza 2. Nkọwa 3. Ekwuasa",
+      "resources": "Eserese nke onyenkuzi na nke dị n’akwụkwọ ọgụgụ Foto",
+      "assessment": "Ụmụakwụkwọ: 1. ikwu aha ha na nke ndị ezinaụlọ ha 2. ikwu ebe ha bi 3. ikwu aha obodo ha"
+    },
+    {
+      "title": "gụ ụbọchị",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ụbọchị dị n’izuụka 2. Ihe na-eme n’ụbọchị ndị ahụ",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ịgụpụta ụbọchị dị n’izuụka 2. ikwu ihe ha na- eme ụbọchị dị iche iche",
+      "activities": "Teacher: 1. kọpụta aha ụbọchị dị n’izuụka 2. Ikwu ihe ha na- eme n’ụbọchị dị iche iche\n\nStudents: 1. Nkọwa 2. Ajụjụ na azịza",
+      "resources": "Chaatị na-egosi ụbọchị",
+      "assessment": "Ụmụakwụkwọ: 1. ịgụpụta ụbọchị n’izuụka 2. ikwu ihe ha na- eme n’otu ụbọchị"
+    },
+    {
+      "title": "Ọgụgụ eserese",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Nkọwa ọdịdị ihe dị n’eserese 2. Mkpụrụokwu 3. Metụtara ihe dị n’eserese",
+      "objectives": "Ụmụakwụkwọ ga –enwe ike: 1. ịhụta na ịhụba ihe dị n’eserese ama 2. ịmụbawan e mkpụrụokwu site n’ihe dị n’eserese 3. ikọwapụta ihe ha hụrụ n’eserese",
+      "activities": "Teacher: 1. In ocha na ịkọwa ihe ha hụrụ 2. kparịta ụka gbasara ihe ha hụrụ 3. Isegharị ihe ha hụrụ 4. jụ na ịza ajụjụ 5. Ije ejije\n\nStudents: 1. Nkọwa 2. Ajụjụ na azịza 3. Mkparịtaụka 4. Osise 5. Ejije",
+      "resources": "Eserese Kre ọn oze Ụgbọojii Akwụkwọ ọgụgụ",
+      "assessment": "Ụmụakwụkwọ: 1. igosịpụta ihe ha hụrụ 2. ịkọwapụta ihe ha hụrụ 3. ise eserese abụọ gbasara ihe ha hụrụ"
+    },
+    {
+      "title": "Iji Eserese dee mkpụrụ- edemede (Abịchịị)",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Nkọwa ọdịdị ihe dị n’eserese. 2. Ndepụt mkpụrụedemede site n’eserese. 3. Nhụb mkpụrụedemede ama",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ideputali mkpụrụedemede Igbo site n’iji eserese; 2. ịkpọpụt li mkpụrụedemede; 3. ịrụgosi mkpụrụedemede site n’eserese",
+      "activities": "Teacher: 1. kọwa ihe ha hụrụ n’eserese. 2. Idepụt ihe h hụrụ n’eserese. 3. Isegh ri ihe ha hụrụ. 4. i ju n i z jụjụ. 5. Ije ejije.\n\nStudents: 1. Nkọwa. 2. Ajụjụ n zịz . 3. Osise 4. Ejije",
+      "resources": "- Eserese - Kre ọn oze - Ụgbọojiị - Akwụkwọ ọgụgụ",
+      "assessment": "Ụmụ kwụkwọ: 1. ịkọwapụt ihe h hụrụ; 2. Isepụt ihe h hụrụ. 3. Idepụt ihe h hụrụ."
+    },
+    {
+      "title": "Ezi agwa",
+      "grade_level": "Primary 1-3",
+      "description": "Content: Agwa ziri ezi dịka: 1. Ikwu eziokwu, ije ozi, inye nsọpụrụ, ezughi ohi dg. 2. Uru agwa ziri ezi",
+      "objectives": "Ụmụakwụkwọ ga –enwe ike: 1. ikwupụta agwa ziri ezi 2. ịkpa agwa ziri ezi 3. ikwu uru agwa ziri ezi bara",
+      "activities": "Teacher: 1. Ige ntị 2. Ikwupụta agwa ziri ezi 3. kpapụta agwa ziri ezi 4. Ikwu uru dị n’agwa ziri ezi\n\nStudents: 1. Nkọwa 2. Ejije 3. Ngosipụta 4. Mkparịtaụka",
+      "resources": "Eserese Ụmụaka n’onwe ha",
+      "assessment": "Ụmụakwụkwọ: 1. Iza ajụjụ metutara ịkpa ezi agụwa 2. Ikwupụta uru dị n’ịkpa ezi agwa."
+    },
+    {
+      "title": "Odide mkpụrụ- edemede (Abịchịị)",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Nkọwa mkpụrụedemede nke ọm . 2. Mkpọpụta mkpụrụedemede 3. Ndepụta mkpụrụedemede 4. Mm kọ mkpụrụedemede na ụda ya",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. depụta mkpụrụedemede Igbo n’onwe ha. 2. Ịkpọpụt h n’otu n’otu 3. Iji nrụaka zipụta h n’u gbo ojii n’onwe h .",
+      "activities": "Teacher: 1. kpọpụta mkpụrụedemede 2. Ide mkpụrụedemede 3. Ịrụgosi mkpụrụedemede na ụda ya 4. Ịkpụ mkpụrụedemede\n\nStudents: 1. Mkpọpụta 2. Omụmaatụ 3. Nkọw 4. Ngụpụta 5. Ndepụta",
+      "resources": "- Chaatị - Kaadị mgbubam - Akwụkwọ ọgụgụ - Let k dị",
+      "assessment": "Ụmụakwụkwọ: 1. kpọpụta mkpụrụedemede iri 2. Idepụta mkpụrụedemede 3. Ịrụgosi mkpụrụedemede 4. Im kọt mkpụrụedemede na ụda ha,"
+    },
+    {
+      "title": "Ọrụ dịịrị onye ọ bụla n’ezinaụlọ",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ihe bụ ezinaụlọ 2. Ọrụ dịịrị onye ọ bụla n’ezinaụlọ dịka ụmụ, nne, nwata dg.",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ikwu ọrụ dịịrị onye ọ bụla n’ezinaụlọ",
+      "activities": "Teacher: 1. Ikwu ndị nọ n’ezinaụlọ 2. kọpụta ihe ndị ha na-eme n’ezinaụlọ ha\n\nStudents: 1. Nkọwa 2. Ajụjụ na azịza 3. Ngosi eserese foto",
+      "resources": " Eserese na- ezịpụta ezinaụlọ  Chaatị  Foto",
+      "assessment": "Ụmụakwụkwọ: 1. kọwa ihe bụ ezinaụlọ 2. Ikwu otu ọrụ dịịrị on e ọ bụla n’ezinaụlọ"
+    },
+    {
+      "title": "Ọgụgụ na odide mkpụrụokwu",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ọgụgụ mkpụrụokwu 2. Ọgụgụ eserese 3. Odide mkpụrụokwu",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. gụpụta mkpụrụokwu, idepụta mkpụrụokwu 2. iji abịchịị dee mkpụrụokwu dị iche iche",
+      "activities": "Teacher: 1. gụ mkpụrụokwu 2. jụ na ịza ajụjụ 3. Ide mkpụrụokwu\n\nStudents: Nkọwa Ajụjụ Mkparịtaụka Ọgụgụ Odide",
+      "resources": "Akwụkwọ ọgụgụ Kaadị mgbubam Ụgbọojii Ụgbọodee Chaatị ọgụgụ",
+      "assessment": "Ụmụakwụkwọ: 1. ịgupụta mkpụrụokwu 2. ide mkpụrụokwu n’usoro ziri ezi"
+    },
+    {
+      "title": "kpọgasị ihe aha (ezinaụlọ)",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ihe ndị n - hụ n’ezin ụlọ dịk : oche, akwa, efere, ite, ngaji, igbe, ikwe dg. 2. Ihe e ji ha eme n’ezin ụlọ",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. Ikwu ụfọdụ ihe ha na-ahụ n’ezinaụlọ ha 2. Ikọw ihe ndị e jig sị h eme 3. Ikwu uru ha bara",
+      "activities": "Teacher: 1. Ikpọpụt aha ihe ndị h n - hụ n’ezin ụlọ. 2. Ikp rịt ụk gbasara ihe e ji ha eme 3. I jụ n ịz jụjụ 4. Ise eserese\n\nStudents: 1. Nkọwa 2. Mkparịtaụk 3. jụjụ n zịz 4. Ise eserese 5. Ngosipụt",
+      "resources": "- Eserese/foto - Ngwa mmetụ k - Ụgbọ odee - Redio - Tepurekọd - Televishọn",
+      "assessment": "Ụmụakwụkwọ: 1. ikwupụt ihe tọ h na- hụ n’ezin ụlọ 2. Ikọw ihe e ji ihe ndị a eme 3. ise eserese bụọ iji gosi ihe ha na- hụ n’ezin ụlọ"
+    },
+    {
+      "title": "Uri ejije",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Nhọpụt ndị ga-agba uri ejije 2. Ngwa na ejiji ndị e ji eme uri ejije 3. Ịgba uri ejije 4. Nh zi ihe ndị niile k h nọrọ n’ụdị kwesịrị ekwesị",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. imepụt uri nọ n’ụdị ejije 2. i gb uri etu ọ ga- d b n’ụdị ejije 3. igosi mm sị h nwere n’izipụt uri ejije 4. kwuo ihe h mu t r n’ejije",
+      "activities": "Teacher: 1. Ige ntị 2. jụ ajụjụ 3. I hazi ngwa ejije 4. Ịmụ uri ejije 5. Ịgba uri ejije\n\nStudents: 1. Nkọwa 2. Ajụjụ 3. Ntụzi k 4. Ntu le na nnyocha 5. Ngosipụt",
+      "resources": "- Nkwago, obom m ọbụ ọgbọ - Ụmụ k n’onwe h - Ngwa ejije",
+      "assessment": "Ụmụakwụkwọ: 1. Ikwu ụzọ ihe tọ h mụt r site n’uri ejije 2. Ikwu ụzọ mm dụ ole h hụt r so n’ejije 3. Ikwu uru uri ejije bara"
+    },
+    {
+      "title": "Ekele #2",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ekele ụtụtụ 2. Ekele ehihie 3. Ekele an asị 4. Ekele mgbe a na-arụ ọrụ 5. Ekele onye meere mmadụ ihe ọma 6. Ekele onye nọ na nsogbu/ọrịa",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ikele ekele dị iche iche 2. ikwu oge e ji ekele ha 3. igosipụta etu e si ekele ha",
+      "activities": "Teacher: 1. Ikwu ekele dị iche iche 2. Ikelerịta onwe ha ekele ndị a site n’ejije 3. gụ uri / egwu ekele\n\nStudents: 1. Ajụjụ ọnụ 2. Nkụzi ekele dị iche iche 3. Nkọwa mgbe e ji ekele ekele ndị a 4. Ejije 5. Uri / Egwu",
+      "resources": "- Eserese onye na- ekele ekele dị iche iche - Ụmụaka n’onwe ha",
+      "assessment": "Ụmụakwụkwọ: 1. ikwupụta ekele dị iche iche 2. ikele ekele dị iche iche n’ụzọ dabara adaba 3. ịgụ ụrị /egwu ekele (abụọ)"
+    },
+    {
+      "title": "Ime ihe e kwuru #2",
+      "grade_level": "Primary 1-3",
+      "description": "Content: Okwu ndị na-egosi ihe a ga eme dịka: nọdụ, kwụrụ, gbaa, pụọ, kpudo isi, kụọ aka dg.",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ime ihe e kwuru dịka: kwụrụ ọtọ, nọdụ ala, gbaa ọsọ, mechie an a, kụọ aka, kpudo isi n’oche",
+      "activities": "Teacher: 1. Ige ntị 2. Ime ihe e kwuru 3. sịrịta onwe ha mee ihe 4. gụ uri dịka: meenụ ihe m mere, an ị ga- eme ihe i mere ugbu a dg.\n\nStudents: 1. Omume 2. Nkọwa 3. Ngosipụta",
+      "resources": "- Eserese - Kaadị- mgbubam - Ụmụaka n’onwe ha",
+      "assessment": "Ụmụakwụkwọ: 1. za ajụjụ 2. ịgwa ụmụaka ibe ha ihe ha ga-eme 3. Ngosipụta ihe e kwuru"
+    },
+    {
+      "title": "Abụ ụmụaka Egwu/uri",
+      "grade_level": "Primary 1-3",
+      "description": "Content: Abụ ụmụaka dị iche iche dịka: abụ e ji eku nwa, abụ egwuregwu, abụ ọrụ dg.",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. gụ abụ ụmụaka 2. Ije ejije dị na ha 3. Ikwu mmasị na obiụtọ n’ịgụ abụ ụmụaka",
+      "activities": "Teacher: 1. gụ abụ 2. Ikwe abụ n’isi 3. jụ na ịza ajụjụ 4. Ije ejije\n\nStudents: 1. Nkọwa 2. Ọmụmaatụ 3. Ajụjụ 4. Nzipụta 5. Ọgụgụ 6. Okwukwe",
+      "resources": "Eserese Tepurekọda Redio Televishọn Ngwa egwu",
+      "assessment": "Ụmụakwụkwọ: 1. gụ abụ 2. Ikwe abụ 3. Ije ejije dị n’abụ ụmụaka 4. Ikwu ihe mmuta dị n’abụ."
+    },
+    {
+      "title": "Ahụike Onwe",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1.Akụkụ ahụ mmadụ 2. Idowe akụkụ ahụ ọcha 3. Ụmụ ọrịa ụfọdụ 4. Ụzọ mgbochi ụmụ ọrịa 5. Uru ahụike bara",
+      "objectives": "Ụmụakwụkwọ ga –enwe ike: 1. ikwugharị ihe a mụrụ gbasara akụkụ ahụ mmadụ 2. ikwu ka e si edebe akụkụ ahụ ọcha 3. ikwu ụmụ ọrịa ụfọdụ na- emetụta akụkụ ahụ 4. ikwu ụzọ mgbochi ọrịa ụfọdụ",
+      "activities": "Teacher: 1. Ikwugharị aha akụkụ ahụ 2. Ikwu ka e si edebe akụkụ ahụ ọcha. 3. Ikwupụta ụmụ ọrịa ụfọdụ. 4. Ikwu ụzọ mgbochi ọrịa ụfọdụ 5. Ikwe ukwe ahụike dịka: Etu a ka anyi si abọ isi, bọ isi, bọ isi … Etu a ka an ị si abọ isi n’ụtụtụ\n\nStudents: 1. Nkọwa 2. Ajụjụ 3. Ngosipụta 4. Mkpọpụta 5. Uri e ji arụgosị akụkụ ahụ",
+      "resources": "- Eserese - Chaatị - Kaadị mgbubam - Ngwa mmetụaka - Ụgbọojii",
+      "assessment": "Ụmụakwụkwọ: 1. Ajụjụ 2. rụgosi akụkụ ahụ ụfọdụ 3. Ikpọpụtasị ụmụ ọrịa ụfọdụ na mgbochi ha"
+    },
+    {
+      "title": "Ọnụọgụgụ 1-50",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Mkpọpụta ọnụọgụgụ 2. Igosipụta nke bụ nke 3. Nhazi ọnụọgụgụ n’usoro 4. Idetali ọnụọgụgụ",
+      "objectives": "Ụmụakwụkwọ ga- enwe ike: 1. ịkpọpụta ọnụọgụgụ 2. igosipụta ihe nke ọ bụla pụtara 3. ịhazi ọnụọgụgụ n’usoro 4. idetali ọnụọgụgụ",
+      "activities": "Teacher: 1. kpọpụta ọnụọgụgụ 2. Igosipụta nke bụ nke 3. kparịta ụka 4. hazi ọnụọgụgụ 5. Idetu ọnụọgụgụ 6. Igwu egwuregwu ọnụọgụgụ\n\nStudents: 1. zụ okwe 2. gụpụta ọnụọgụgụ 3. kụ aka 4. kpọ ọga 5. Ide ọnụọgụgụ 6. makọta mkpụrụokwu na ọnụọgụgụ",
+      "resources": "- Mkpụrụ okwe - Ụgbọ okwe - Mkpirisi osisi - Eserese - Kaadị mgbubam - Nọmba kaadị - Abakuusu - Televishọn",
+      "assessment": "Ụmụakwụkwọ: 1. ịza ajụjụ 2. ịgụgharị ọnụọgụgụ 3. ide ọnụọgụgụ 4. ịmakọta mkpụrụokwu na ọnụọgụgụ. 5. ịrụgosi ọnụọgụgụ"
+    },
+    {
+      "title": "Mkparịtaụka",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ihe ndị a na-ahụ an a; ihe ndị a na-anụ na ntị n’ụlọ na n’ụlọ akwụkwọ ha. 2. Ihe ndị ha nụrụ na redio na ihe ndị ha hụrụ na televishọn.",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ileru anya ala ma kọwaa ihe ha hụrụ/nụrụ 2. ikwu okwu n’usoro dabara adaba 3. ikwu okwu dabara adaba 4. Ikwupụta uche ha site na mkparịtaụka",
+      "activities": "Teacher: 1. ikwupụta ihe ndị ha hụrụ maọbụ ha nụrụ 2. kọwa ọdidi ihe ndi a 3. tụlekọta ha 4. kpagharị gburugburu ụlọ akwụkwọ ma kọwaa ihe ndị ha hụrụ 5. Ije ejije 6. Isepụta ihe ndị a\n\nStudents: 1. Mkparịtaụka 2. Nkọwa na nduzi 3. Ajụjụ na azịza 4. Ntulekọta 5. Ejije 6. Osise 7. Mkpagharị gburugburu ụlọakwụkwọ",
+      "resources": "- Redio - Tepurekọda - Eserese - Televishọn",
+      "assessment": "Ụmụakwụkwọ: 1. za ajụjụ 2. Ikwupụta ihe ndị ha hụrụ 3. ije ejije banyere ihe ha hụrụ/nụrụ 4. ise eserese"
+    },
+    {
+      "title": "Akụkọ ifo #2",
+      "grade_level": "Primary 1-3",
+      "description": "Content: Akụkọ ifo dị iche iche dịka: 1. Nke mbe na nke na-akụzi ezi omume 2. Ihe mmụta sị n’akụkọ ifo",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike 1. ịkọ akụkọ ifo 2. izipụta nghọta, mmasị, obiụtọ n’akụkọ ifo 3. ikwu ihe mmụta si n’akụkọ 4. ijepụta ejije si n’akụkọ",
+      "activities": "Teacher: 1. Ige akụkọ 2. kọ akụkọ 3. Ije ejije 4. jụ na ịza ajụjụ\n\nStudents: 1. Iko akụkọ ifo 2. Nzipụta 3. Ọmụmaatụ 4. Nkọwa",
+      "resources": "- Eserese - Akpụrụakpụ - Ụmụaka n’onwe ha",
+      "assessment": "Ụmụakwụkwọ: 1. kọ akụkọ ifo n’ụzọ dabara adaba 2. Ikwu ihe mmụta si n’akụkọ a kọrọ 3. za ajụjụ si n’akụkọ ifo"
+    },
+    {
+      "title": "gụ Mkpụrụedemede (Abịchịị)",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Mkpụrụedemede 2. Mkpụrụedemede ndị gbara mkpị 3. Mmebe okwu 4. Nkọpị abịchịị na mkpụrụokwu",
+      "objectives": "Ụmụakwụkwọ ga– enwe ike: 1. ikpọpụta mkpụrụedemede 2. ịchọpụta mkpụrụedemede ndị gbara mkpị. 3. iji ha mebe mkpụrụokwu 4. ịkọpị site n’ụgbọojii na ihe e dere na letakaadị",
+      "activities": "Teacher: 1. kpọpụta abịchịị 2. Ide abịchịị 3. Imebe mkpụrụokwu 4. họpụta mkpụrụedemede ndị gbara mkpị 5. Iji mkpụrụedemede mejupụta okwu dịka:a-a (aka, akpa). dg.\n\nStudents: 1. Odide 2. Nkọpị 3. Ọkpụkpọ 4. Mmakọ",
+      "resources": "- Akpụrụakpụ - Ụrọ - Ụgbọ aja - Ụgbọojii - Kaadị mgbubam - Eserese",
+      "assessment": "Ụmụakwụkwọ: 1. gụpụta mkpụrụedemede ise 2. ide abịchịị 3. ịhọpụta mkpụrụedemede iri 4. Iji mkpụrụedemede imejupụta mkpụrụokwu"
+    },
+    {
+      "title": "Ọrụ dịịrị Onye ọ bụla n’ezinaụlọ",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ọrụ dịịrị nne na nna n’ezinaụlọ 2. Ụzọ dị iche iche ha si arụ ọrụ 3. Mkpa ọ dị ison e rụo ọrụ n’ezinaụlọ",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ikwu ọrụ nne na nna n’ezinaụlọ 2. ịkọwakwu ụzọ dị iche iche nne na nna si arụ ọrụ 3. Ikwu mkpa ọ dị on e ọ bụla ison e rụọ ọrụ n’ezinaụlọ.",
+      "activities": "Teacher: 1. Ige ntị 2. za ajụjụ 3. kparịta ụka gbasara ọrụ nne na nna n’ezinaụlọ 4. Ikwu mkpa ọ dị ison e rụo ọrụ n’ezinaụlọ\n\nStudents: 1. Nkọwa 2. Ajụjụ 3. Ọmụmaatụ",
+      "resources": "- Eserese - Akwụkwọ ọgụgụ",
+      "assessment": "Ụmụakwụkwọ: 1. ịza ajụjụ 2. ịkwupụta ọrụ nne na nna n’ezinaụlọ 3. ikọwapụta ụzọ ha si arụ ọrụ 4. Ikwu uru dị n’ison e rụọ ọrụ n’ezinaụlọ"
+    },
+    {
+      "title": "Ejiji ndị Igbo",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ejiji ndị Igbo: ndị nwoke, ndị ntorọbịa, Ụmụaka, ndị Eze na ndị chiri echichi 2. Ndịiche dị n’etiti ejiji ndị Igbo na nke ndị agbụrụ ọzọ 3. Uru iji ejiji Igbo bara",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. Iji ejiji e ji mara ndị Igbo 2. Igosipụta mmasị n’ejiji ndị a site n’iji ha n’onwe ha 3. chọpụta ihe dị iche n’ejiji ndị Igbo na nke ndị agbụrụ ọzọ 4. Ikwu uru iji ejiji Igbo bara",
+      "activities": "Teacher: 1. Ige ntị 2. Iz jụjụ 3. Ijụ jụjụ 4. I kp rịt ụk gbas r ejiji ndị Igbo\n\nStudents: 1. Nkọwa 2. Ajụjụ 3. Ọmụm tụ 4. Ngosi 5. Ejije",
+      "resources": "Ngwa ejiji ndị Igbo dị iche iche Eserese Foto ndị jiri ejiji Igbo",
+      "assessment": "Ụmụakwụkwọ: 1. ịza ajụjụ gbasara ejiji ndị Igbo 2. Igosipụta ejiji na ndị ndịiche dị n’etiti ejiji ndị Igbo na nke ndị agbụrụ ọzọ 3. Ikwu uru iji ejiji Igbo bara."
+    },
+    {
+      "title": "Idepụtakwu Mkpụrụedemede ( bi chịị)",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Mkpụrụedemede 2. Mkpụrụedemede ndị gb r mkpị 3. Mmebe okwu 4. Nko pi bi chịị na mkpụrụokwu",
+      "objectives": "Ụmụakwụkwọ ga –enwe ike: 1. idepụtali mkpụrụedemede 2. i cho pu t m dekw mkpu ru edemede ndi gb r mkpị 3. iji h mebe hi rio kwu 4. ịkọpị ihe e dere n’ụgbọojii n let k dị",
+      "activities": "Teacher: 1. Ide abịchịị 2. Imebe mkpụrụokwu 3. I họpụt mkpụrụedemede ndị gb r mkpi 4. Iji mkpụrụedemede mejupu t okwu dik a: - a – a (aka) - e – o (ego) dg\n\nStudents: 1. Odide 2. Nkọpị 3. Ọkpụkpọ 4. Mm kọ 5. Mmejupụt okwu",
+      "resources": "- Akpụrụ kpụ - Ụrọ - Ụgbọojii - K dị mgbubam - Eserese",
+      "assessment": "Ụmụakwụkwọ: 1. ide mkpụrụedemede ise 2. ide mkpụrụedemede gbar mkpị 3. Iji mkpụrụedemede mee hịrịokwu 4. Imejupụt mkpụrụokwu."
+    },
+    {
+      "title": "Egwuregwu",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Egwuregwu dị iche iche dịka: ịkpọ ọga, ịgba bọọlụ, ịgba ọsọ, ịtụ okwe, dg. 2. Ụzọ e si egwu ha 3. Egwuregwu na- amasị ha 4. Uru/ọghọm dị n’egwuregwu",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. Ikwupụta egwuregwu dị iche iche 2. kọwa etu e si egwu ha 3. Ikwu egwuregwu na-amasị ha 4. Igwu uru na ọghọm dị n’egwuregwu",
+      "activities": "Teacher: 1. Ige ntị 2. Ikwu egwuregwu dị iche iche 3. Ikwu etu e si egwu ha 4. Ikwu egwuregwu na-amasị ha 5. Ikwu uru na ọghọm dị n’egwuregwu\n\nStudents: 1. Nkọwa 2. Ajụjụ 3. Ọmụm tụ 4. Ngosipụt 5. Mkparịtaụka 6. Nduzi n’egwuregwu",
+      "resources": "- Ngwa mmetụaka - Eserese - Chaatị - Ụmụaka n’onwe ha",
+      "assessment": "Ụmụakwụkwọ: 1. Iza ajụjụ atọ gbasara ụdị egwuregwu dị iche iche. 2. Igwu egwuregwu 3. Ikwu uru na ọghọm dị n’egwuregwu."
+    },
+    {
+      "title": "Ọnụọgụgụ 1 – 100",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Mkpọpụta ọnụọgụgụ 2. Ngụtali ọnụọgụgụ 3. Odide ọnụọgụgụ",
+      "objectives": "Ụmụakwụkwọ ga –enwe ike: 1. ịkp1ọ-p ụt a ọnụọgụgụ 2. ịchọpụta ihe nke ọ bụla pụtara 3. ịgụtali ọnụọgụgụ 4. idetali ọnụọgụgụ",
+      "activities": "Teacher: 1. kpọpụta ọnụọgụgụ 2. gụpụta ọnụọgụgụ 3. Odide ọnụọgụgụ 4. rụgosi ọnụọgụgụ\n\nStudents: 1. gụkọ ihe ndi a na-ahụ anya 2. Ngụpụta 3. Mmakọta 4. Odide 5. Nhọpụta 6. Nrụgosi",
+      "resources": "Okwuchi karama, mkpụrụ okwe Eserese Kaadị mgbubam Nọmbakaadi, Abakuusu, ihe dị iche iche a na- agụkọ agụkọ",
+      "assessment": "Ụmụakwụkwọ: 1. ịza ajụjụ 2. ịgụgharị ọnụọgụgụ 3. ide ọnụọgụgụ 4. ịmakọ ọnụọgụgụ na mkpụrụokwu 5. ịrụgosi ọnụọgụgụ 6. ịhọpụta ọnụọgụgụ"
+    },
+    {
+      "title": "Mmepụt ejije nkenke",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Nhọpụta ndị ga-emepụt ejije nkenke. 2. Nhọpụta ejije dị nkenke 3. Ngwa ndị e ji emepụt ejije 4. Mmepụt ejije dị nkenke 5. Ihe mmụt dị n’ejije hụ.",
+      "objectives": "Ụmụakwụkwọ ga –enwe ike: 1. imepụt ejije dị nkenke 2. ikọwa ngwa ndị dị mkpa e ji emepụt ejije hụ 3. ikwu ihe ha mụt r n kwa ọnọdụ onye ọ bụla na y bụ ejije",
+      "activities": "Teacher: 1. Ige ntị 2. za ajụjụ 3. Imezi ngwa ejije 4. kwado ime ejije 5. Imepụt ejije n’onwe ya 6. Ikwu ihe mmụt dị n’ejije\n\nStudents: 1. Ajụjụ 2. Nkọw 3. Ngosipụt 4. Mgbazi na nkuzi 5. Ntu le na nnyocha 6. Ejije",
+      "resources": "- Ọgbọ/Obom/ Nkwago - Ngwa ejije - Ụmụ k n’onwe h .",
+      "assessment": "Ụmụakwụkwọ: 1. za ajụjụ tọ 2. Ịkpọpụt h mm dụ moaobụ gw nọ dị n’ejije 3. Ikwu ngw ejije tọ 4. ịkọw ihe tọ h mụt r site n’ejije nkenke ha mere"
+    },
+    {
+      "title": "Uru Uru ịkpa agwa ọma bara",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Agwa ọma ụmụaka ṅa- akpa 2. Omume ọjọọ ụmụaka na-eme 3. Ntaramahụhụ so omume ọjọọ 4. Uru dị n’ime omume ọma",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ikwupụta agwa ọma ụmụaka na-akpa 2. ikwupụta omume ọjọọ ụmụaka na- eme 3. ịkọwapụta ntaramahụhụ so omume ọjọọ 4. Uru dị n’ime omume ọma",
+      "activities": "Teacher: 1. Ikwu omume ọma na nke ọjọọ dị iche iche. 2. kparịta gbasara omume ọma na nke ọjọọ 3. jụ na ịza ajụjụ 4. Ime nkenke ejije banyere omume ọma/ọjọọ\n\nStudents: 1. Nkọwa 2. Ọmụmaatụ 3. Ejije 4. Nzipụta",
+      "resources": "Akwụkwọ ọgụgụ Chaatị Ụmụaka n’onwe ha dg.",
+      "assessment": "Ụmụakwụkwọ: 1. ịza ajụjụ 2. ikwu omume ọma abụọ 3. ikwu omume ọjọọ dị iche iche 4. ịkọwa ntaramahụhụ so omume ọjọọ 5. ikwu uru dị n’ime omume ọma"
+    },
+    {
+      "title": "Mkparịtaụka banyere nrubeisi",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Nkọwa nrubeisi 2. Ụzọ dị iche iche e si egosipụta nrubeisi 3. Uru dị n’irubeisi",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. Ikwupụta ụzọ dị iche iche e si egosi nrubeisi 2. ịkparịta ụka n’onwe ha ban ere nrubeisi 3. ịkọwa uru dị n’irube isi",
+      "activities": "Teacher: 1. kparịta ụka 2. Ijụ na iza ajụjụ 3. Ngosipụta\n\nStudents: 1. Mkparịtaụka 2. Nkọwa 3. Ajụjụ na azịza",
+      "resources": "- Redio - Tepurekọda - Eserese - Televishọn - Kaadị mgbubam - Ụmụaka n’onwe ha",
+      "assessment": "Ụmụakwụkwọ: 1. Iza ajụjụ gbasara nrubeisi 2. Ikọwa uru dị n’irube isi"
+    },
+    {
+      "title": "Uri / Abụ (Egwu)",
+      "grade_level": "Primary 1-3",
+      "description": "Content: Uri / egwu dị iche iche dịka: 1. Uri ọṅụ nwa 2. Uri iku nwa 3. Uri ndịụka 4. Uri ọrụ",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ịgụ uri / egwu 2. izipụta mmasị na obiụtọ n’ebe uri / egwu dị 3. ịkụ egwu",
+      "activities": "Teacher: 1. gụ uri / egwu 2. gba uri / egwu. 3. kụ uri / egwu ọrụ, ọṅụ nwa na nke iku nwa\n\nStudents: 1. Nkọwa 2. Ngosi 3. Mgbazi 4. Ọmụmaatụ",
+      "resources": "Ngwa egwu dị iche iche dk: ọsha, udu, ekwe,ọja, ịchaka, ijele, ogene Eserese, Chaatị, Ejiji egwu, Redio, Tepurekọda, dg.",
+      "assessment": "Ụmụakwụkwọ: 1. ịjụ na ịza ajụjụ 2. ịgụ otu uri/abụ 3. ikwe otu uri/abụ 4. ịkụ egwu 5. ịgba egwu 6. onyenkuzi: ilelepụta anya"
+    },
+    {
+      "title": "Nri ndị Igbo",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Aha nri ndị Igbo dị iche iche 2. Oge a na-eri ha 3. Ụdị nri ndị Igbo na-amasị ha 4. Odide nri ndị Igbo dị iche iche",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ịkpọpụta aha nri ndị Igbo dị iche iche 2. ịkọtali oge a na-eri nrị dị iche iche 3. Ikwu ụdị nri ndị Igbo na-amasi ha 4. Idetu ụdị nri ala an ị dị iche iche",
+      "activities": "Teacher: 1. ịkpọpụta nri ndị Igbo iche iche 2. kọtali oge a na- eri ha 3. Ikwu ụdị nri ndị Igbo na-amasị ha 4. Idetu aha nri ndị Igbo dị iche iche\n\nStudents: 1. Ajụjụ ọnụ 2. Nkọwa nri ndị Igbo dị iche iche 3. Ngosi nri ndị Igbo dị iche iche 4. Odide aha nri ndị Igbo dị iche iche",
+      "resources": "Ngwongwo nri dị iche iche Eserese Akwụkwọ ọgụgụ ndị ọzọ",
+      "assessment": "Ụmụakwụkwọ: 1. ịza ajụjụ 2. ịrụgosi nri ndị Igbo dị iche iche 3. ise eserese nri ndị Igbo dị iche iche"
+    },
+    {
+      "title": "Ilu dị mfe",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ndị bụ okwu amamihe na ilu 2. Ndị n -ekwukarị h dịk : ndị okenye na ndị chiri echichi 3. Uru ilu bara na ndụ ndị Igbo",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. kọwaa ihe bụ ilu na nkenke 2. tụọ ilu mfe 3. kwupụt mpụt r ilu mfe ụfọdụ 4. kwue uru ilu bara",
+      "activities": "Teacher: 1. Ige ntị 2. tụ ilu dị mfe 3. jụ na iza jụjụ 4. kọwa ilu dị mfe 5. Ikwu uru ilu bara 6. Ise eserese na-akọwa ilu\n\nStudents: 1. Nkọwa 2. Ọmụm tụ 3. Ajụjụ 4. Ọsịsa",
+      "resources": " Eserese  Akwụkwọ ọgụgụ  K dị mgbub m",
+      "assessment": "Ụmụakwụkwọ: 1. ịtụ ilu tọ h maara 2. ịkọw ilu bụọ 3. ikwu uru bụọ ilu bara 4. ise eserese iji gosipụt otu ilu"
+    },
+    {
+      "title": "Ime ihe e kwuru #3",
+      "grade_level": "Primary 1-3",
+      "description": "Content: Okwu ndị na-egosi ihe a ga-eme dịka: nọdụ, kwụrụ, gbaa, pụọ, kpudo isi, kụọ aka dg. Mmekọọzọ",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ime ihe e kwuru dịka: kwụrụ ọtọ, nọdụ ala, gbaa ọsọ, mechie an a, kụọ aka, kpudo isi n’oche 2. ime ka onye ọzọ",
+      "activities": "Teacher: 1. Ige ntị 2. Ime ihe e kwuru 3. sịrịta onwe ha mee ihe 4. gụ uri dịka: meenụ ihe m mere, an ị ga- eme ihe i mere ugbu a dg. 5. Iṅomi mmadụ dị iche iche dịka on e ọrịa, dọkịta, onye uweojii, on e ọrụ ugbo, dg\n\nStudents: 1. Omume 2. Nkọwa 3. Ngosipụta",
+      "resources": "Eserese Kaadị mgbubam Ụmụaka n’onwe ha",
+      "assessment": "Ụmụakwụkwọ: 1. ịza ajụjụ 2. ịgwa ụmụaka ibe ha ihe ha ga-eme 3. Ngosipụta ihe e kwuru N omi na igosipụta agwa abụọ"
+    },
+    {
+      "title": "Ọgụgụ ahịrịokwu mfe",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ọgụgụ werewere 2. Nghọta 3. Ngụwan e",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ịgụ ahịrịokwu mfe were were 2. izipụta nghọta ahịrịmfe ha gụpụtara 3. igosi mmasị n’ọgụgụ ahịrịokwu mfe ndị ọzọ 4. imebe ahịrịmfe 5. ịgụ ederede mfe",
+      "activities": "Teacher: 1. nọzi anọzi nke ọma 2. Ijizi akwụkwọ. 3. gụ n’arụghị aka na mkpụrụokwu. 4. kpọzi okwu akpọzi 5. kọwa mpụtara ahịrịokwu ha gụrụ 6. gụ ahịrịmfe 7. Imebe ahịrịmfe\n\nStudents: 1. Ọgụgụ 2. Nkọwa 3. Ajụjụ 4. Ọmụmaatụ",
+      "resources": "Akwụkwọ ọgụgụ Tepurekọda Nkọwaokwu",
+      "assessment": "Ụmụakwụkwọ: 1. ịgụ akwụkwọ 2. ịza ajụjụ 3. ịgụgharị ahịrịmfe, ịkọwa isiokwu nke otu ahịrịmfe 4. imebe ahịrịmfe atọ nke ha"
+    },
+    {
+      "title": "Agwụgwa dị mfe (Gwa m gwa m gwa m)",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Gwa m gwa m gwa m dị iche iche 2. Ajụaza n’isi otu gwa m gwa m gwa m",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ịjụpụta ma zakwaa gwa m gwa m gwa m ndị dị mfe 2. izipụta nghọta gwa m gwa m gwa m 3. izipụta obi ụtọ na mmasị ha site n’ịgụ na n’ịza ha 4. ikwu ihe mmụta dị na gwa m gwam m gwa m 5. ime ajụaza n’si otu gwa m gwa m gwa m",
+      "activities": "Teacher: 1. Ige ntị 2. I jụ agwụgwa 3. za agwụgwa 4. Ikwu ihe mmụta. 5. Ime ajụaza gwa m gwa m gwa m\n\nStudents: 1. Nkọwa 2. Ajụjụ na azịza 3. Nzipụta 4. Ọmụmaatụ",
+      "resources": "Eserese Akpụrụakpụ Chaatị Kaadị mgbubam",
+      "assessment": "Ụmụakwụkwọ: 1. ịjụ gwa m gwa m gwa m 2. ịza gwa m gwa m gwa m atọ 3. ikwu otu uru gwa m gwa m gwa m bara"
+    },
+    {
+      "title": "Nnabata on eọbịa",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Nkọwa on eọbịa 2. Ụzọ nnabata on eọbịa 3. Ihe ndị e ji ele ọbịa 4. Nnabata on eọbịa 5. Ọghọm dị n’ịnabata onyeọbịa ọjọọ",
+      "objectives": "Ụmụakwụkwọ ga – enwe ike: 1. ịkọwa on e bụ on eọbịa 2. ikwu ụzọ dị iche iche e si anabata on eọbịa 3. ịkpọpụta ihe ndị e ji ele ọbịa 4. ịnabata on eọbịa n’onwe ha 5. ikwu mkpa ọ dị ịkpachapụ an a n’ịnabata on eọbịa",
+      "activities": "Teacher: 1. kọwa on eọbịa 2. Ikwupụta ụzọ e si anabata on eọbịa 3. ịkpọpụta ihe ndị e ji ele ọbịa 4. nabata on eọbịa 5. Ikwu ọghọm dị n’inabata on eọbịa ọjọọ. Ime ejije ile ọbịa\n\nStudents: 1. Nkọwa 2. Ajụjụ na aziza 3. Mkpọpụta 4. Ngosi 5. Ejije 6. Nrụgosi",
+      "resources": "Ngwa e ji ele ọbịa Eserese Ụmụaka n’onwe ha",
+      "assessment": "Ụmụakwụkwọ: 1ịkọwa on eọbịa 2. ikwu ihe atọ e ji ele on eọbịa 3. igosipụta ụzọ e si anabata on eọbịa 4. ikwu otu ọghọ m dị n’inabata ọbịa n’akpachapụghị an a"
+    },
+    {
+      "title": "Odide ahịrịokwu mfe",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Mmebe ahịrimfe 2. Ndezi ahịrịmfe 3. Mmejupụta ahịrịmfe 4. Odide edemede nduzi mfe",
+      "objectives": "Ụmụakwụkwọ ga –enwe ike: 1. imebe ahịrịmfe 2. imejupụta ahịrịmfe 3. ide edemede nduzi mfe",
+      "activities": "Teacher: 1. Imebe ahịrịmfe 2. Idezi ahịrịmfe 3. Imejupụta ahịrịmfe 4. Ide edemede nduzi mfe\n\nStudents: 1. Ajụjụ 2. Mmakọ 3. Ndezi 4. Mmejupụta 5. Nduzi",
+      "resources": "Kaadị mgbubam Chaatị Ụgbọojii Akwụkwọ ọgụgụ",
+      "assessment": "Ụmụakwụkwọ: 1. ịrụgosi ahịrịmfe 2. ịza ajụjụ 3. imebe otu ahịrịmfe 4. ịgụ edemede nduzi mfe"
+    },
+    {
+      "title": "Akụkọ ifo #3",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Akụkọ ifo dị iche iche dịka: nke okike na nke na-akụzi ezi omume 2. Ihe mmụta si n’akụkọ ifo",
+      "objectives": "Ụmụakwụkwọ ga– enwe ike: 1. ịkọ akụkọ ifo 2. izịpụta mmasi, nghọta, obi ụtọ na ezigbo agwa site n’ison e n’akụkọ ifo 3. imepụta ejije si n’akụkọ ifo 4. ikwu ihe mmụta si n’akụkọ ifo",
+      "activities": "Teacher: 1. Ige akụkọ 2. kọ akụkọ 3. Ije ejije 4. za ajụjụ 5. Ise eserese\n\nStudents: 1. Ikọ akụkọ 2. Nziputa 3. Ọmụmaatụ",
+      "resources": "Eserese, Akpụrụakpụ Redio na Televishọn Tepurẹkọda",
+      "assessment": "Ụmụakwụkwọ: 1. ịza ajụjụ 2. ije ejije 3. ise eserese"
+    },
+    {
+      "title": "Ekwumekwu: nlekọta ụmụaka",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Ụzọ nlekọta ụmụaka 2. Ndị na-elekọta ụmụaka 3. Uru ọ bara ilekọta ụmụaka 4. Ụzọ dị iche iche e si emegbu ụmụaka 5. Ụzọ mgbochi mmegbu ụmụaka",
+      "objectives": "Ụmụakwụkwọ ga –enwe ike: 1. ikwu etu e si elekọta ụmụaka. 2. ndị na- elekọta ụmụaka 3. uru ọ bara ilekọta ụmụaka 4. ụzọ ụfọdụ e ji megbụ ụmụaka 5. ụzọ e si egbochi mmegbu ụmụaka",
+      "activities": "Teacher: 1. Ikwụpụta ụzọ e si elekọta ụmụaka 2. Ikwu ụzọ ụfọdụ e si emegbu ụmụaka 3. jụ na iza ajụjụ 4. kparịta ụka na ikwu uche ha\n\nStudents: 1. Nkọwa 2. Ejije 3. Ngosipụta 4. Ọmụmaatụ 5. Ajụjụ na azịza",
+      "resources": "Eserese Ụmụaka n’onwe ha Akwụkwọ ọgụgụ Tepurẹkọda Televishọn",
+      "assessment": "Ụmụakwụkwọ: 1. ịza ajụjụ 2. ide ihe 3. ise ihe 4. ime ejije"
+    },
+    {
+      "title": "Nsụpe",
+      "grade_level": "Primary 1-3",
+      "description": "Content: 1. Iwu metụtara nsupe dk: nnukwu mkpụrụedemede na obere mkpụrụedemede 2. Nsụpe mkpụrụokwu 3. Odide mkpụrụokwu 4. Odide ahịrịmfe",
+      "objectives": "Ụmụakwụkwọ ga– enwe ike: 1. iji abịchịị nnukwu bido okwu 2. ịsụpe mkpụrụokwu n’ụzọ dabara adaba 3. idezi okwu ndị ha dejọrọ 4. ide ahịrịokwu mfe dabara adaba",
+      "activities": "Teacher: 1. Ige ntị 2. rụgosi mkpụrụedemede ndị nnukwu na ndị obere 3. sụpe okwu 4. Idetu ahịrịokwu 5. sọ mpi nsụpe\n\nStudents: Nkọwa Ngosipụta Mmejupụta Ọkpụkpọ Odide Asọmmpi",
+      "resources": "Eserese Chaatị Kaadị nsụpe",
+      "assessment": "Ụmụakwụkwọ: 1. ịza ajụjụ 2. idepụta ihe a kpọrọ 3. imejupụta ahịrịokwu"
+    }
+  ]
+}
