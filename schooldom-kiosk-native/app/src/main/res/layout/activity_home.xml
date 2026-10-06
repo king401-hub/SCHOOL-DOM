@@ -3,30 +3,52 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0B1220">
+    android:background="@drawable/bg_home_gradient">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="12dp">
+        android:layout_margin="16dp"
+        android:background="@drawable/pill_bg"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="8dp">
+
+        <View
+            android:id="@+id/statusDot"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="@drawable/dot"
+            android:backgroundTint="@color/success"/>
 
         <TextView
             android:id="@+id/statusText"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textColor="#9CA3AF"
+            android:layout_marginStart="8dp"
+            android:textColor="@color/text_muted"
             android:textSize="12sp"
             android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/settingsButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⚙"
+            android:textColor="@color/text_muted"
+            android:textSize="20sp"
+            android:padding="8dp"
+            android:clickable="true"
+            android:focusable="true"/>
 
         <TextView
             android:id="@+id/reprovisionButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Re-enter key"
-            android:textColor="#9CA3AF"
+            android:textColor="@color/text_muted"
             android:textSize="12sp"
             android:padding="8dp"
             android:clickable="true"
@@ -49,20 +71,74 @@
                 android:id="@+id/schoolNameText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="#FFFFFF"
-                android:textSize="24sp"
+                android:textColor="@color/text_primary"
+                android:textSize="26sp"
                 android:textStyle="bold"
                 android:gravity="center"/>
 
             <TextView
-                android:id="@+id/readyText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="40dp"
-                android:text="Ready to Scan"
-                android:textColor="#FFFFFF"
-                android:textSize="22sp"
+                android:layout_marginTop="4dp"
+                android:text="Powered by SchoolDom"
+                android:textColor="@color/text_muted"
+                android:textSize="11sp"
                 android:textStyle="bold"/>
+
+            <LinearLayout
+                android:id="@+id/readyBlock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center">
+
+                <FrameLayout
+                    android:layout_width="190dp"
+                    android:layout_height="190dp"
+                    android:layout_marginTop="40dp">
+
+                    <View
+                        android:layout_width="190dp"
+                        android:layout_height="190dp"
+                        android:background="@drawable/circle_ring"/>
+
+                    <View
+                        android:layout_width="130dp"
+                        android:layout_height="130dp"
+                        android:layout_gravity="center"
+                        android:background="@drawable/circle_fill"/>
+
+                    <TextView
+                        android:id="@+id/scanIcon"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:text="💳"
+                        android:textSize="48sp"/>
+                </FrameLayout>
+
+                <TextView
+                    android:id="@+id/readyText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp"
+                    android:text="Ready to Scan"
+                    android:textColor="@color/text_primary"
+                    android:textSize="22sp"
+                    android:textStyle="bold"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/pill_bg"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="8dp"
+                    android:text="Tap your card, or scan it on the connected reader"
+                    android:textColor="@color/text_muted"
+                    android:textSize="12sp"
+                    android:textStyle="bold"/>
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/resultBlock"
@@ -72,10 +148,29 @@
                 android:gravity="center"
                 android:visibility="gone">
 
+                <FrameLayout
+                    android:layout_width="110dp"
+                    android:layout_height="110dp">
+
+                    <View
+                        android:id="@+id/resultIconBg"
+                        android:layout_width="110dp"
+                        android:layout_height="110dp"
+                        android:background="@drawable/circle_fill"/>
+
+                    <TextView
+                        android:id="@+id/resultIcon"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:textSize="44sp"/>
+                </FrameLayout>
+
                 <TextView
                     android:id="@+id/resultTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
                     android:textSize="26sp"
                     android:textStyle="bold"/>
 
@@ -84,7 +179,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:textColor="#FFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:visibility="gone"/>
@@ -94,7 +189,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:textColor="#9CA3AF"
+                    android:textColor="@color/text_muted"
                     android:textSize="13sp"
                     android:visibility="gone"/>
 
@@ -113,7 +208,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:background="#15213A"
+                    android:background="@drawable/card_bg"
                     android:padding="16dp"
                     android:layout_marginTop="20dp"
                     android:visibility="gone">
@@ -122,7 +217,7 @@
                         android:id="@+id/feePaidText"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="#4ADE80"
+                        android:textColor="@color/success"
                         android:textSize="14sp"
                         android:textStyle="bold"/>
 
@@ -131,7 +226,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:textColor="#F87171"
+                        android:textColor="@color/danger"
                         android:textSize="14sp"
                         android:textStyle="bold"/>
 
@@ -155,6 +250,8 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
+                            android:background="@drawable/button_outline"
+                            android:textColor="@color/text_primary"
                             android:text="Print"/>
 
                         <Space
@@ -166,6 +263,8 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
+                            android:background="@drawable/button_primary"
+                            android:textColor="@color/text_primary"
                             android:text="Send SMS"/>
                     </LinearLayout>
                 </LinearLayout>

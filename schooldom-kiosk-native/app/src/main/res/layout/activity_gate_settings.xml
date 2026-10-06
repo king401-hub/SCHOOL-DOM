@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg_bottom">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/backButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="←"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:padding="8dp"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="Settings"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp"
+            android:textStyle="bold"/>
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/settingsBusy"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginTop="40dp"/>
+
+    <ScrollView
+        android:id="@+id/settingsScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView style="@style/SettingsSectionLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="OPERATING MODE"/>
+            <RadioGroup
+                android:id="@+id/modeGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:padding="8dp">
+
+                <RadioButton
+                    android:id="@+id/modeAttendanceOnly"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="8dp"
+                    android:textColor="@color/text_primary"
+                    android:text="Attendance Only"/>
+
+                <RadioButton
+                    android:id="@+id/modeFeeTracker"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="8dp"
+                    android:textColor="@color/text_primary"
+                    android:text="Fee Tracker"/>
+            </RadioGroup>
+
+            <TextView style="@style/SettingsSectionLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="ATTENDANCE SCHEDULE" android:layout_marginTop="20dp"/>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/card_bg"
+                android:padding="4dp">
+
+                <include layout="@layout/row_time_setting" android:id="@+id/rowEarlyStart" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+                <include layout="@layout/row_time_setting" android:id="@+id/rowEarlyEnd" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+                <include layout="@layout/row_time_setting" android:id="@+id/rowLateStart" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+                <include layout="@layout/row_time_setting" android:id="@+id/rowLateEnd" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+                <include layout="@layout/row_time_setting" android:id="@+id/rowClockoutStart" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+                <include layout="@layout/row_time_setting" android:id="@+id/rowClockoutEnd" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <TextView style="@style/SettingsSectionLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="DUPLICATE-TAP PROTECTION" android:layout_marginTop="20dp"/>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/card_bg"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textColor="@color/text_primary"
+                    android:text="Ignore repeat taps within (seconds)"/>
+
+                <EditText
+                    android:id="@+id/duplicateSecondsInput"
+                    android:layout_width="70dp"
+                    android:layout_height="wrap_content"
+                    android:inputType="number"
+                    android:gravity="center"
+                    android:textColor="@color/text_primary"
+                    android:background="@drawable/button_outline"/>
+            </LinearLayout>
+
+            <TextView style="@style/SettingsSectionLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="DEVICE" android:layout_marginTop="20dp"/>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/card_bg"
+                android:padding="4dp">
+
+                <include layout="@layout/row_status" android:id="@+id/rowNetworkStatus" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+                <include layout="@layout/row_status" android:id="@+id/rowNfcStatus" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+                <include layout="@layout/row_status" android:id="@+id/rowPrinterStatus" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/saveButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:background="@drawable/button_primary"
+                android:textColor="@color/text_primary"
+                android:text="Save Settings"/>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

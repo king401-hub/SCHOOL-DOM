@@ -54,5 +54,14 @@
             android:name=".KioskHomeActivity"
             android:exported="false"
             android:theme="@style/AppTheme"/>
+        <activity
+            android:name=".GatePinActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"
+            android:windowSoftInputMode="adjustResize"/>
+        <activity
+            android:name=".GateSettingsActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"/>
     </application>
 </manifest>

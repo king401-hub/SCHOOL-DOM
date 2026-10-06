@@ -40,11 +40,17 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val bgExecutor = Executors.newSingleThreadExecutor()
 
+    private lateinit var readyBlock: View
     private lateinit var readyText: TextView
     private lateinit var schoolNameText: TextView
+    private lateinit var statusDot: View
     private lateinit var statusText: TextView
+    private lateinit var settingsButton: TextView
     private lateinit var reprovisionButton: TextView
+    private lateinit var scanIcon: TextView
     private lateinit var resultBlock: LinearLayout
+    private lateinit var resultIconBg: View
+    private lateinit var resultIcon: TextView
     private lateinit var resultTitle: TextView
     private lateinit var resultName: TextView
     private lateinit var resultSubtitle: TextView
@@ -104,11 +110,17 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_home)
 
+        readyBlock = findViewById(R.id.readyBlock)
         readyText = findViewById(R.id.readyText)
         schoolNameText = findViewById(R.id.schoolNameText)
+        statusDot = findViewById(R.id.statusDot)
         statusText = findViewById(R.id.statusText)
+        settingsButton = findViewById(R.id.settingsButton)
         reprovisionButton = findViewById(R.id.reprovisionButton)
+        scanIcon = findViewById(R.id.scanIcon)
         resultBlock = findViewById(R.id.resultBlock)
+        resultIconBg = findViewById(R.id.resultIconBg)
+        resultIcon = findViewById(R.id.resultIcon)
         resultTitle = findViewById(R.id.resultTitle)
         resultName = findViewById(R.id.resultName)
         resultSubtitle = findViewById(R.id.resultSubtitle)
@@ -141,6 +153,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
 
         reprovisionButton.setOnClickListener { confirmReProvision() }
+        settingsButton.setOnClickListener { startActivity(Intent(this, GatePinActivity::class.java)) }
         printButton.setOnClickListener { onPrintTapped() }
         sendSmsButton.setOnClickListener { onSendSmsTapped() }
 
@@ -231,13 +244,19 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         if (busy) return
         ScanHandler.handleScan(
             this, uid, smsBridge,
-            onBusyChanged = { b -> mainHandler.post { busy = b } },
+            onBusyChanged = { b ->
+                mainHandler.post {
+                    busy = b
+                    readyText.text = if (b) "Reading card..." else "Ready to Scan"
+                    scanIcon.text = if (b) "⏳" else "💳"
+                }
+            },
             onResult = { result -> mainHandler.post { showResult(result); refreshPendingCount() } },
         )
     }
 
     private fun showResult(result: ScanResult) {
-        readyText.visibility = View.GONE
+        readyBlock.visibility = View.GONE
         resultBlock.visibility = View.VISIBLE
 
         val data = result.data
@@ -251,15 +270,18 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         val isGood = result.outcome == ScanOutcome.WELCOME || result.outcome == ScanOutcome.GOODBYE
         val isTeacher = isGood && role != null && role != "student"
 
-        val (title, colorRes) = when (result.outcome) {
-            ScanOutcome.WELCOME -> "Welcome!" to 0xFF4ADE80.toInt()
-            ScanOutcome.GOODBYE -> "Goodbye!" to 0xFF60A5FA.toInt()
-            ScanOutcome.INVALID -> "Card Not Recognized" to 0xFFF87171.toInt()
-            ScanOutcome.DUPLICATE -> "Already Recorded" to 0xFFFBBF24.toInt()
-            ScanOutcome.ERROR -> "Something Went Wrong" to 0xFFF87171.toInt()
+        val (title, colorRes, icon) = when (result.outcome) {
+            ScanOutcome.WELCOME -> Triple("Welcome!", 0xFF4ADE80.toInt(), "✓")
+            ScanOutcome.GOODBYE -> Triple("Goodbye!", 0xFF60A5FA.toInt(), "✓")
+            ScanOutcome.INVALID -> Triple("Card Not Recognized", 0xFFF87171.toInt(), "✕")
+            ScanOutcome.DUPLICATE -> Triple("Already Recorded", 0xFFFBBF24.toInt(), "⚠")
+            ScanOutcome.ERROR -> Triple("Something Went Wrong", 0xFFF87171.toInt(), "✕")
         }
         resultTitle.text = title
         resultTitle.setTextColor(colorRes)
+        resultIcon.text = icon
+        resultIcon.setTextColor(colorRes)
+        (resultIconBg.background.mutate() as android.graphics.drawable.GradientDrawable).setColor((colorRes and 0x00FFFFFF) or 0x33000000)
 
         if (name != null) {
             resultName.text = name
@@ -330,7 +352,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         val hasFees = fees != null
         val displayMs = if (hasFees) 15_000L else 4_000L
         val runnable = Runnable {
-            readyText.visibility = View.VISIBLE
+            readyBlock.visibility = View.VISIBLE
             resultBlock.visibility = View.GONE
         }
         resetResultRunnable = runnable
@@ -439,6 +461,9 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
             parts.add(if (sessionExpired) "$pendingCount pending - tap Re-enter key" else "$pendingCount pending")
         }
         statusText.text = parts.joinToString("  ·  ")
+        statusDot.backgroundTintList = android.content.res.ColorStateList.valueOf(
+            getColor(if (online) R.color.success else R.color.danger),
+        )
     }
 
     private fun handleRemoteRevocation() {
