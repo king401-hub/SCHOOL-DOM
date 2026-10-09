@@ -185,6 +185,62 @@ class ActivationCreditBonusTests(TestCase):
 
         self.assertEqual(verified_pool.balance, 110)
 
+    @patch("finance.services.verify_paystack_transaction")
+    def test_a_paystack_successful_status_also_credits_tokens(self, mock_verify):
+        """Flutterwave's transaction-level status is "successful"; Paystack's
+        is "success" (confirmed by this codebase's own webhook event name,
+        charge.success, and credit_sms_wallet_from_purchase's working check).
+        verify_activation_credit_purchase only checked "successful", so every
+        real Paystack purchase through this function was permanently marked
+        FAILED regardless of the real outcome - the school's money landed in
+        Paystack, the tokens never arrived. This is that exact bug."""
+        pool = get_or_create_activation_credit_pool(self.school)
+        tx = ActivationCreditTransaction.objects.create(
+            pool=pool,
+            tx_type=ActivationCreditTransaction.PURCHASE,
+            status=ActivationCreditTransaction.STATUS_PENDING,
+            credits=100,
+            price_per_credit=ACTIVATION_CREDIT_PRICE,
+            amount=ACTIVATION_CREDIT_PRICE * 100,
+            reference="CRPPAYSTACK100",
+            narration="Activation token purchase via Paystack",
+            provider="paystack",
+            created_by=self.admin,
+        )
+        mock_verify.return_value = {"status": "success", "amount": str(ACTIVATION_CREDIT_PRICE * 100)}
+
+        verified_pool = verify_activation_credit_purchase(tx.reference, actor=self.admin)
+        tx.refresh_from_db()
+
+        self.assertEqual(tx.status, ActivationCreditTransaction.STATUS_SUCCESS)
+        self.assertEqual(verified_pool.balance, 110)
+
+    @patch("finance.services.verify_paystack_transaction")
+    def test_a_genuinely_failed_paystack_payment_is_still_marked_failed(self, mock_verify):
+        pool = get_or_create_activation_credit_pool(self.school)
+        initial_balance = pool.balance
+        tx = ActivationCreditTransaction.objects.create(
+            pool=pool,
+            tx_type=ActivationCreditTransaction.PURCHASE,
+            status=ActivationCreditTransaction.STATUS_PENDING,
+            credits=100,
+            price_per_credit=ACTIVATION_CREDIT_PRICE,
+            amount=ACTIVATION_CREDIT_PRICE * 100,
+            reference="CRPPAYSTACKFAIL",
+            narration="Activation token purchase via Paystack",
+            provider="paystack",
+            created_by=self.admin,
+        )
+        mock_verify.return_value = {"status": "failed", "amount": "0"}
+
+        with self.assertRaises(ValueError):
+            verify_activation_credit_purchase(tx.reference, actor=self.admin)
+        tx.refresh_from_db()
+        pool.refresh_from_db()
+
+        self.assertEqual(tx.status, ActivationCreditTransaction.STATUS_FAILED)
+        self.assertEqual(pool.balance, initial_balance)
+
     @override_settings(PAYMENT_PROVIDER="paystack", PAYSTACK_SECRET_KEY="sk_test_fake")
     @patch("finance.services.requests.post")
     def test_paystack_activation_credit_purchase_initializes_instead_of_raising(self, mock_post):
@@ -225,6 +281,57 @@ class ActivationCreditBonusTests(TestCase):
         self.assertEqual(tx.metadata["purchased_credits"], 100)
         self.assertEqual(tx.metadata["bonus_credits"], 10)
         self.assertEqual(tx.metadata["total_credits"], 110)
+
+
+class SchoolGatePaymentVerificationTests(TestCase):
+    """Same bug as verify_activation_credit_purchase/complete_wallet_funding:
+    Flutterwave's transaction-level status is "successful", Paystack's is
+    "success" - checking only "successful" meant a real Paystack-routed
+    SchoolGate device/termly payment here was permanently marked FAILED,
+    money received, nothing activated, regardless of the real outcome."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Gate School", schema_name="gate_school", is_active=True)
+        self.admin = User.objects.create_user(
+            email="admin@gate.test", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+
+    def _payment(self, reference):
+        from core.schoolgate import SchoolGatePayment
+
+        return SchoolGatePayment.objects.create(
+            tenant=self.school, payment_type=SchoolGatePayment.TYPE_DEVICE,
+            amount=Decimal("15000.00"), reference=reference,
+            status=SchoolGatePayment.STATUS_PENDING,
+        )
+
+    @patch("finance.services.verify_paystack_transaction")
+    def test_a_paystack_success_status_marks_the_payment_successful(self, mock_verify):
+        from core.schoolgate import SchoolGatePayment
+        from finance.services import verify_schoolgate_payment
+
+        payment = self._payment("GATEPAYSTACK001")
+        mock_verify.return_value = {"status": "success", "amount": "15000.00"}
+
+        verify_schoolgate_payment(payment.reference, actor=self.admin)
+        payment.refresh_from_db()
+
+        self.assertEqual(payment.status, SchoolGatePayment.STATUS_SUCCESSFUL)
+
+    @patch("finance.services.verify_paystack_transaction")
+    def test_a_genuinely_failed_paystack_payment_stays_failed(self, mock_verify):
+        from core.schoolgate import SchoolGatePayment
+        from finance.services import verify_schoolgate_payment
+
+        payment = self._payment("GATEPAYSTACKFAIL")
+        mock_verify.return_value = {"status": "abandoned", "amount": "0"}
+
+        with self.assertRaises(ValueError):
+            verify_schoolgate_payment(payment.reference, actor=self.admin)
+        payment.refresh_from_db()
+
+        self.assertEqual(payment.status, SchoolGatePayment.STATUS_FAILED)
 
 
 class FinanceSnapshotDoesNotAutoSpendTokensTests(TestCase):
@@ -631,7 +738,9 @@ class FlutterwaveSchoolFeeSettlementTests(TestCase):
             bank_code="044",
         )
 
-    @override_settings(FLUTTERWAVE_SECRET_KEY="flw-secret", FLUTTERWAVE_AUTO_SETTLE_SCHOOL_FEES=True)
+    # PAYMENT_PROVIDER is pinned: it comes from the environment (.env), and
+    # this test exercises the Flutterwave transfer path specifically.
+    @override_settings(PAYMENT_PROVIDER="flutterwave", FLUTTERWAVE_SECRET_KEY="flw-secret", FLUTTERWAVE_AUTO_SETTLE_SCHOOL_FEES=True)
     @patch("finance.services.requests.post")
     @patch("finance.services.verify_flutterwave_transaction")
     def test_verified_student_payment_transfers_to_admin_saved_account(self, mock_verify, mock_post):
@@ -4561,6 +4670,26 @@ class PaymentRaceConditionTests(TestCase):
         # Only the racing call's status flip happened - THIS call must have
         # detected that and skipped crediting the admin wallet a second time.
         self.assertEqual(admin_wallet.balance, Decimal("0.00"))
+
+    @patch("finance.services.verify_paystack_transaction")
+    def test_a_paystack_success_status_still_credits_the_wallet(self, mock_verify):
+        """Flutterwave's transaction-level status is "successful"; Paystack's
+        is "success" - complete_wallet_funding only checked "successful", so
+        a real Paystack-routed payment here was permanently marked FAILED
+        and never credited, regardless of whether Paystack approved it."""
+        wallet = ensure_student_wallet(self.student_user)
+        tx = Transaction.objects.create(
+            wallet=wallet, amount=Decimal("1500.00"), tx_type=Transaction.FUNDING,
+            status=Transaction.STATUS_PENDING, reference="PAYPAYSTACK001",
+            narration="School fee payment via Paystack", created_by=self.student_user,
+            provider="paystack",
+        )
+        mock_verify.return_value = {"status": "success", "amount": "1500.00"}
+
+        complete_wallet_funding(tx.reference, actor=self.student_user)
+
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, Transaction.STATUS_SUCCESS)
 
     def test_process_paystack_webhook_does_not_double_allocate_on_concurrent_calls(self):
         from finance.services import process_paystack_webhook

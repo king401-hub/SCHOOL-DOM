@@ -2516,7 +2516,13 @@ def verify_schoolgate_payment(reference, actor=None, verification: Optional[dict
     verification = verification or verify_payment_transaction(reference)
     status_value = str(verification.get("status") or "").lower()
     amount_major = Decimal(str(verification.get("amount") or 0))
-    if status_value != "successful":
+    # Flutterwave's transaction-level status is "successful"; Paystack's is
+    # "success" - this dispatches to whichever provider actually processed
+    # the payment (verify_payment_transaction), so checking only one left
+    # every Paystack-routed payment here permanently marked FAILED - real
+    # money received, token/payment never credited - regardless of whether
+    # Paystack genuinely approved it.
+    if status_value not in ("successful", "success"):
         payment.status = SchoolGatePayment.STATUS_FAILED
         payment.save(update_fields=["status"])
         raise ValueError("Payment not successful.")
@@ -2949,7 +2955,15 @@ def verify_activation_credit_purchase(reference, actor=None, verification: Optio
     verification = verification or verify_payment_transaction(reference)
     status_value = str(verification.get("status") or "").lower()
     amount_major = Decimal(str(verification.get("amount") or 0))
-    if status_value != "successful":
+    # Flutterwave's transaction-level status is "successful"; Paystack's is
+    # "success" - this dispatches to whichever provider actually processed
+    # the payment (verify_payment_transaction), so checking only one left
+    # every Paystack-routed purchase here permanently marked FAILED - the
+    # school's money received, tokens never credited - regardless of
+    # whether Paystack genuinely approved it. This is the exact bug behind
+    # "I paid, Paystack shows it went through, but the purchase shows
+    # failed and no tokens arrived."
+    if status_value not in ("successful", "success"):
         tx.status = ActivationCreditTransaction.STATUS_FAILED
         tx.metadata = {**tx.metadata, "verification": verification}
         tx.save(update_fields=["status", "metadata"])
@@ -3486,7 +3500,13 @@ def complete_wallet_funding(reference: str, actor=None, verification: Optional[d
     verification = verification or verify_payment_transaction(reference)
     status_value = str(verification.get("status") or "").lower()
     amount_major = Decimal(str(verification.get("amount") or 0))
-    if status_value != "successful":
+    # Flutterwave's transaction-level status is "successful"; Paystack's is
+    # "success" - this dispatches to whichever provider actually processed
+    # the payment (verify_payment_transaction), so checking only one left
+    # every Paystack-routed funding here permanently marked FAILED - money
+    # received, wallet never credited - regardless of whether Paystack
+    # genuinely approved it.
+    if status_value not in ("successful", "success"):
         tx.status = Transaction.STATUS_FAILED
         tx.metadata = {**tx.metadata, "verification": verification}
         tx.save(update_fields=["status", "metadata", "updated_at"])
