@@ -19,6 +19,7 @@ MODULE_TEAM_MANAGEMENT = "team_management"
 MODULE_TEAM_MANAGEMENT_SCOPED = "team_management_scoped"
 MODULE_SLACK_CONTROLS = "slack_controls"
 MODULE_BILLING_PLAN = "billing_plan"
+MODULE_SUPPORT_MAIL = "support_mail"
 
 MODULE_CHOICES = [
     (MODULE_SCHOOL_ONBOARDING, "School onboarding"),
@@ -34,6 +35,7 @@ MODULE_CHOICES = [
     (MODULE_TEAM_MANAGEMENT_SCOPED, "Team management (own region only)"),
     (MODULE_SLACK_CONTROLS, "Slack channel controls"),
     (MODULE_BILLING_PLAN, "Billing & plan"),
+    (MODULE_SUPPORT_MAIL, "Support mail inbox"),
 ]
 
 

@@ -37,6 +37,8 @@ lib64/
 !mobile-app-flutter/lib/**
 !schooldom-scanner-kiosk/lib/
 !schooldom-scanner-kiosk/lib/**
+!schooldom-mail-receiver/lib/
+!schooldom-mail-receiver/lib/**
 parts/
 sdist/
 var/

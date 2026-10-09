@@ -239,6 +239,7 @@ _FLAT_APPS = [
     'ai_chat',
     'ai_secretary',
     'superadmin_dashboard',
+    'mail_inbox',
     'django_countries',
     'anymail',
 ]
@@ -252,6 +253,7 @@ else:
         'django_htmx',
         'tenants',
         'superadmin_dashboard',
+        'mail_inbox',
     ]
 
 # django.contrib.admin's own LogEntry.user FK has no db_constraint=False -
@@ -441,6 +443,25 @@ EMAIL_TIMEOUT = env_int('EMAIL_TIMEOUT', 10)
 ANYMAIL = {
     'RESEND_API_KEY': os.environ.get('RESEND_API_KEY', ''),
 }
+
+# mail_inbox: SchoolDom's own company mailboxes (support@, and more later),
+# pulled in via IMAP by `manage.py poll_mail_accounts` rather than only being
+# reachable through Hostinger's webmail. Credentials stay in env vars, never
+# the DB (same convention as every other provider credential here). The
+# first account reuses the outbound SMTP mailbox above - IMAP and SMTP log
+# into the same Hostinger mailbox with the same password. To add another
+# mailbox later, append another dict with its own address/password env var.
+MAIL_INBOX_IMAP_HOST = os.environ.get('MAIL_INBOX_IMAP_HOST', 'imap.hostinger.com')
+MAIL_INBOX_IMAP_PORT = env_int('MAIL_INBOX_IMAP_PORT', 993)
+MAIL_INBOX_ACCOUNTS = [
+    {
+        'label': 'support',
+        'address': EMAIL_HOST_USER,
+        'password': EMAIL_HOST_PASSWORD,
+        'imap_host': MAIL_INBOX_IMAP_HOST,
+        'imap_port': MAIL_INBOX_IMAP_PORT,
+    },
+]
 OTP_EMAIL_TOKEN_VALIDITY = int(os.environ.get('OTP_EMAIL_TOKEN_VALIDITY', '600'))
 OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1'))
 

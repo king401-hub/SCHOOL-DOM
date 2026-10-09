@@ -51,6 +51,7 @@ urlpatterns = [
     path('api/exams/', include('exams.urls')),
     path('api/ai/', include('ai_chat.urls')),
     path('api/secretary/', include('ai_secretary.urls')),
+    path('api/mail-inbox/', include('mail_inbox.urls')),
     path('login/', csrf_exempt(LoginView.as_view()), name='login'),
     path('api/login/', LoginView.as_view(), name='api_login'),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
