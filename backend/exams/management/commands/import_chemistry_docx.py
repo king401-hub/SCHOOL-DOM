@@ -15,6 +15,7 @@ from users.models import User
 
 
 WORD_NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+OMATH_NS = {"m": "http://schemas.openxmlformats.org/officeDocument/2006/math"}
 QUESTION_RE = re.compile(r"^(\d+)\.\s*(.+)")
 OPTION_RE = re.compile(r"^/?([A-D])\.\s*(.+)")
 INLINE_OPTION_RE = re.compile(r"\s/?([A-D])\.\s*")
@@ -350,29 +351,144 @@ def extract_docx_paragraphs(docx_path):
     root = ElementTree.fromstring(xml_bytes)
     paragraphs = []
     w_ns = WORD_NS["w"]
+    m_ns = OMATH_NS["m"]
+    w_r_tag = f"{{{w_ns}}}r"
+    m_omath_tag = f"{{{m_ns}}}oMath"
+    m_omathpara_tag = f"{{{m_ns}}}oMathPara"
     for paragraph in root.findall(".//w:p", WORD_NS):
         parts = []
-        for run in paragraph.findall("w:r", WORD_NS):
-            run_properties = run.find("w:rPr", WORD_NS)
-            underline = run_properties.find("w:u", WORD_NS) if run_properties is not None else None
-            underline_value = underline.get(f"{{{w_ns}}}val") if underline is not None else None
-            is_underlined = underline is not None and underline_value != "none"
-            vertical_align = run_properties.find("w:vertAlign", WORD_NS) if run_properties is not None else None
-            vertical_value = vertical_align.get(f"{{{w_ns}}}val") if vertical_align is not None else None
+        # Walk every direct child in document order, not just w:r - a formula
+        # inserted via Word's Equation Editor (m:oMath/m:oMathPara) is a
+        # sibling of w:r at this level, not nested inside one, and skipping it
+        # used to silently drop the whole equation from the imported text.
+        for child in paragraph:
+            if child.tag == w_r_tag:
+                run_properties = child.find("w:rPr", WORD_NS)
+                underline = run_properties.find("w:u", WORD_NS) if run_properties is not None else None
+                underline_value = underline.get(f"{{{w_ns}}}val") if underline is not None else None
+                is_underlined = underline is not None and underline_value != "none"
+                vertical_align = run_properties.find("w:vertAlign", WORD_NS) if run_properties is not None else None
+                vertical_value = vertical_align.get(f"{{{w_ns}}}val") if vertical_align is not None else None
 
-            run_text = "".join(node.text or "" for node in run.findall("w:t", WORD_NS))
-            if run_text:
-                if vertical_value == "subscript":
-                    run_text = f"<sub>{run_text}</sub>"
-                elif vertical_value == "superscript":
-                    run_text = f"<sup>{run_text}</sup>"
-                if is_underlined:
-                    run_text = f"<u>{run_text}</u>"
-                parts.append(run_text)
+                run_text = "".join(node.text or "" for node in child.findall("w:t", WORD_NS))
+                if run_text:
+                    if vertical_value == "subscript":
+                        run_text = f"<sub>{run_text}</sub>"
+                    elif vertical_value == "superscript":
+                        run_text = f"<sup>{run_text}</sup>"
+                    if is_underlined:
+                        run_text = f"<u>{run_text}</u>"
+                    parts.append(run_text)
+            elif child.tag in (m_omath_tag, m_omathpara_tag):
+                parts.append(render_omath(child))
         text = "".join(parts)
         if text.strip():
             paragraphs.append(text)
     return paragraphs
+
+
+def render_omath(element):
+    """Render a Word Equation Editor formula (<m:oMath>/<m:oMathPara>, OOXML's
+    Office Math Markup Language) to plain text, using the same conventions
+    RichQuizText.jsx already renders: (num)/(den) for fractions, <sup>/<sub>
+    tags, √(x) for roots - so an equation imported this way reads identically
+    to one typed directly. Never raises: a formula this doesn't recognize
+    falls back to its raw m:t text nodes (symbols/characters preserved, just
+    unstructured) rather than losing the content entirely."""
+    try:
+        return _omath_children_text(element).strip()
+    except Exception:
+        return "".join(
+            node.text or "" for node in element.iter(f"{{{OMATH_NS['m']}}}t")
+        ).strip()
+
+
+def _omath_children_text(element):
+    if element is None:
+        return ""
+    return "".join(_omath_node_text(child) for child in element)
+
+
+def _omath_val(element, tag):
+    """m:<tag> property elements carry their value as an m:val attribute,
+    e.g. <m:degHide m:val="1"/>, <m:chr m:val="∑"/>."""
+    node = element.find(f"{{{OMATH_NS['m']}}}{tag}") if element is not None else None
+    if node is None:
+        return None
+    return node.get(f"{{{OMATH_NS['m']}}}val")
+
+
+def _omath_node_text(element):
+    m = OMATH_NS["m"]
+    tag = element.tag
+
+    if tag == f"{{{m}}}t":
+        return element.text or ""
+
+    if tag == f"{{{m}}}r":
+        return "".join(_omath_node_text(child) for child in element if child.tag == f"{{{m}}}t")
+
+    if tag == f"{{{m}}}f":  # fraction: m:num / m:den
+        num = _omath_children_text(element.find(f"{{{m}}}num"))
+        den = _omath_children_text(element.find(f"{{{m}}}den"))
+        return f"({num})/({den})"
+
+    if tag == f"{{{m}}}rad":  # radical: optional m:deg (index) + m:e (radicand)
+        base = _omath_children_text(element.find(f"{{{m}}}e"))
+        deg = _omath_children_text(element.find(f"{{{m}}}deg"))
+        deg_hidden = _omath_val(element.find(f"{{{m}}}radPr"), "degHide")
+        if deg.strip() and deg_hidden in ("0", "false", "off"):
+            return f"{deg}√({base})"
+        return f"√({base})"
+
+    if tag == f"{{{m}}}sSup":  # superscript: m:e base, m:sup exponent
+        base = _omath_children_text(element.find(f"{{{m}}}e"))
+        sup = _omath_children_text(element.find(f"{{{m}}}sup"))
+        return f"{base}<sup>{sup}</sup>"
+
+    if tag == f"{{{m}}}sSub":  # subscript: m:e base, m:sub index
+        base = _omath_children_text(element.find(f"{{{m}}}e"))
+        sub = _omath_children_text(element.find(f"{{{m}}}sub"))
+        return f"{base}<sub>{sub}</sub>"
+
+    if tag == f"{{{m}}}sSubSup":
+        base = _omath_children_text(element.find(f"{{{m}}}e"))
+        sub = _omath_children_text(element.find(f"{{{m}}}sub"))
+        sup = _omath_children_text(element.find(f"{{{m}}}sup"))
+        return f"{base}<sub>{sub}</sub><sup>{sup}</sup>"
+
+    if tag in (f"{{{m}}}limLow", f"{{{m}}}limUpp"):
+        base = _omath_children_text(element.find(f"{{{m}}}e"))
+        lim = _omath_children_text(element.find(f"{{{m}}}lim"))
+        return f"{base}<sub>{lim}</sub>" if tag.endswith("limLow") else f"{base}<sup>{lim}</sup>"
+
+    if tag == f"{{{m}}}d":  # delimiter: m:e children wrapped in (grouped,by,commas)
+        open_char = _omath_val(element.find(f"{{{m}}}dPr"), "begChr") or "("
+        close_char = _omath_val(element.find(f"{{{m}}}dPr"), "endChr") or ")"
+        inner = ",".join(_omath_children_text(e) for e in element.findall(f"{{{m}}}e"))
+        return f"{open_char}{inner}{close_char}"
+
+    if tag == f"{{{m}}}nary":  # n-ary operator: sum/integral/product with sub/sup limits
+        op_char = _omath_val(element.find(f"{{{m}}}naryPr"), "chr") or "∑"
+        sub = _omath_children_text(element.find(f"{{{m}}}sub"))
+        sup = _omath_children_text(element.find(f"{{{m}}}sup"))
+        body = _omath_children_text(element.find(f"{{{m}}}e"))
+        result = op_char
+        if sub:
+            result += f"<sub>{sub}</sub>"
+        if sup:
+            result += f"<sup>{sup}</sup>"
+        return result + body
+
+    if tag == f"{{{m}}}func":  # named function: sin/cos/log applied to m:e
+        name = _omath_children_text(element.find(f"{{{m}}}fName"))
+        arg = _omath_children_text(element.find(f"{{{m}}}e"))
+        return f"{name}({arg})"
+
+    # Grouping/decoration wrappers (m:e, m:num, m:den, m:sup, m:sub, m:deg,
+    # m:bar, m:acc, m:groupChr, m:box, m:oMath, m:oMathPara, ...) and anything
+    # else unrecognized: just concatenate whatever text its children produce.
+    return _omath_children_text(element)
 
 
 def normalize_text(text):
