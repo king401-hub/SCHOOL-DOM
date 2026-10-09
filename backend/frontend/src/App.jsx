@@ -9400,7 +9400,6 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onViewBatch={handleViewResultBatch}
         onEditBatchScore={handleEditResultBatchScore}
         onSendSms={handleSendReportSms}
-        onStudentSearch={handleStudentSearch}
         onLoadBroadsheet={handleLoadBroadsheet}
         onLoadBroadsheetParents={handleLoadBroadsheetParents}
         onSendBroadsheet={handleSendBroadsheet}

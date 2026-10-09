@@ -5103,7 +5103,7 @@ function computeReportPrintLayout(table, theme) {
 
 function AdminResultsScreen({
   data = {}, loading, error, onRetry, onSearch, onReviewBatch, onDeleteBatch, onViewBatch, onEditBatchScore, onSendSms,
-  onStudentSearch, onLoadBroadsheet, onLoadBroadsheetParents, onSendBroadsheet, session,
+  onLoadBroadsheet, onLoadBroadsheetParents, onSendBroadsheet, session,
 }) {
   const summary = data?.summary || {};
   const documentTheme = resolveDocumentTheme(data?.school, session?.school);
@@ -5127,7 +5127,9 @@ function AdminResultsScreen({
   const [smsFeedback, setSmsFeedback] = useState("");
   const [smsError, setSmsError] = useState("");
 
-  const [searchResults, setSearchResults] = useState([]);
+  const [reportClassId, setReportClassId] = useState("");
+  const [classRoster, setClassRoster] = useState([]);
+  const [classRosterLoading, setClassRosterLoading] = useState(false);
 
   const [viewMode, setViewMode] = useState("card");
 
@@ -5213,25 +5215,27 @@ function AdminResultsScreen({
   const [bsSendError, setBsSendError] = useState("");
 
   useEffect(() => {
-    const query = studentId.trim();
-    if (query.length < 2 || !onStudentSearch) {
-      setSearchResults([]);
+    if (!reportClassId) {
+      setClassRoster([]);
       return undefined;
     }
     let cancelled = false;
-    const timer = window.setTimeout(async () => {
+    setClassRosterLoading(true);
+    (async () => {
       try {
-        const result = await onStudentSearch(query);
-        if (!cancelled) setSearchResults(result?.results || []);
+        const result = await requestJson(
+          session, "GET",
+          `/api/app/attendance/class-students/?context=results&class_id=${encodeURIComponent(reportClassId)}`
+        );
+        if (!cancelled) setClassRoster(result?.students || []);
       } catch {
-        if (!cancelled) setSearchResults([]);
+        if (!cancelled) setClassRoster([]);
+      } finally {
+        if (!cancelled) setClassRosterLoading(false);
       }
-    }, 300);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [studentId, onStudentSearch]);
+    })();
+    return () => { cancelled = true; };
+  }, [session, reportClassId]);
 
   const runSearch = async (idOverride) => {
     if (!onSearch) return;
@@ -5264,10 +5268,19 @@ function AdminResultsScreen({
     runSearch();
   };
 
-  const handlePickSearchResult = (candidate) => {
-    setStudentId(candidate.student_id);
-    setSearchResults([]);
-    runSearch(candidate.student_id);
+  const handleSelectReportClass = (event) => {
+    const value = event.target.value;
+    setReportClassId(value);
+    setStudentId("");
+    setReport(null);
+    setSearchError("");
+  };
+
+  const handleSelectReportStudent = (event) => {
+    const value = event.target.value;
+    setStudentId(value);
+    setReport(null);
+    if (value) runSearch(value);
   };
 
   const handleLoadBroadsheet = async () => {
@@ -5504,26 +5517,25 @@ function AdminResultsScreen({
       <article className="app-panel">
         <form className="panel-form" onSubmit={handleSearch}>
           <div className="panel-form-grid">
-            <label className="panel-field" style={{ position: "relative" }}>
-              Student Name or ID
-              <input
-                value={studentId}
-                onChange={(event) => setStudentId(event.target.value)}
-                placeholder="e.g. STU2026-001 or Jane Doe"
-                autoComplete="off"
-              />
-              {searchResults.length ? (
-                <ul className="search-typeahead">
-                  {searchResults.map((candidate) => (
-                    <li key={candidate.id}>
-                      <button type="button" onClick={() => handlePickSearchResult(candidate)}>
-                        <strong>{candidate.name}</strong>
-                        <small>{candidate.student_id} · {candidate.class_name}</small>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
+            <label className="panel-field">
+              Class
+              <select value={reportClassId} onChange={handleSelectReportClass}>
+                <option value="">Select a class</option>
+                {classOptions.map((item) => (
+                  <option key={item.id} value={item.id}>{item.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="panel-field">
+              Student
+              <select value={studentId} onChange={handleSelectReportStudent} disabled={!reportClassId || classRosterLoading}>
+                <option value="">
+                  {!reportClassId ? "Select a class first" : classRosterLoading ? "Loading students..." : "Select a student"}
+                </option>
+                {classRoster.map((candidate) => (
+                  <option key={candidate.id} value={candidate.student_id}>{candidate.name} ({candidate.student_id})</option>
+                ))}
+              </select>
             </label>
             {termOptions.length ? (
               <label className="panel-field">
@@ -5540,7 +5552,7 @@ function AdminResultsScreen({
           {searchError ? <p className="form-feedback error">{searchError}</p> : null}
           {feedback ? <p className="form-feedback success">{feedback}</p> : null}
           <div className="panel-form-actions">
-            <button type="submit" disabled={busy}>
+            <button type="submit" disabled={busy || !studentId}>
               {busy ? <><Spinner /> Searching...</> : "Generate report"}
             </button>
           </div>
