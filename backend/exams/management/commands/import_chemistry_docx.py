@@ -1,6 +1,7 @@
 import re
 import zipfile
 from datetime import timedelta
+from pathlib import Path
 from xml.etree import ElementTree
 
 from django.core.management.base import BaseCommand, CommandError
@@ -26,10 +27,14 @@ INLINE_QUESTION_PREFIX = "__INLINE_QUESTION__"
 
 
 class Command(BaseCommand):
-    help = "Import Chemistry MCQ questions and answers from the Schooldom senior class DOCX."
+    help = (
+        "Import MCQ questions and answers from a .docx, .pdf, or .txt file "
+        "(defaults match the original Schooldom senior-Chemistry source; "
+        "override --subject-code/--bank-name for any other subject)."
+    )
 
     def add_arguments(self, parser):
-        parser.add_argument("docx_path")
+        parser.add_argument("docx_path", help="Path to a .docx, .pdf, or .txt question file.")
         parser.add_argument("--tenant-id", type=int)
         parser.add_argument("--tenant-slug")
         parser.add_argument("--subject-code", default="CHEM")
@@ -47,7 +52,7 @@ class Command(BaseCommand):
         questions, warnings = parse_docx_questions(options["docx_path"])
 
         if not questions:
-            raise CommandError("No questions were found in the DOCX.")
+            raise CommandError("No questions were found in the source file.")
 
         tenant = self._resolve_tenant(options)
         subject = self._resolve_subject(tenant, options["subject_code"])
@@ -57,7 +62,7 @@ class Command(BaseCommand):
         validation_warnings = validate_questions(questions)
         warnings.extend(validation_warnings)
 
-        self.stdout.write(f"Parsed {len(questions)} questions from DOCX.")
+        self.stdout.write(f"Parsed {len(questions)} questions from {Path(options['docx_path']).suffix.lstrip('.').upper()}.")
         self.stdout.write(f"Tenant: {tenant.name} ({tenant.id})")
         self.stdout.write(f"Subject: {subject.name} ({subject.code})")
         self.stdout.write(f"Teacher: {teacher.get_full_name() or teacher.email}")
@@ -183,8 +188,8 @@ class Command(BaseCommand):
         return exam
 
 
-def parse_docx_questions(docx_path):
-    paragraphs = extract_docx_paragraphs(docx_path)
+def parse_docx_questions(source_path):
+    paragraphs = extract_paragraphs(source_path)
     normalized_lines = []
     warnings = []
 
@@ -339,6 +344,74 @@ def find_ordered_option_markers(text):
         selected.append(marker)
         search_start = marker.end()
     return selected
+
+
+def extract_paragraphs(source_path):
+    """Dispatches to the right extractor by file extension - .docx, .pdf, and
+    .txt/.text are all accepted. Each returns the same shape (a flat list of
+    text-line "paragraphs"), which is all parse_docx_questions actually needs;
+    it has never cared which file format they came from."""
+    suffix = Path(source_path).suffix.lower()
+    if suffix == ".docx":
+        return extract_docx_paragraphs(source_path)
+    if suffix == ".pdf":
+        return extract_pdf_paragraphs(source_path)
+    if suffix in (".txt", ".text"):
+        return extract_txt_paragraphs(source_path)
+    raise CommandError(
+        f"Unsupported file type '{suffix or '(none)'}'. Supported: .docx, .pdf, .txt"
+    )
+
+
+def extract_pdf_paragraphs(pdf_path):
+    """Plain-text extraction via pypdf, one "paragraph" per non-blank line.
+    Works reliably for math symbols that were typed/pasted as real Unicode
+    characters in the original document (pypdf reads the PDF's own embedded
+    text + Unicode mapping, same as selecting and copying the text in a PDF
+    viewer) - but a PDF has no equivalent of Word's OMML equation markup, so
+    a formula built with Word's Equation Editor and then exported to PDF may
+    extract as nothing, or as disconnected glyph fragments, depending on how
+    the exporter rendered it. That is a structural PDF limitation, not
+    something this function can detect or fix; spot-check equation-heavy
+    PDFs after import."""
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:
+        raise CommandError(f"pypdf is required to import PDF files: {exc}")
+
+    try:
+        reader = PdfReader(pdf_path)
+    except Exception as exc:
+        raise CommandError(f"Could not read PDF file: {exc}")
+
+    paragraphs = []
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        for line in text.splitlines():
+            line = line.strip()
+            if line:
+                paragraphs.append(line)
+    return paragraphs
+
+
+def extract_txt_paragraphs(txt_path):
+    """One "paragraph" per non-blank line. utf-8-sig strips a Windows
+    Notepad/Excel-style BOM if present; a genuinely non-UTF-8 file (e.g.
+    saved as Windows-1252 by an old editor) raises with a clear, actionable
+    message instead of silently guessing an encoding and risking exactly the
+    kind of mojibake RichQuizText.jsx's display fix had to undo."""
+    try:
+        with open(txt_path, "r", encoding="utf-8-sig") as handle:
+            content = handle.read()
+    except UnicodeDecodeError as exc:
+        raise CommandError(
+            f"Could not read '{txt_path}' as UTF-8 text ({exc}). "
+            "Re-save the file with UTF-8 encoding and try again."
+        )
+    except OSError as exc:
+        raise CommandError(f"Could not read text file: {exc}")
+
+    return [line.strip() for line in content.splitlines() if line.strip()]
 
 
 def extract_docx_paragraphs(docx_path):
