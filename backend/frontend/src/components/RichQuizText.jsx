@@ -3,42 +3,42 @@ import React from "react";
 const TOKEN_RE = /(<\/?(?:strong|b|em|i|u|sub|sup|br)\s*\/?>)/gi;
 
 const MATH_REPLACEMENTS = [
-  [/\\cup\b/g, " union "],
-  [/\\cap\b/g, " intersection "],
-  [/\\emptyset\b/g, "empty set"],
-  [/\\times\b/g, " x "],
-  [/\\div\b/g, " / "],
-  [/\\cdot\b/g, " . "],
-  [/\\pm\b/g, "+/-"],
-  [/\\approx\b/g, "~"],
-  [/\\propto\b/g, "proportional to"],
-  [/\\rightarrow\b/g, " -> "],
-  [/\\to\b/g, " -> "],
-  [/\\leq\b/g, "<="],
-  [/\\geq\b/g, ">="],
-  [/\\neq\b/g, "!="],
-  [/\\infty\b/g, "infinity"],
-  [/\\in\b/g, " in "],
-  [/\\notin\b/g, " not in "],
-  [/\\subseteq\b/g, " subset of or equal to "],
-  [/\\subset\b/g, " subset of "],
-  [/\\supseteq\b/g, " superset of or equal to "],
-  [/\\supset\b/g, " superset of "],
-  [/\\degree\b/g, " degrees"],
-  [/\\circ\b/g, " degrees"],
-  [/\\Omega\b/g, "Ohm"],
-  [/\\omega\b/g, "omega"],
-  [/\\mu\b/g, "micro"],
-  [/\\alpha\b/g, "alpha"],
-  [/\\beta\b/g, "beta"],
-  [/\\gamma\b/g, "gamma"],
-  [/\\delta\b/g, "delta"],
-  [/\\Delta\b/g, "Delta"],
-  [/\\theta\b/g, "theta"],
-  [/\\lambda\b/g, "lambda"],
-  [/\\rho\b/g, "rho"],
-  [/\\pi\b/g, "pi"],
-  [/\\sigma\b/g, "sigma"],
+  [/\\cup\b/g, "∪"],
+  [/\\cap\b/g, "∩"],
+  [/\\emptyset\b/g, "∅"],
+  [/\\times\b/g, "×"],
+  [/\\div\b/g, "÷"],
+  [/\\cdot\b/g, "·"],
+  [/\\pm\b/g, "±"],
+  [/\\approx\b/g, "≈"],
+  [/\\propto\b/g, "∝"],
+  [/\\rightarrow\b/g, "→"],
+  [/\\to\b/g, "→"],
+  [/\\leq\b/g, "≤"],
+  [/\\geq\b/g, "≥"],
+  [/\\neq\b/g, "≠"],
+  [/\\infty\b/g, "∞"],
+  [/\\in\b/g, "∈"],
+  [/\\notin\b/g, "∉"],
+  [/\\subseteq\b/g, "⊆"],
+  [/\\subset\b/g, "⊂"],
+  [/\\supseteq\b/g, "⊇"],
+  [/\\supset\b/g, "⊃"],
+  [/\\degree\b/g, "°"],
+  [/\\circ\b/g, "°"],
+  [/\\Omega\b/g, "Ω"],
+  [/\\omega\b/g, "ω"],
+  [/\\mu\b/g, "μ"],
+  [/\\alpha\b/g, "α"],
+  [/\\beta\b/g, "β"],
+  [/\\gamma\b/g, "γ"],
+  [/\\delta\b/g, "δ"],
+  [/\\Delta\b/g, "Δ"],
+  [/\\theta\b/g, "θ"],
+  [/\\lambda\b/g, "λ"],
+  [/\\rho\b/g, "ρ"],
+  [/\\pi\b/g, "π"],
+  [/\\sigma\b/g, "σ"],
   [/\\qquad\b/g, " "],
   [/\\quad\b/g, " "],
   [/\\%/g, "%"],
@@ -54,20 +54,10 @@ function normalizeMathText(input) {
     .replace(/â€˜|â€™/g, "'")
     .replace(/â€œ|â€�/g, '"')
     .replace(/â€¦/g, "...")
-    .replace(/Â°/g, " degrees")
-    .replace(/Â±/g, "+/-")
-    .replace(/Ã—/g, " x ")
-    .replace(/Ã·/g, " / ")
-    .replace(/[×]/g, " x ")
-    .replace(/[÷]/g, " / ")
-    .replace(/[≤]/g, "<=")
-    .replace(/[≥]/g, ">=")
-    .replace(/[≠]/g, "!=")
-    .replace(/[≈]/g, "~")
-    .replace(/[→]/g, " -> ")
-    .replace(/[√]/g, "sqrt")
-    .replace(/[°]/g, " degrees")
-    .replace(/[₦]/g, "N")
+    .replace(/Â°/g, "°")
+    .replace(/Â±/g, "±")
+    .replace(/Ã—/g, "×")
+    .replace(/Ã·/g, "÷")
     .replace(/\${2}([^$]+)\${2}/g, "$1")
     .replace(/\$([^$\n]+)\$/g, "$1")
     .replace(/\\\((.*?)\\\)/g, "$1")
@@ -75,7 +65,7 @@ function normalizeMathText(input) {
     .replace(/\\left\b/g, "")
     .replace(/\\right\b/g, "")
     .replace(/\\(?:dfrac|tfrac|frac)\{([^{}]+)\}\{([^{}]+)\}/g, "($1)/($2)")
-    .replace(/\\sqrt\{([^{}]+)\}/g, "sqrt($1)")
+    .replace(/\\sqrt\{([^{}]+)\}/g, "√($1)")
     .replace(/\\(?:text|mathrm|mathbf|textbf|operatorname|ce)\{([^{}]+)\}/g, "$1")
     .replace(/\\\{/g, "{")
     .replace(/\\\}/g, "}")
