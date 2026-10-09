@@ -80,6 +80,7 @@ from finance.services import (
     compute_finance_summary,
     eligible_students_for_activation_credits,
     fee_totals_by_student,
+    find_duplicate_bill,
     ensure_monthly_credit_reminder,
     outstanding_bill_origin,
     generate_reference,
@@ -1404,18 +1405,7 @@ def admin_bills(request):
             term = Term.objects.filter(tenant=legacy_tenant, is_active=True).first()
 
         if not request.data.get("force"):
-            duplicate = (
-                Bill.objects.filter(
-                    tenant=user.tenant,
-                    title__iexact=title,
-                    academic_year=academic_year,
-                    term=term,
-                    classes__in=classes,
-                )
-                .exclude(status=Bill.STATUS_CANCELLED)
-                .distinct()
-                .first()
-            )
+            duplicate = find_duplicate_bill(user.tenant, title, academic_year, term, classes)
             if duplicate:
                 return Response(
                     {

@@ -4324,6 +4324,23 @@ def outstanding_bill_origin(current_class_id, bill_classes):
     return ", ".join(label for _class_id, label in bill_classes)
 
 
+def find_duplicate_bill(tenant, title, academic_year, term, classes):
+    """The first existing non-cancelled Bill with the same title/term/year
+    targeting any of `classes`, or None. Shared by admin_bills' create-time
+    guard and the AI Secretary's create_bill tool, so neither path can
+    reintroduce the duplicate-bill-creation bug those guards exist to
+    prevent (see the create_bill tool's own docstring for what that bug
+    actually did to students' invoices)."""
+    return (
+        Bill.objects.filter(
+            tenant=tenant, title__iexact=title, academic_year=academic_year, term=term, classes__in=classes,
+        )
+        .exclude(status=Bill.STATUS_CANCELLED)
+        .distinct()
+        .first()
+    )
+
+
 def sync_bill_invoices(bill, actor=None):
     """Fan out a Bill to one SchoolFee invoice per student across bill.classes,
     mirroring sync_tenant_class_fees's bulk create/update-only-if-unpaid

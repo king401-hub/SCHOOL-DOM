@@ -51,6 +51,10 @@ def secretary_chat(request):
     if not message:
         return JsonResponse({"detail": "message is required."}, status=400)
 
+    from ai_chat.services.openrouter_client import clean_data_url_images
+
+    images, image_mime_types = clean_data_url_images(request.data.get("images"))
+
     raw_history = request.data.get("history")
     if not isinstance(raw_history, list):
         raw_history = []
@@ -71,6 +75,8 @@ def secretary_chat(request):
         history=history,
         tenant=tenant,
         requesting_user=user,
+        images=images,
+        image_mime_types=image_mime_types,
     )
 
     if result.get("error") == "AIUsageExhausted":

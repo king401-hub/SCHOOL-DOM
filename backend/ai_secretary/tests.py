@@ -1,4 +1,5 @@
 import time
+from decimal import Decimal
 
 from django.test import TestCase
 from unittest.mock import MagicMock, patch
@@ -69,6 +70,44 @@ class SecretarySendSmsToolTests(TestCase):
 
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["error_code"], "INSUFFICIENT_CREDITS")
+
+    @patch("finance.services._dispatch_wallet_sms")
+    def test_send_sms_adds_the_school_name_when_missing(self, mock_send):
+        """The system prompt already tells the model to always include the
+        school's name, but relying on an LLM to remember that under a
+        160-char budget was unreliable in practice - this is the
+        deterministic backstop."""
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        get_or_create_sms_wallet(self.school)
+
+        self.tools.send_sms("08010000004", "Reminder: PTA meeting tomorrow.")
+
+        sent_text = mock_send.call_args.args[1]
+        self.assertIn("Secretary School", sent_text)
+        self.assertIn("Reminder: PTA meeting tomorrow.", sent_text)
+
+    @patch("finance.services._dispatch_wallet_sms")
+    def test_send_sms_does_not_duplicate_the_school_name(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        get_or_create_sms_wallet(self.school)
+
+        self.tools.send_sms("08010000005", "Secretary School: fees are due Friday.")
+
+        sent_text = mock_send.call_args.args[1]
+        self.assertEqual(sent_text.count("Secretary School"), 1)
+
+    @patch("finance.services._dispatch_wallet_sms")
+    def test_send_sms_skips_the_name_if_it_would_exceed_the_sms_limit(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        get_or_create_sms_wallet(self.school)
+        near_limit_message = "x" * 155
+
+        result = self.tools.send_sms("08010000006", near_limit_message)
+
+        self.assertEqual(result["status"], "success")
+        sent_text = mock_send.call_args.args[1]
+        self.assertEqual(sent_text, near_limit_message)
+        self.assertLessEqual(len(sent_text), 160)
 
 
 class PhaseOneAdminAgentTests(TestCase):
@@ -236,6 +275,47 @@ class PhaseOneAdminAgentTests(TestCase):
             result = run_agent("What's the best way to plan next term's curriculum?", [], self.school, self.admin)
 
         self.assertIn("out of credits", result["reply"])
+
+    @override_settings(AI_PROVIDER="openrouter")
+    def test_an_attached_image_switches_to_the_vision_model_and_skips_tools(self):
+        """The default model is text-only and would otherwise ignore an
+        attached image's content block entirely - this must switch to
+        OPENROUTER_VISION_MODEL and reshape the turn's content into
+        OpenRouter's multimodal block format. Tool-calling is skipped on a
+        vision call since TOOL_SCHEMAS was only written/tested against the
+        text-only model."""
+        from ai_secretary.agent import run_agent
+
+        with patch("ai_secretary.agent.OpenRouterClient") as mock_client_cls:
+            mock_client_cls.return_value.chat.return_value = {"content": "That looks like a Mathematics worksheet.", "tool_calls": []}
+            result = run_agent(
+                "What's in this picture?", [], self.school, self.admin,
+                images=["ZmFrZWJhc2U2NA=="], image_mime_types=["image/png"],
+            )
+
+        mock_client_cls.assert_called_once_with(model="qwen/qwen2.5-vl-72b-instruct")
+        call_kwargs = mock_client_cls.return_value.chat.call_args.kwargs
+        self.assertNotIn("tools", call_kwargs)
+        sent_messages = mock_client_cls.return_value.chat.call_args.args[0]
+        user_content = sent_messages[-1]["content"]
+        self.assertIsInstance(user_content, list)
+        self.assertEqual(user_content[0], {"type": "text", "text": "What's in this picture?"})
+        self.assertEqual(user_content[1]["image_url"]["url"], "data:image/png;base64,ZmFrZWJhc2U2NA==")
+        self.assertEqual(result["reply"], "That looks like a Mathematics worksheet.")
+
+    @override_settings(AI_PROVIDER="openrouter")
+    def test_a_turn_with_no_image_keeps_using_the_default_model_and_tools(self):
+        from ai_secretary.agent import run_agent
+
+        with patch("ai_secretary.agent.OpenRouterClient") as mock_client_cls:
+            mock_client_cls.return_value.chat.return_value = {"content": "Sure, I can help with that.", "tool_calls": []}
+            run_agent("What's the best way to plan next term's curriculum?", [], self.school, self.admin)
+
+        mock_client_cls.assert_called_once_with(model=None)
+        call_kwargs = mock_client_cls.return_value.chat.call_args.kwargs
+        self.assertIn("tools", call_kwargs)
+        sent_messages = mock_client_cls.return_value.chat.call_args.args[0]
+        self.assertIsInstance(sent_messages[-1]["content"], str)
 
     def test_navigation_supports_every_admin_section(self):
         routes = {
@@ -613,6 +693,69 @@ class PhaseCRealToolsTests(TestCase):
         result = self.tools.dispatch("create_class", {"name": ""})
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["error_code"], "BAD_ARGS")
+
+    def test_create_bill_publishes_and_generates_invoices(self):
+        from finance.models import Bill, SchoolFee
+
+        self._make_student("payer@ssa.test")
+        self._make_student("payer2@ssa.test")
+
+        result = self.tools.dispatch("create_bill", {
+            "title": "Term Fees", "class_name": "SS2A", "description": "Tuition Fee", "amount": 50000,
+        })
+
+        self.assertEqual(result["status"], "success", result)
+        self.assertEqual(result["invoices_created"], 2)
+        bill = Bill.objects.get(id=result["bill_id"])
+        self.assertEqual(bill.status, Bill.STATUS_PUBLISHED)
+        self.assertEqual(bill.academic_year_id, self.academic_year.id)
+        self.assertEqual(bill.term_id, self.term.id)
+        self.assertEqual(SchoolFee.objects.filter(bill=bill).count(), 2)
+        self.assertEqual(SchoolFee.objects.filter(bill=bill).first().amount, Decimal("50000.00"))
+
+    def test_create_bill_rejects_a_duplicate_for_the_same_class(self):
+        self.tools.dispatch("create_bill", {
+            "title": "Term Fees", "class_name": "SS2A", "description": "Tuition Fee", "amount": 50000,
+        })
+
+        result = self.tools.dispatch("create_bill", {
+            "title": "Term Fees", "class_name": "SS2A", "description": "Tuition Fee", "amount": 50000,
+        })
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "DUPLICATE")
+
+        from finance.models import Bill
+
+        self.assertEqual(Bill.objects.filter(tenant=self.school, title="Term Fees").count(), 1)
+
+    def test_create_bill_rejects_a_non_positive_amount(self):
+        result = self.tools.dispatch("create_bill", {
+            "title": "Term Fees", "class_name": "SS2A", "description": "Tuition Fee", "amount": 0,
+        })
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "BAD_ARGS")
+
+    def test_create_bill_rejects_a_non_numeric_amount(self):
+        result = self.tools.dispatch("create_bill", {
+            "title": "Term Fees", "class_name": "SS2A", "description": "Tuition Fee", "amount": "lots of money",
+        })
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "BAD_ARGS")
+
+    def test_create_bill_requires_a_description(self):
+        result = self.tools.dispatch("create_bill", {
+            "title": "Term Fees", "class_name": "SS2A", "description": "", "amount": 50000,
+        })
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "BAD_ARGS")
+
+    def test_create_bill_unknown_class_reports_not_found(self):
+        result = self.tools.dispatch("create_bill", {
+            "title": "Term Fees", "class_name": "GhostClass", "description": "Tuition Fee", "amount": 50000,
+        })
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "NOT_FOUND")
 
     def test_create_cbt_exam_pulls_real_questions_from_the_bank(self):
         """Regression test: create_cbt_exam used to create an empty exam

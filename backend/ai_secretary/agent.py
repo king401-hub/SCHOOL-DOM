@@ -15,7 +15,12 @@ from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
-from ai_chat.services.openrouter_client import OpenRouterClient, OpenRouterError, OpenRouterTimeout
+from ai_chat.services.openrouter_client import (
+    OpenRouterClient,
+    OpenRouterError,
+    OpenRouterTimeout,
+    build_multimodal_content,
+)
 from ai_chat.services.usage import AIUsageExhausted, check_quota, consume_usage, usage_dict
 
 from .code_guard import CODE_REFUSAL_MESSAGE, TOOL_CALL_LEAK_MESSAGE, looks_like_code, looks_like_leaked_tool_call
@@ -269,7 +274,7 @@ def _call_ollama(messages: list, stream: bool = False, use_tools: bool = True) -
             # 1024, since tool-call payloads are compact and the system
             # prompt already asks for concise replies.
             "num_predict": 400,
-            # 8192, not 512: the system prompt + all 22 TOOL_SCHEMAS alone are
+            # 8192, not 512: the system prompt + all 23 TOOL_SCHEMAS alone are
             # already ~3k tokens - at 512 the model's own tool definitions
             # were being truncated out of context on every call, before a
             # single history message or tool-result round-trip was even
@@ -300,12 +305,30 @@ def _call_openrouter(messages: list, use_tools: bool = True) -> dict:
     returns above, so the rest of run_agent's loop needs no provider
     branching. TOOL_SCHEMAS is already OpenAI-shaped (same "type":
     "function"/"parameters" structure OpenRouter expects), so it's passed
-    through unchanged - no translation needed."""
-    client = OpenRouterClient()
+    through unchanged - no translation needed.
+
+    A message carrying an attached image (run_agent's user_turn, when the
+    admin attached one this turn) gets its content reshaped into
+    OpenRouter's multimodal block format, and the call switches to
+    OPENROUTER_VISION_MODEL - the default model is text-only and would
+    otherwise ignore the image's content block entirely. Tool-calling is
+    skipped for a vision call: TOOL_SCHEMAS was written/tested against the
+    text-only model, and asking it to both look at an image and pick a
+    tool in one call is untested territory - the admin can always follow up
+    with a plain-text instruction once they've described what's in the image."""
+    has_images = any(m.get("images") for m in messages)
+    openrouter_messages = [
+        {
+            "role": m["role"],
+            "content": build_multimodal_content(m["content"], m.get("images"), m.get("_image_mime_types")),
+        }
+        for m in messages
+    ]
+    client = OpenRouterClient(model=getattr(settings, "OPENROUTER_VISION_MODEL", None) if has_images else None)
     kwargs = {"max_tokens": 600, "temperature": 0.3}
-    if use_tools:
+    if use_tools and not has_images:
         kwargs["tools"] = TOOL_SCHEMAS
-    result = client.chat(messages, **kwargs)
+    result = client.chat(openrouter_messages, **kwargs)
     return {"message": {"content": result["content"], "tool_calls": result["tool_calls"]}}
 
 
@@ -327,7 +350,7 @@ def _friendly_openrouter_message(exc: OpenRouterError) -> str:
     return "Something went wrong reaching the AI. Let's try again — or I'll flag it for your IT team."
 
 
-def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict:
+def run_agent(user_message: str, history: list, tenant, requesting_user, images: list = None, image_mime_types: list = None) -> dict:
     """
     Run the full agent loop for one user turn.
 
@@ -336,6 +359,10 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
         history:      Previous conversation turns [{"role": ..., "content": ...}, ...]
         tenant:       The authenticated school tenant object.
         requesting_user: The authenticated User making the request.
+        images:       Bare base64 strings attached to THIS turn only (already
+                      cleaned by ai_chat.services.openrouter_client.clean_data_url_images)
+                      - history entries never carry images back in, same as ai_chat.
+        image_mime_types: Matching MIME types for `images`.
 
     Returns:
         {
@@ -485,7 +512,11 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
     school_context = f"This school's name is: {school_name}. Always include it when drafting any letter, SMS, or reminder sent to parents/guardians, unless the admin says otherwise."
     messages = [{"role": "system", "content": f"{SECRETARY_SYSTEM_PROMPT}\n\n{time_context}\n{school_context}"}]
     messages += history[-MAX_HISTORY:]
-    messages.append({"role": "user", "content": user_message})
+    user_turn = {"role": "user", "content": user_message}
+    if images:
+        user_turn["images"] = images
+        user_turn["_image_mime_types"] = image_mime_types or []
+    messages.append(user_turn)
 
     tools_called = []
     deadline = time.monotonic() + AGENT_DEADLINE_SECONDS

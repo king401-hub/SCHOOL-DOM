@@ -106,8 +106,9 @@ PHOENIX_OLLAMA_MODEL = os.getenv('PHOENIX_OLLAMA_MODEL', 'llama3.2:3b')
 # ── OpenRouter (optional alternative LLM provider for ai_chat) ──────────────
 # ai_chat's "SchoolDom AI" assistant can answer through OpenRouter's hosted
 # API instead of the local Ollama instance above - see AI_PROVIDER below.
-# ai_secretary's tool-calling Secretary agent is NOT wired to this; it still
-# talks to Ollama only (see backend/ai_chat/README_openrouter.md).
+# ai_secretary's tool-calling Secretary agent routes through the same
+# AI_PROVIDER flag (see agent.py's _call_model) - both surfaces share one
+# provider switch.
 # Get a key at https://openrouter.ai/keys - never hardcode it here.
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
 OPENROUTER_BASE_URL = os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
@@ -115,6 +116,15 @@ OPENROUTER_BASE_URL = os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/ap
 # are rate-limited and can be withdrawn or swapped by OpenRouter at any time
 # - see the README before relying on this for production traffic.
 OPENROUTER_DEFAULT_MODEL = os.getenv('OPENROUTER_DEFAULT_MODEL', 'qwen/qwen3.8-27b')
+# Switched to automatically whenever a message carries an attached image -
+# the default model above is text-only. qwen2.5-vl-72b-instruct is Qwen's
+# vision-language model on OpenRouter (verified available as of writing).
+OPENROUTER_VISION_MODEL = os.getenv('OPENROUTER_VISION_MODEL', 'qwen/qwen2.5-vl-72b-instruct')
+# Voice input (speech-to-text only, no spoken replies): Qwen has no
+# transcription model on OpenRouter's catalog, so this uses ElevenLabs'
+# Scribe v2 instead - same OpenRouter account/billing, just a different
+# provider under the hood. Hits /audio/transcriptions, not /chat/completions.
+OPENROUTER_TRANSCRIPTION_MODEL = os.getenv('OPENROUTER_TRANSCRIPTION_MODEL', 'elevenlabs/scribe-v2')
 OPENROUTER_TIMEOUT = int(os.getenv('OPENROUTER_TIMEOUT', '60'))
 OPENROUTER_MAX_RETRIES = int(os.getenv('OPENROUTER_MAX_RETRIES', '3'))
 # Optional - OpenRouter only uses these for its own public leaderboard

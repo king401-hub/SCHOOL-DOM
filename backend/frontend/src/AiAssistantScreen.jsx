@@ -90,10 +90,16 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
   const [usage, setUsage] = useState(null); // backend-reported AI usage quota - never computed client-side
   const [recentStudentsOpen, setRecentStudentsOpen] = useState(false);
   const [recentStudentWindow, setRecentStudentWindow] = useState("7d");
+  const [attachedImage, setAttachedImage] = useState(null); // { dataUrl, name } | null
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
   const abortRef = useRef(null);
   const busyTimerRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   useEffect(() => {
     saveMessages(storageKey, messages);
@@ -214,7 +220,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
   // happen), never relying on React state or the effect that mirrors it,
   // neither of which run once unmounted. Reopening the dashboard then loads
   // the finished conversation instead of the one that looked abandoned.
-  async function sendTurn(text, priorMessages, userMsg, retried = false) {
+  async function sendTurn(text, priorMessages, userMsg, image, retried = false) {
     const headers = { "Content-Type": "application/json" };
     if (session?.access) headers.Authorization = `Bearer ${session.access}`;
 
@@ -226,12 +232,13 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
         body: JSON.stringify({
           message: text,
           history: buildHistoryForApi(priorMessages),
+          images: image ? [image] : undefined,
         }),
       });
 
       if (res.status === 401 && !retried) {
         await refreshAccessToken(session);
-        return sendTurn(text, priorMessages, userMsg, true);
+        return sendTurn(text, priorMessages, userMsg, image, true);
       }
 
       if (!res.ok) {
@@ -276,13 +283,15 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
 
   async function handleSend(quickText) {
     const trimmed = (quickText ?? input).trim();
-    if (!trimmed || busy) return;
+    const image = quickText ? null : attachedImage?.dataUrl || null;
+    if ((!trimmed && !image) || busy) return;
 
     const priorMessages = messages;
-    const userMsg = { id: makeId(), role: "user", content: trimmed };
+    const userMsg = { id: makeId(), role: "user", content: trimmed, image };
     const thinkingMsg = { id: makeId(), role: "assistant", content: "", thinking: true };
 
     setInput("");
+    setAttachedImage(null);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setError(null);
     setMessages((prev) => [...prev, userMsg, thinkingMsg]);
@@ -292,7 +301,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
     busyTimerRef.current = setInterval(() => setBusySeconds((s) => s + 1), 1000);
 
     try {
-      await sendTurn(trimmed, priorMessages, userMsg);
+      await sendTurn(trimmed, priorMessages, userMsg, image);
     } finally {
       setBusy(false);
       setBusySeconds(0);
@@ -319,6 +328,97 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
     if (ta) {
       ta.style.height = "auto";
       ta.style.height = Math.min(ta.scrollHeight, 140) + "px";
+    }
+  }
+
+  // ── Image attachment ────────────────────────────────────────────────────────
+
+  function handleAttachClick() {
+    fileInputRef.current?.click();
+  }
+
+  function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file again later
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please attach an image file.");
+      return;
+    }
+    if (file.size > 6_000_000) {
+      setError("That image is too large (max 6MB).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setAttachedImage({ dataUrl: reader.result, name: file.name });
+    reader.readAsDataURL(file);
+  }
+
+  function removeAttachedImage() {
+    setAttachedImage(null);
+  }
+
+  // ── Voice input (speech-to-text only - no spoken replies) ──────────────────
+
+  async function toggleRecording() {
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm" : "";
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        transcribeRecording(blob);
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+      setError(null);
+    } catch {
+      setError("Couldn't access the microphone — check your browser permissions.");
+    }
+  }
+
+  async function transcribeRecording(blob) {
+    setRecording(false);
+    setTranscribing(true);
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      const format = (blob.type.split("/")[1] || "webm").split(";")[0];
+      const headers = { "Content-Type": "application/json" };
+      if (session?.access) headers.Authorization = `Bearer ${session.access}`;
+      const res = await fetch(`${API_BASE_URL}/api/ai/transcribe/`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ audio: dataUrl, format }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.detail || "Could not transcribe that recording.");
+        return;
+      }
+      if (data?.text) {
+        setInput((prev) => (prev.trim() ? `${prev.trim()} ${data.text}` : data.text));
+        window.requestAnimationFrame(() => textareaRef.current?.focus());
+      }
+    } catch {
+      setError("Network error while transcribing.");
+    } finally {
+      setTranscribing(false);
     }
   }
 
@@ -464,6 +564,9 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
                 )}
                 <div className="sec-msg-wrap">
                   <div className="ai-assistant-bubble">
+                    {msg.role === "user" && msg.image && (
+                      <img src={msg.image} alt="Attached" className="ai-chat-message-image" />
+                    )}
                     {msg.thinking ? (
                       <span className="ai-typing"><span /><span /><span /></span>
                     ) : msg.role === "assistant" ? (
@@ -518,6 +621,28 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
               : `No AI time left${usage?.cycle_resets_at ? ` — resets at ${formatAiResetTime(usage.cycle_resets_at)}` : ""}`}
           </div>
         )}
+        {attachedImage && (
+          <div className="ai-chat-attachment-preview">
+            <img src={attachedImage.dataUrl} alt={attachedImage.name} />
+            <span className="ai-chat-attachment-name">{attachedImage.name}</span>
+            <button type="button" className="ai-chat-attachment-remove" onClick={removeAttachedImage} aria-label="Remove image">×</button>
+          </div>
+        )}
+        {recording && (
+          <div className="ai-chat-recording-indicator">
+            <span className="ai-chat-recording-dot" /> Recording… tap the mic to stop
+          </div>
+        )}
+        {transcribing && (
+          <div className="ai-chat-recording-indicator ai-chat-transcribing">Transcribing…</div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={handleFileChange}
+        />
         <div className="ai-assistant-input-row">
           <Sparkles size={16} className="ai-assistant-input-icon" />
           <textarea
@@ -529,10 +654,22 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
             rows={1}
             disabled={busy || (usageKnown && remainingSeconds <= 0)}
           />
-          <button type="button" className="ai-assistant-input-btn" title="Attachments coming soon" disabled>
+          <button
+            type="button"
+            className="ai-assistant-input-btn"
+            title="Attach an image"
+            onClick={handleAttachClick}
+            disabled={busy || (usageKnown && remainingSeconds <= 0)}
+          >
             <Paperclip size={16} />
           </button>
-          <button type="button" className="ai-assistant-input-btn" title="Voice input coming soon" disabled>
+          <button
+            type="button"
+            className={`ai-assistant-input-btn ${recording ? "is-recording" : ""}`}
+            title={recording ? "Stop recording" : "Speak instead of typing"}
+            onClick={toggleRecording}
+            disabled={(busy && !recording) || transcribing || (usageKnown && remainingSeconds <= 0)}
+          >
             <Mic size={16} />
           </button>
           {busy ? (
@@ -546,7 +683,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
               type="button"
               className="ai-assistant-send"
               onClick={() => handleSend()}
-              disabled={!input.trim() || (usageKnown && remainingSeconds <= 0)}
+              disabled={(!input.trim() && !attachedImage) || (usageKnown && remainingSeconds <= 0)}
               title="Send"
               aria-label="Send"
             >

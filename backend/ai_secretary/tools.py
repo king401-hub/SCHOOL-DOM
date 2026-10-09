@@ -171,6 +171,24 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "create_bill",
+            "description": "Create and publish a single-charge fee bill for a class - immediately generates one invoice per student currently in that class. Rejected if a bill with the same title already targets that class this term (edit the existing one instead). ALWAYS confirm the title, class, and amount with the admin before calling this - it charges every student in the class right away.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Bill title, e.g. 'First Term School Fees'"},
+                    "class_name": {"type": "string", "description": "Class to bill, e.g. SS2 or JSS1A - call list_classes first if unsure of the exact name"},
+                    "description": {"type": "string", "description": "What this charge is for, e.g. Tuition Fee"},
+                    "amount": {"type": "number", "description": "Amount in Naira, e.g. 50000"},
+                    "due_date": {"type": "string", "description": "Optional due date YYYY-MM-DD"},
+                },
+                "required": ["title", "class_name", "description", "amount"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "navigate_to_page",
             "description": "Open a target SchoolDom page or section for the admin user.",
             "parameters": {
@@ -954,6 +972,16 @@ class SecretaryTools:
         except ImportError:
             return {"status": "error", "error_code": "NOT_CONFIGURED", "message": "SMS service not available."}
         try:
+            # Belt-and-suspenders for the system prompt's "always include the
+            # school's name" rule - relying on the model to remember this
+            # under a 160-char budget was unreliable in practice. Only
+            # applied if it still fits; a message already at the limit is
+            # sent as-is rather than rejected outright for a missing name.
+            school_name = (getattr(self.tenant, "name", "") or "").strip()
+            if school_name and school_name.lower() not in message_body.lower():
+                with_name = f"{school_name}: {message_body}"
+                if len(with_name) <= 160:
+                    message_body = with_name
             if len(message_body) > 160:
                 return {
                     "status": "error",
@@ -1082,6 +1110,7 @@ class SecretaryTools:
         "count_classes": "count_classes",
         "list_classes": "list_classes",
         "create_class": "create_class",
+        "create_bill": "create_bill",
         "get_student_details": "get_student_details",
         "get_class_roster": "get_class_roster",
         "get_student_fee_balance": "get_student_fee_balance",
@@ -1238,6 +1267,93 @@ class SecretaryTools:
             }
         except Exception as exc:
             logger.exception("create_class failed: %s", exc)
+            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
+
+    def create_bill(self, title: str, class_name: str, description: str, amount, due_date: str = "") -> dict:
+        """Create and immediately publish a single-charge Bill for a class -
+        fans out one invoice to every student currently in it, via the same
+        sync_bill_invoices an admin's Bill Designer uses. Guarded by the same
+        find_duplicate_bill check finance.views.admin_bills uses, so this
+        can't reintroduce the duplicate-bill bug fixed this session: an admin
+        (or this tool) creating a second same-title bill for a class used to
+        fan out a second full round of invoices, leaving every student
+        carrying two charges for what was meant to be one fee."""
+        try:
+            from decimal import Decimal, InvalidOperation
+
+            from academic.models import AcademicYear, Term
+            from finance.models import Bill, BillItem
+            from finance.services import find_duplicate_bill, sync_bill_invoices
+
+            title = (title or "").strip()
+            if not title:
+                return {"status": "error", "error_code": "BAD_ARGS", "message": "A bill title is required."}
+            description = (description or "").strip()
+            if not description:
+                return {"status": "error", "error_code": "BAD_ARGS", "message": "A description of the charge is required."}
+
+            class_obj = self._get_class(class_name)
+            if class_obj is None:
+                return {"status": "error", "error_code": "NOT_FOUND", "message": f"Class '{class_name}' not found."}
+
+            try:
+                amount_decimal = Decimal(str(amount))
+            except (InvalidOperation, ValueError, TypeError):
+                return {"status": "error", "error_code": "BAD_ARGS", "message": "Amount must be a number."}
+            if amount_decimal <= 0:
+                return {"status": "error", "error_code": "BAD_ARGS", "message": "Amount must be greater than zero."}
+
+            due_date_parsed = None
+            due_date = (due_date or "").strip()
+            if due_date:
+                try:
+                    due_date_parsed = datetime.strptime(due_date, "%Y-%m-%d").date()
+                except ValueError:
+                    return {"status": "error", "error_code": "BAD_ARGS", "message": "due_date must be YYYY-MM-DD."}
+
+            legacy_tenant = self._get_legacy_tenant()
+            academic_year = AcademicYear.objects.filter(tenant=legacy_tenant, is_active=True).first() if legacy_tenant else None
+            term = Term.objects.filter(tenant=legacy_tenant, is_active=True).first() if legacy_tenant else None
+
+            duplicate = find_duplicate_bill(self.tenant, title, academic_year, term, [class_obj])
+            if duplicate:
+                return {
+                    "status": "error",
+                    "error_code": "DUPLICATE",
+                    "message": (
+                        f"A bill named '{duplicate.title}' already targets {class_name} this term "
+                        f"({duplicate.get_status_display()}). Edit that bill from the Finance page instead "
+                        "of creating a new one, or use a different title."
+                    ),
+                }
+
+            bill = Bill.objects.create(
+                tenant=self.tenant,
+                title=title,
+                academic_year=academic_year,
+                term=term,
+                due_date=due_date_parsed,
+                created_by=self.requesting_user,
+            )
+            bill.classes.set([class_obj])
+            BillItem.objects.create(bill=bill, description=description, amount=amount_decimal, sort_order=0)
+
+            synced = sync_bill_invoices(bill, actor=self.requesting_user)
+            bill.status = Bill.STATUS_PUBLISHED
+            bill.published_at = dj_timezone.now()
+            bill.save(update_fields=["status", "published_at", "updated_at"])
+
+            return {
+                "status": "success",
+                "bill_id": str(bill.id),
+                "title": title,
+                "class_name": class_name,
+                "amount": str(amount_decimal),
+                "invoices_created": synced,
+                "message": f"Bill '{title}' ({description}: ₦{amount_decimal}) published for {class_name} - {synced} invoice(s) generated.",
+            }
+        except Exception as exc:
+            logger.exception("create_bill failed: %s", exc)
             return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
 
     def list_classes(self) -> dict:

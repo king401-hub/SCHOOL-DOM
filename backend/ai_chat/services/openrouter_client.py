@@ -17,6 +17,53 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 CHAT_COMPLETIONS_PATH = "/chat/completions"
+TRANSCRIPTIONS_PATH = "/audio/transcriptions"
+
+
+DEFAULT_MAX_IMAGE_BYTES = 8_000_000  # ~6 MB decoded; reject anything larger
+
+
+def clean_data_url_images(raw_images, max_images: int = 2, max_bytes: int = DEFAULT_MAX_IMAGE_BYTES):
+    """Parse a list of data: URL (or bare base64) image strings into
+    (bare_base64_list, mime_type_list) - shared by ai_chat's and
+    ai_secretary's request parsing so both validate/strip attached images
+    the same way before either Ollama's `images` field (which wants bare
+    base64, nothing else) or build_multimodal_content (which wants the
+    MIME type back) gets them."""
+    cleaned, mime_types = [], []
+    for img in (raw_images or [])[:max_images]:
+        if not isinstance(img, str):
+            continue
+        mime_type = "image/jpeg"
+        payload = img
+        if ";base64," in img:
+            header, payload = img.split(";base64,", 1)
+            if header.startswith("data:") and header[len("data:"):]:
+                mime_type = header[len("data:"):]
+        if len(payload) <= max_bytes:
+            cleaned.append(payload)
+            mime_types.append(mime_type)
+    return cleaned, mime_types
+
+
+def build_multimodal_content(text: str, images: Optional[list] = None, mime_types: Optional[list] = None):
+    """Build an OpenRouter/OpenAI-shaped message `content` value.
+
+    A plain string when there are no images - every existing text-only
+    call site is unaffected - or a list of content blocks (one text block
+    plus one image_url block per image) when there are. `images` is a list
+    of bare base64 strings with no data: prefix (see
+    ai_chat.views._clean_messages, which strips it before storing);
+    `mime_types` is the matching list of original MIME types the prefix
+    carried, falling back to image/jpeg for any entry that's missing one.
+    """
+    if not images:
+        return text
+    blocks = [{"type": "text", "text": text}] if text else []
+    for index, image_b64 in enumerate(images):
+        mime_type = (mime_types[index] if mime_types and index < len(mime_types) else None) or "image/jpeg"
+        blocks.append({"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_b64}"}})
+    return blocks
 
 # Every field OpenRouter's chat/completions body accepts besides the
 # required model/messages (which this client always supplies itself - see
@@ -203,6 +250,43 @@ class OpenRouterClient:
 
         # Unreachable - the loop above always returns or raises.
         raise OpenRouterError("OpenRouter request failed for an unknown reason.")
+
+    # --------------------------------------------------------- transcribe
+
+    def transcribe(self, audio_base64: str, audio_format: str = "webm", model: Optional[str] = None) -> str:
+        """POST a recorded clip to OpenRouter's speech-to-text endpoint and
+        return the transcribed text.
+
+        A different endpoint shape from chat/completions entirely (no
+        "messages", no streaming, and a model of its own rather than
+        self.model) - voice input, not a chat turn, so this bypasses
+        _build_payload/_headers' chat-specific assumptions and builds its
+        own minimal request. Single attempt, no retry loop: a dropped
+        recording is cheap for the admin to just record again, unlike a
+        chat turn whose prompt took real typing to compose.
+        """
+        url = f"{self.base_url}{TRANSCRIPTIONS_PATH}"
+        payload = {
+            "model": model or getattr(settings, "OPENROUTER_TRANSCRIPTION_MODEL", "elevenlabs/scribe-v2"),
+            "input_audio": {"data": audio_base64, "format": audio_format},
+        }
+        try:
+            response = requests.post(url, json=payload, headers=self._headers(), timeout=self.timeout)
+        except requests.exceptions.Timeout as exc:
+            raise OpenRouterTimeout(f"OpenRouter transcription did not respond within {self.timeout}s.") from exc
+        except requests.exceptions.RequestException as exc:
+            raise OpenRouterError(f"Could not reach OpenRouter for transcription: {exc}") from exc
+
+        if response.status_code != 200:
+            error = self._error_from_response(response)
+            self._log_error(error, attempt=0, exhausted=True)
+            raise error
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise OpenRouterError("OpenRouter returned a non-JSON transcription response.") from exc
+        return (data.get("text") or "").strip()
 
     # ------------------------------------------------------------- stream
 

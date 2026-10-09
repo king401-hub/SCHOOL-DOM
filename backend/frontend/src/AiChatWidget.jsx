@@ -120,12 +120,18 @@ export default function AiChatWidget({ session }) {
   const [pos, setPos] = useState(loadPos);
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef(null);
+  const [attachedImage, setAttachedImage] = useState(null); // { dataUrl, name } | null
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
 
   const listRef = useRef(null);
   const textareaRef = useRef(null);
   const taskInputRef = useRef(null);
   const abortRef = useRef(null);
   const busyTimerRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   useEffect(() => {
     setConversations(loadHistory());
@@ -205,6 +211,97 @@ export default function AiChatWidget({ session }) {
     if (ta) {
       ta.style.height = "auto";
       ta.style.height = Math.min(ta.scrollHeight, 100) + "px";
+    }
+  }
+
+  // ── Image attachment ────────────────────────────────────────────────────────
+
+  function handleAttachClick() {
+    fileInputRef.current?.click();
+  }
+
+  function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file again later
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please attach an image file.");
+      return;
+    }
+    if (file.size > 6_000_000) {
+      setError("That image is too large (max 6MB).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setAttachedImage({ dataUrl: reader.result, name: file.name });
+    reader.readAsDataURL(file);
+  }
+
+  function removeAttachedImage() {
+    setAttachedImage(null);
+  }
+
+  // ── Voice input (speech-to-text only - no spoken replies) ──────────────────
+
+  async function toggleRecording() {
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm" : "";
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        transcribeRecording(blob);
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+      setError(null);
+    } catch {
+      setError("Couldn't access the microphone — check your browser permissions.");
+    }
+  }
+
+  async function transcribeRecording(blob) {
+    setRecording(false);
+    setTranscribing(true);
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      const format = (blob.type.split("/")[1] || "webm").split(";")[0];
+      const headers = { "Content-Type": "application/json" };
+      if (session?.access) headers.Authorization = `Bearer ${session.access}`;
+      const res = await fetch(`${API_BASE_URL}/api/ai/transcribe/`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ audio: dataUrl, format }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.detail || "Could not transcribe that recording.");
+        return;
+      }
+      if (data?.text) {
+        setInput((prev) => (prev.trim() ? `${prev.trim()} ${data.text}` : data.text));
+        window.requestAnimationFrame(() => textareaRef.current?.focus());
+      }
+    } catch {
+      setError("Network error while transcribing.");
+    } finally {
+      setTranscribing(false);
     }
   }
 
@@ -304,7 +401,7 @@ export default function AiChatWidget({ session }) {
       .map(({ role, content }) => ({ role, content }));
   }
 
-  async function sendAdminTurn(text, savedId, priorMessages, retried = false) {
+  async function sendAdminTurn(text, savedId, priorMessages, image, retried = false) {
     const headers = { "Content-Type": "application/json" };
     if (session?.access) headers.Authorization = `Bearer ${session.access}`;
 
@@ -316,12 +413,13 @@ export default function AiChatWidget({ session }) {
         body: JSON.stringify({
           message: text,
           history: buildHistoryForApi(priorMessages),
+          images: image ? [image] : undefined,
         }),
       });
 
       if (res.status === 401 && !retried) {
         await refreshAccessToken(session);
-        return sendAdminTurn(text, savedId, priorMessages, true);
+        return sendAdminTurn(text, savedId, priorMessages, image, true);
       }
 
       if (!res.ok) {
@@ -374,7 +472,9 @@ export default function AiChatWidget({ session }) {
         headers,
         signal: abortRef.current?.signal,
         body: JSON.stringify({
-          messages: history.map(({ role, content }) => ({ role, content })),
+          messages: history.map(({ role, content, image }) =>
+            image ? { role, content, images: [image] } : { role, content }
+          ),
         }),
       });
     } catch (err) {
@@ -413,11 +513,13 @@ export default function AiChatWidget({ session }) {
 
   async function handleSend(quickText) {
     const trimmed = (quickText ?? input).trim();
-    if (!trimmed || busy) return;
+    const image = quickText ? null : attachedImage?.dataUrl || null;
+    if ((!trimmed && !image) || busy) return;
 
     const priorMessages = messages;
-    const userMsg = { id: makeId(), role: "user", content: trimmed };
+    const userMsg = { id: makeId(), role: "user", content: trimmed, image };
     setInput("");
+    setAttachedImage(null);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setError(null);
     setBusy(true);
@@ -430,7 +532,7 @@ export default function AiChatWidget({ session }) {
       setBusySeconds(0);
       busyTimerRef.current = setInterval(() => setBusySeconds((s) => s + 1), 1000);
       try {
-        await sendAdminTurn(trimmed, savedId, priorMessages);
+        await sendAdminTurn(trimmed, savedId, priorMessages, image);
       } finally {
         setBusy(false);
         setBusySeconds(0);
@@ -536,7 +638,7 @@ export default function AiChatWidget({ session }) {
   const remainingSeconds = usage?.remaining_seconds;
   const usageKnown = typeof remainingSeconds === "number";
   const userInitial = (session?.user?.first_name?.[0] || "U").toUpperCase();
-  const canSend = input.trim() && !busy && (!usageKnown || remainingSeconds > 0);
+  const canSend = (input.trim() || attachedImage) && !busy && (!usageKnown || remainingSeconds > 0);
 
   const activeTasks = tasks.filter((t) => !t.done);
   const doneTasks = tasks.filter((t) => t.done);
@@ -785,6 +887,9 @@ export default function AiChatWidget({ session }) {
                     )}
                     <div className="sec-msg-wrap">
                       <div className="ai-chat-bubble">
+                        {msg.role === "user" && msg.image && (
+                          <img src={msg.image} alt="Attached" className="ai-chat-message-image" />
+                        )}
                         {msg.thinking || (!msg.content && busy && i === messages.length - 1) ? (
                           <span className="ai-typing"><span /><span /><span /></span>
                         ) : msg.role === "assistant" ? (
@@ -848,7 +953,54 @@ export default function AiChatWidget({ session }) {
                       : `No AI time left${usage?.cycle_resets_at ? ` — resets at ${formatResetTime(usage.cycle_resets_at)}` : ""}`}
                   </div>
                 )}
+                {attachedImage && (
+                  <div className="ai-chat-attachment-preview">
+                    <img src={attachedImage.dataUrl} alt={attachedImage.name} />
+                    <span className="ai-chat-attachment-name">{attachedImage.name}</span>
+                    <button type="button" className="ai-chat-attachment-remove" onClick={removeAttachedImage} aria-label="Remove image">×</button>
+                  </div>
+                )}
+                {recording && (
+                  <div className="ai-chat-recording-indicator">
+                    <span className="ai-chat-recording-dot" /> Recording… tap the mic to stop
+                  </div>
+                )}
+                {transcribing && (
+                  <div className="ai-chat-recording-indicator ai-chat-transcribing">Transcribing…</div>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={handleFileChange}
+                />
                 <div className="ai-chat-input-row">
+                  <button
+                    type="button"
+                    className="ai-chat-icon-btn ai-chat-attach-btn"
+                    onClick={handleAttachClick}
+                    disabled={busy || (usageKnown && remainingSeconds <= 0)}
+                    title="Attach an image"
+                    aria-label="Attach an image"
+                  >
+                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className={`ai-chat-icon-btn ai-chat-mic-btn ${recording ? "is-recording" : ""}`}
+                    onClick={toggleRecording}
+                    disabled={(busy && !recording) || transcribing || (usageKnown && remainingSeconds <= 0)}
+                    title={recording ? "Stop recording" : "Speak instead of typing"}
+                    aria-label={recording ? "Stop recording" : "Speak instead of typing"}
+                  >
+                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                      <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" />
+                    </svg>
+                  </button>
                   <textarea
                     ref={textareaRef}
                     value={input}

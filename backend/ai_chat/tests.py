@@ -1,7 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from core.models import SchoolTenant
@@ -178,3 +178,105 @@ class ChatViewUsageQuotaTests(TestCase):
 
         cycle = AIUsageCycle.objects.get(user=self.user)
         self.assertEqual(cycle.usage_seconds, 5)
+
+
+class OpenRouterImageSupportTests(TestCase):
+    """The default OPENROUTER_DEFAULT_MODEL is text-only - an attached image
+    used to be silently dropped on this path (OpenRouter's content format
+    differs from Ollama's `images` field). An image now switches the call
+    to OPENROUTER_VISION_MODEL and reshapes the turn's content into
+    OpenRouter's multimodal block format."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Vision School", schema_name="vision_school", is_active=True)
+        self.user = User.objects.create_user(
+            email="admin@vision.test", password="Pass12345", first_name="Vision", last_name="Admin",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    @override_settings(AI_PROVIDER="openrouter")
+    @patch("ai_chat.views.OpenRouterClient")
+    def test_an_attached_image_switches_to_the_vision_model(self, mock_client_cls):
+        mock_client_cls.return_value.stream_chat.return_value = iter(["I see a timetable."])
+
+        response = self.client.post(
+            "/api/ai/chat/",
+            data={"messages": [{
+                "role": "user", "content": "What's in this image?",
+                "images": ["data:image/png;base64,ZmFrZWJhc2U2NA=="],
+            }]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        b"".join(response.streaming_content)  # drive the generator to completion
+
+        mock_client_cls.assert_called_once_with(model="qwen/qwen2.5-vl-72b-instruct")
+        sent_messages = mock_client_cls.return_value.stream_chat.call_args.args[0]
+        user_content = sent_messages[-1]["content"]
+        self.assertIsInstance(user_content, list)
+        self.assertEqual(user_content[0], {"type": "text", "text": "What's in this image?"})
+        self.assertEqual(user_content[1]["image_url"]["url"], "data:image/png;base64,ZmFrZWJhc2U2NA==")
+
+    @override_settings(AI_PROVIDER="openrouter")
+    @patch("ai_chat.views.OpenRouterClient")
+    def test_no_image_keeps_the_default_model_and_plain_string_content(self, mock_client_cls):
+        mock_client_cls.return_value.stream_chat.return_value = iter(["Hello!"])
+
+        response = self.client.post(
+            "/api/ai/chat/", data={"messages": [{"role": "user", "content": "Hi"}]}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        b"".join(response.streaming_content)
+
+        mock_client_cls.assert_called_once_with(model=None)
+        sent_messages = mock_client_cls.return_value.stream_chat.call_args.args[0]
+        self.assertIsInstance(sent_messages[-1]["content"], str)
+
+
+class TranscribeViewTests(TestCase):
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Voice School", schema_name="voice_school", is_active=True)
+        self.user = User.objects.create_user(
+            email="admin@voice.test", password="Pass12345", first_name="Voice", last_name="Admin",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    @override_settings(AI_PROVIDER="openrouter")
+    @patch("ai_chat.views.OpenRouterClient")
+    def test_transcribes_a_recording_into_text(self, mock_client_cls):
+        mock_client_cls.return_value.transcribe.return_value = "Mark attendance for SS2A."
+
+        response = self.client.post(
+            "/api/ai/transcribe/",
+            data={"audio": "data:audio/webm;base64,ZmFrZWF1ZGlv", "format": "webm"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["text"], "Mark attendance for SS2A.")
+        mock_client_cls.return_value.transcribe.assert_called_once_with("ZmFrZWF1ZGlv", audio_format="webm")
+
+    @override_settings(AI_PROVIDER="openrouter")
+    def test_missing_audio_is_rejected(self):
+        response = self.client.post("/api/ai/transcribe/", data={}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_unavailable_when_not_on_openrouter(self):
+        response = self.client.post(
+            "/api/ai/transcribe/", data={"audio": "ZmFrZQ=="}, format="json",
+        )
+        self.assertEqual(response.status_code, 503)
+
+    @override_settings(AI_PROVIDER="openrouter")
+    @patch("ai_chat.views.OpenRouterClient")
+    def test_no_speech_detected_reports_clearly(self, mock_client_cls):
+        mock_client_cls.return_value.transcribe.return_value = ""
+
+        response = self.client.post(
+            "/api/ai/transcribe/", data={"audio": "ZmFrZQ=="}, format="json",
+        )
+        self.assertEqual(response.status_code, 422)
