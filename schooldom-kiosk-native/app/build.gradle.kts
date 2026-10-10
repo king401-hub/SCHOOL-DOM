@@ -37,8 +37,21 @@ android {
         // fleet's actual installed OS versions first.
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0-native"
+        // Deliberately far above the OLD FLUTTER app's still-live release
+        // metadata (AppRelease version_code=12 on the backend as of writing -
+        // see device_fleet.views.device_heartbeat) - self-update
+        // (Heartbeat.kt/KioskHomeActivity's installUpdate) compares this
+        // against AppRelease.version_code with a plain "is greater than"
+        // check, so anything at or below 12 would make a terminal think the
+        // OLD Flutter build (same package name, same signing key, so Android
+        // treats it as a normal in-place update) is a newer release and
+        // silently reinstall it over this native app. Bumping to 1000
+        // guarantees that never happens until a real native release is
+        // published with its own code above this line - never lower this
+        // without first confirming the backend's current "latest" scanner_kiosk
+        // AppRelease.version_code and leaving real headroom above it.
+        versionCode = 1000
+        versionName = "1.0.0-native"
     }
 
     signingConfigs {
