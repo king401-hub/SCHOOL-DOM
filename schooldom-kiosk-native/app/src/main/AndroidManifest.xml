@@ -14,6 +14,18 @@
     <!-- Offline gate-SMS fallback: text a parent directly over the
          terminal's own SIM when a scan can't reach the backend at all. -->
     <uses-permission android:name="android.permission.SEND_SMS"/>
+    <!-- Self-update: hands a downloaded APK to Android's own installer
+         (see AppUpdater.kt/KioskHomeActivity's installUpdate). On Android
+         8+ the system also separately prompts once per app for "install
+         unknown apps" the first time this fires - expected, not a bug. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- Settings screen's "Check SIM Balance" - dials a USSD code the admin
+         types in, over the terminal's own SIM (see UssdActivity). -->
+    <uses-permission android:name="android.permission.CALL_PHONE"/>
+    <!-- Settings screen's "Received Messages" - lets an admin see texts the
+         terminal's own SIM has received (balance/airtime alerts from the
+         carrier, mainly) without pulling the SIM (see SmsInboxActivity). -->
+    <uses-permission android:name="android.permission.READ_SMS"/>
 
     <application
         android:label="SchoolDom Attendance Scanner"
@@ -61,6 +73,15 @@
             android:windowSoftInputMode="adjustResize"/>
         <activity
             android:name=".GateSettingsActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"/>
+        <activity
+            android:name=".UssdActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"
+            android:windowSoftInputMode="adjustResize"/>
+        <activity
+            android:name=".SmsInboxActivity"
             android:exported="false"
             android:theme="@style/AppTheme"/>
     </application>

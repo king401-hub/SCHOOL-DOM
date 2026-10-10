@@ -22,6 +22,11 @@ data class HeartbeatOutcome(
     val authorized: Boolean,
     val schoolName: String?,
     val pairedSchoolName: String?,
+    val updateAvailable: Boolean = false,
+    val latestVersionCode: Int? = null,
+    val latestVersionName: String? = null,
+    val apkUrl: String? = null,
+    val releaseNotes: String? = null,
 )
 
 /**
@@ -80,7 +85,18 @@ object Heartbeat {
             val pairedName = if (data.has("paired_school_name") && !data.isNull("paired_school_name")) data.getString("paired_school_name") else null
             KioskStore.setPairedSchool(context, pairedId, pairedName)
 
-            HeartbeatOutcome(online = true, authorized = true, schoolName = KioskStore.schoolName(context), pairedSchoolName = pairedName)
+            val updateAvailable = data.optBoolean("update_available", false)
+            HeartbeatOutcome(
+                online = true,
+                authorized = true,
+                schoolName = KioskStore.schoolName(context),
+                pairedSchoolName = pairedName,
+                updateAvailable = updateAvailable,
+                latestVersionCode = if (updateAvailable && data.has("latest_version_code") && !data.isNull("latest_version_code")) data.optInt("latest_version_code") else null,
+                latestVersionName = if (updateAvailable) data.optString("latest_version_name", "").takeIf { it.isNotEmpty() } else null,
+                apkUrl = if (updateAvailable) data.optString("apk_url", "").takeIf { it.isNotEmpty() } else null,
+                releaseNotes = if (updateAvailable) data.optString("release_notes", "") else null,
+            )
         } catch (e: Throwable) {
             HeartbeatOutcome(online = false, authorized = true, schoolName = null, pairedSchoolName = null)
         }

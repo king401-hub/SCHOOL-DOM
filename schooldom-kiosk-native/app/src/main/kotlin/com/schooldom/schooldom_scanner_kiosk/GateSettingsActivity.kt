@@ -2,6 +2,7 @@ package com.schooldom.schooldom_scanner_kiosk
 
 import android.app.Activity
 import android.app.TimePickerDialog
+import android.content.Intent
 import android.nfc.NfcAdapter
 import android.os.Bundle
 import android.view.View
@@ -67,6 +68,12 @@ class GateSettingsActivity : Activity() {
         checkDeviceStatus()
 
         saveButton.setOnClickListener { save() }
+        findViewById<Button>(R.id.ussdButton).setOnClickListener {
+            startActivity(Intent(this, UssdActivity::class.java))
+        }
+        findViewById<Button>(R.id.smsInboxButton).setOnClickListener {
+            startActivity(Intent(this, SmsInboxActivity::class.java))
+        }
 
         load()
     }

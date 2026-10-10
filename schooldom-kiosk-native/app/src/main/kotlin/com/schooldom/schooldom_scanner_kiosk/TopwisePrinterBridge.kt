@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.Parcel
+import android.util.Log
 import com.topwise.cloudpos.aidl.printer.AidlPrinter
 import com.topwise.cloudpos.aidl.printer.AidlPrinterListener
 import com.topwise.cloudpos.aidl.printer.PrintCuttingMode
@@ -125,13 +126,18 @@ class TopwisePrinterBridge(context: Context) {
         callback: (Boolean, String?) -> Unit,
     ) {
         worker.execute {
+            val tag = "PrinterTrace"
+            Log.d(tag, "printFeeReminder: connecting")
             val p = ensureConnectedBlocking()
             if (p == null) {
+                Log.d(tag, "printFeeReminder: connect failed (bind/getPrinter returned null)")
                 callback(false, "printer_unavailable")
                 return@execute
             }
+            Log.d(tag, "printFeeReminder: connected, calling open()")
             try {
                 p.open()
+                Log.d(tag, "printFeeReminder: open() returned, building items")
 
                 // fontSize=24 (the PrintItemObj default) rendered far too
                 // large on this hardware's 58mm paper (~16 chars/line
@@ -149,36 +155,44 @@ class TopwisePrinterBridge(context: Context) {
                 if (accountNumber.isNotBlank()) {
                     items.add(PrintItemObj(" ", fontSize = 14))
                     items.add(PrintItemObj("Pay to:", fontSize = 14, isBold = true))
-                    items.add(PrintItemObj(accountNumber, fontSize = 14))
-                    if (accountName.isNotBlank()) {
-                        items.add(PrintItemObj(accountName, fontSize = 14))
-                    }
+                    items.add(PrintItemObj("Acct: $accountNumber", fontSize = 14))
                     if (bankName.isNotBlank()) {
-                        items.add(PrintItemObj(bankName, fontSize = 14))
+                        items.add(PrintItemObj("Bank: $bankName", fontSize = 14))
+                    }
+                    if (accountName.isNotBlank()) {
+                        items.add(PrintItemObj("Name: $accountName", fontSize = 12))
                     }
                 }
                 items.add(PrintItemObj(" ", fontSize = 14))
                 items.add(PrintItemObj(dateText, fontSize = 12, align = PrintItemObj.ALIGN.CENTER))
 
+                Log.d(tag, "printFeeReminder: built ${items.size} items")
                 val printLatch = CountDownLatch(1)
                 var printError: String? = null
                 val listener = object : AidlPrinterListener.Stub() {
                     override fun onError(code: Int) {
+                        Log.d(tag, "printFeeReminder: listener.onError code=$code")
                         printError = "print_error_$code"
                         printLatch.countDown()
                     }
 
                     override fun onPrintFinish() {
+                        Log.d(tag, "printFeeReminder: listener.onPrintFinish")
                         printLatch.countDown()
                     }
                 }
 
+                Log.d(tag, "printFeeReminder: calling printText")
                 p.printText(items, listener)
-                printLatch.await(15, TimeUnit.SECONDS)
+                Log.d(tag, "printFeeReminder: printText call returned (AIDL call itself, not the listener), waiting on latch")
+                val counted = printLatch.await(15, TimeUnit.SECONDS)
+                Log.d(tag, "printFeeReminder: latch wait done, counted=$counted (false means 15s timeout, listener never fired), printError=$printError")
                 p.addLineFeed(20)
                 p.cuttingPaper(PrintCuttingMode.CUTTING_MODE_FULL)
+                Log.d(tag, "printFeeReminder: addLineFeed+cuttingPaper done, calling back with ok=${printError == null}")
                 callback(printError == null, printError)
             } catch (e: Throwable) {
+                Log.d(tag, "printFeeReminder: exception ${e.javaClass.simpleName}: ${e.message}")
                 callback(false, e.message ?: "print_failed")
             }
         }

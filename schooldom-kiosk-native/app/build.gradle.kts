@@ -37,8 +37,8 @@ android {
         // fleet's actual installed OS versions first.
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0-native"
+        versionCode = 2
+        versionName = "0.2.0-native"
     }
 
     signingConfigs {

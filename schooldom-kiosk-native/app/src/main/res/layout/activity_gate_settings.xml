@@ -134,6 +134,24 @@
                 <include layout="@layout/row_status" android:id="@+id/rowPrinterStatus" android:layout_width="match_parent" android:layout_height="wrap_content"/>
             </LinearLayout>
 
+            <TextView style="@style/SettingsSectionLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="SIM / TERMINAL" android:layout_marginTop="20dp"/>
+            <Button
+                android:id="@+id/ussdButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/button_outline"
+                android:textColor="@color/text_primary"
+                android:text="Check SIM Balance"/>
+
+            <Button
+                android:id="@+id/smsInboxButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/button_outline"
+                android:textColor="@color/text_primary"
+                android:text="Received Messages"/>
+
             <Button
                 android:id="@+id/saveButton"
                 android:layout_width="match_parent"

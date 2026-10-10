@@ -5,19 +5,25 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.nfc.NfcAdapter
 import android.nfc.Tag
+import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.speech.tts.TextToSpeech
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.graphics.Outline
+import android.view.ViewOutlineProvider
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONObject
+import java.io.File
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -34,6 +40,7 @@ import java.util.concurrent.Executors
  */
 class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
     private lateinit var printerBridge: TopwisePrinterBridge
+    private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var smsBridge: LocalSmsBridge
     private var tts: TextToSpeech? = null
     private var nfcAdapter: NfcAdapter? = null
@@ -51,6 +58,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
     private lateinit var resultBlock: LinearLayout
     private lateinit var resultIconBg: View
     private lateinit var resultIcon: TextView
+    private lateinit var resultPhoto: ImageView
     private lateinit var resultTitle: TextView
     private lateinit var resultName: TextView
     private lateinit var resultSubtitle: TextView
@@ -64,6 +72,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
 
     private var busy = false
     private var resetResultRunnable: Runnable? = null
+    private var photoRequestId = 0
 
     // ---- Heartbeat / connectivity state (mirrors kiosk_home_screen.dart) ----
     private val heartbeatIntervalMs = 5 * 60 * 1000L
@@ -73,6 +82,9 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
     private var pendingCount = 0
     private var sessionExpired = false
     private var contactsRefreshedAt: Long? = null
+    private var promptedUpdateCode: Int? = null
+    private var downloadingUpdate = false
+    private var updateDialogOpen = false
     private var contactsRefreshing = false
     private val heartbeatRunnable = object : Runnable {
         override fun run() {
@@ -84,7 +96,8 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
     // Set by showResult when a fee card is shown, read by the Print/Send SMS
     // button handlers - both act on "whichever result is currently on screen".
     private data class FeeContext(
-        val studentId: String,
+        val userId: String,
+        val displayStudentId: String,
         val name: String,
         val className: String,
         val paid: String,
@@ -108,6 +121,23 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // Belt-and-suspenders against the screen sleeping: FLAG_KEEP_SCREEN_ON
+        // above is the normal, recommended way, but some POS/kiosk vendor ROMs
+        // apply their own idle-screen-off power policy that ignores it (seen
+        // on the T2N hardware - dumpsys power showed the device fully asleep,
+        // Display Power: state=OFF, with zero active wake locks, despite this
+        // Activity being alive and resumed the whole time). NFC reader-mode
+        // polling stops entirely whenever the screen sleeps, so this is not
+        // just a cosmetic issue - it silently breaks scanning. A real
+        // PowerManager wake lock operates at the OS power-manager level
+        // rather than as a window attribute, which these vendor policies are
+        // far less likely to override.
+        @Suppress("DEPRECATION")
+        wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE,
+            "SchoolDomKiosk:ScanningScreen",
+        )
         setContentView(R.layout.activity_home)
 
         readyBlock = findViewById(R.id.readyBlock)
@@ -121,6 +151,13 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         resultBlock = findViewById(R.id.resultBlock)
         resultIconBg = findViewById(R.id.resultIconBg)
         resultIcon = findViewById(R.id.resultIcon)
+        resultPhoto = findViewById(R.id.resultPhoto)
+        resultPhoto.clipToOutline = true
+        resultPhoto.outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                outline.setOval(0, 0, view.width, view.height)
+            }
+        }
         resultTitle = findViewById(R.id.resultTitle)
         resultName = findViewById(R.id.resultName)
         resultSubtitle = findViewById(R.id.resultSubtitle)
@@ -170,15 +207,18 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
                 NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK,
             null,
         )
+        wakeLock?.let { if (!it.isHeld) it.acquire(24 * 60 * 60 * 1000L) }
     }
 
     override fun onPause() {
         super.onPause()
         nfcAdapter?.disableReaderMode(this)
+        wakeLock?.let { if (it.isHeld) it.release() }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        wakeLock?.let { if (it.isHeld) it.release() }
         resetResultRunnable?.let { mainHandler.removeCallbacks(it) }
         mainHandler.removeCallbacks(heartbeatRunnable)
         tts?.stop()
@@ -283,6 +323,28 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         resultIcon.setTextColor(colorRes)
         (resultIconBg.background.mutate() as android.graphics.drawable.GradientDrawable).setColor((colorRes and 0x00FFFFFF) or 0x33000000)
 
+        // A recognized person's own photo reads far better at a glance than a
+        // generic checkmark - falls back to the icon circle above whenever
+        // there's no photo on file, or the scan wasn't a real match.
+        resultPhoto.visibility = View.GONE
+        resultIconBg.visibility = View.VISIBLE
+        resultIcon.visibility = View.VISIBLE
+        val photoUrl = data?.optString("photo_url", "")?.takeIf { it.isNotEmpty() }
+        if (isGood && name != null && photoUrl != null) {
+            val requestId = ++photoRequestId
+            bgExecutor.execute {
+                val bitmap = ImageLoader.fetch(this, photoUrl)
+                mainHandler.post {
+                    if (bitmap != null && requestId == photoRequestId) {
+                        resultPhoto.setImageBitmap(bitmap)
+                        resultPhoto.visibility = View.VISIBLE
+                        resultIconBg.visibility = View.GONE
+                        resultIcon.visibility = View.GONE
+                    }
+                }
+            }
+        }
+
         if (name != null) {
             resultName.text = name
             resultName.visibility = View.VISIBLE
@@ -335,7 +397,8 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
                 feeDvaText.visibility = View.GONE
             }
             currentFeeContext = FeeContext(
-                studentId = data?.optString("id", "") ?: "",
+                userId = data?.optString("id", "") ?: "",
+                displayStudentId = studentId ?: "",
                 name = name ?: "",
                 className = className ?: "",
                 paid = paid,
@@ -350,7 +413,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
 
         resetResultRunnable?.let { mainHandler.removeCallbacks(it) }
         val hasFees = fees != null
-        val displayMs = if (hasFees) 15_000L else 4_000L
+        val displayMs = if (hasFees) 15_000L else 6_000L
         val runnable = Runnable {
             readyBlock.visibility = View.VISIBLE
             resultBlock.visibility = View.GONE
@@ -365,7 +428,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
             schoolName = KioskStore.schoolName(this) ?: "SchoolDom",
             studentName = ctx.name,
             studentClass = ctx.className,
-            studentId = ctx.studentId,
+            studentId = ctx.displayStudentId,
             paid = "₦${ctx.paid}",
             outstanding = "₦${ctx.outstanding}",
             accountNumber = ctx.dva?.optString("account_number", "") ?: "",
@@ -381,10 +444,10 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
 
     private fun onSendSmsTapped() {
         val ctx = currentFeeContext ?: return
-        if (ctx.studentId.isEmpty()) return
+        if (ctx.userId.isEmpty()) return
         bgExecutor.execute {
             try {
-                GateEndpoints.sendFeeReminder(this, ctx.studentId)
+                GateEndpoints.sendFeeReminder(this, ctx.userId)
                 mainHandler.post { Toast.makeText(this, "Fee reminder sent.", Toast.LENGTH_SHORT).show() }
             } catch (e: Exception) {
                 mainHandler.post { Toast.makeText(this, "Could not send: ${e.message}", Toast.LENGTH_SHORT).show() }
@@ -428,6 +491,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
                     schoolNameText.text = outcome.schoolName
                 }
                 if (outcome.online) refreshContactsIfStale()
+                if (outcome.updateAvailable) maybePromptForUpdate(outcome)
             }
             refreshPendingCount()
         }
@@ -464,6 +528,110 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         statusDot.backgroundTintList = android.content.res.ColorStateList.valueOf(
             getColor(if (online) R.color.success else R.color.danger),
         )
+    }
+
+    // ---------------------------------------------------------------- Self-update
+
+    /** Pops the "update available" question up on its own the first time a
+     * heartbeat reports a newer build after launch, instead of leaving it to
+     * a tiny icon nobody notices. Held back while a card is being read, a
+     * result is showing, or settings are open; the next heartbeat (5 min)
+     * tries again. */
+    private fun maybePromptForUpdate(outcome: HeartbeatOutcome) {
+        val code = outcome.latestVersionCode ?: return
+        if (promptedUpdateCode == code) return
+        if (busy || downloadingUpdate || updateDialogOpen) return
+        if (resultBlock.visibility == View.VISIBLE) return
+        promptedUpdateCode = code
+        showUpdateDialog(outcome)
+    }
+
+    private fun showUpdateDialog(info: HeartbeatOutcome) {
+        if (updateDialogOpen) return
+        updateDialogOpen = true
+        val notes = info.releaseNotes?.trim().takeIf { !it.isNullOrEmpty() } ?: "A newer version of this app is available."
+        AlertDialog.Builder(this)
+            .setTitle("Update available - ${info.latestVersionName ?: ""}")
+            .setMessage(notes)
+            .setOnDismissListener { updateDialogOpen = false }
+            .setNegativeButton("Later", null)
+            .setPositiveButton("Install Now") { _, _ -> installUpdate(info) }
+            .show()
+    }
+
+    private fun installUpdate(info: HeartbeatOutcome) {
+        val apkUrl = info.apkUrl ?: return
+        val versionCode = info.latestVersionCode ?: System.currentTimeMillis().toInt()
+
+        val dialogView = layoutInflater.inflate(R.layout.dialog_update_progress, null)
+        val statusText = dialogView.findViewById<TextView>(R.id.updateStatusText)
+        val progressBar = dialogView.findViewById<android.widget.ProgressBar>(R.id.updateProgressBar)
+        val percentText = dialogView.findViewById<TextView>(R.id.updatePercentText)
+        val cancelButton = dialogView.findViewById<Button>(R.id.updateCancelButton)
+
+        var cancelled = false
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .setCancelable(false)
+            .create()
+        cancelButton.setOnClickListener {
+            cancelled = true
+            downloadingUpdate = false
+            dialog.dismiss()
+        }
+        dialog.show()
+        downloadingUpdate = true
+
+        bgExecutor.execute {
+            try {
+                val dest = File(cacheDir, "schooldom-kiosk-update-$versionCode.apk")
+                val file = AppUpdater.download(this, apkUrl, dest) { received, total ->
+                    if (cancelled) return@download
+                    mainHandler.post {
+                        if (total != null && total > 0) {
+                            val pct = (received * 100L / total).toInt()
+                            progressBar.progress = pct
+                            percentText.text = "$pct%"
+                        } else {
+                            percentText.text = "${received / 1024} KB"
+                        }
+                    }
+                }
+                if (cancelled) return@execute
+                mainHandler.post {
+                    statusText.text = "Opening installer..."
+                    downloadingUpdate = false
+                    dialog.dismiss()
+                    openInstaller(file)
+                }
+            } catch (e: Exception) {
+                if (cancelled) return@execute
+                mainHandler.post {
+                    downloadingUpdate = false
+                    dialog.dismiss()
+                    Toast.makeText(this, "Update failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    /** Hands the APK to Android's own package installer - the OS shows its
+     * standard "install this app?" prompt (and, the very first time, an
+     * "allow installs from this app" permission screen). Never installs
+     * anything silently. Uses a plain file:// Uri (no AndroidX, so no
+     * FileProvider available - see app/build.gradle.kts) with the matching
+     * StrictMode exemption; acceptable for a closed kiosk fleet we control. */
+    private fun openInstaller(file: File) {
+        try {
+            android.os.StrictMode.setVmPolicy(android.os.StrictMode.VmPolicy.Builder().build())
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(android.net.Uri.fromFile(file), "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not open the installer: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun handleRemoteRevocation() {
