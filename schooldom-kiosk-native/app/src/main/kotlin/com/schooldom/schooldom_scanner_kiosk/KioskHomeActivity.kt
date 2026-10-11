@@ -310,6 +310,12 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         val isGood = result.outcome == ScanOutcome.WELCOME || result.outcome == ScanOutcome.GOODBYE
         val isTeacher = isGood && role != null && role != "student"
 
+        if (isGood && name != null) {
+            val detail = if (isTeacher) (roleLabel ?: role ?: "") else listOfNotNull(className, studentId).joinToString(" · ")
+            val outcomeLabel = if (result.outcome == ScanOutcome.GOODBYE) "Clock-out" else "Clock-in"
+            AttendanceLogStore.record(this, name, detail, outcomeLabel)
+        }
+
         val (title, colorRes, icon) = when (result.outcome) {
             ScanOutcome.WELCOME -> Triple("Welcome!", 0xFF4ADE80.toInt(), "✓")
             ScanOutcome.GOODBYE -> Triple("Goodbye!", 0xFF60A5FA.toInt(), "✓")

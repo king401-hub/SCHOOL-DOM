@@ -84,5 +84,9 @@
             android:name=".SmsInboxActivity"
             android:exported="false"
             android:theme="@style/AppTheme"/>
+        <activity
+            android:name=".AttendanceLogActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"/>
     </application>
 </manifest>

@@ -74,6 +74,9 @@ class GateSettingsActivity : Activity() {
         findViewById<Button>(R.id.smsInboxButton).setOnClickListener {
             startActivity(Intent(this, SmsInboxActivity::class.java))
         }
+        findViewById<Button>(R.id.attendanceLogButton).setOnClickListener {
+            startActivity(Intent(this, AttendanceLogActivity::class.java))
+        }
 
         load()
     }

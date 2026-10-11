@@ -153,6 +153,15 @@
                 android:text="Received Messages"/>
 
             <Button
+                android:id="@+id/attendanceLogButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/button_outline"
+                android:textColor="@color/text_primary"
+                android:text="Today's Attendance Log"/>
+
+            <Button
                 android:id="@+id/saveButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
