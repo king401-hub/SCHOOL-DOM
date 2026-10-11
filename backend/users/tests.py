@@ -22,6 +22,7 @@ from academic.models import (
     SchoolActivityCalendar,
     StudentClassPromotion,
     StudentSubjectScore,
+    StudentTraitRecord,
     Subject,
     Term,
     TimetableEntry,
@@ -7569,6 +7570,186 @@ class ClassResultSnapshotTests(TestCase):
             "class_id": self.class_a.id, "academic_year_id": empty_year.id,
         }, format="json")
         self.assertEqual(response.status_code, 400)
+
+
+class StudentTraitRecordTests(TestCase):
+    """The report card's Affective Traits / Psychomotor Skills tables - a
+    class teacher flags which of the two fixed catalogs apply to a student
+    for the active term (no grade, just a plain list), and the single
+    report card (_student_result_report) prints whichever were flagged."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(name="Traits School", schema_name="traits_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+
+        self.admin = User.objects.create_user(
+            email="admin@traits.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.teacher_user = User.objects.create_user(
+            email="teacher@traits.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.other_teacher_user = User.objects.create_user(
+            email="other-teacher@traits.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+
+        self.class_a = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.class_b = Class.objects.create(tenant=self.legacy_tenant, name="Basic 2", section="A")
+
+        self.teacher_profile = TeacherProfile.objects.create(
+            user=self.teacher_user, employee_id="EMP-TR-1", qualification="B.Ed", specialization="General",
+            hire_date=timezone.localdate(),
+            emergency_contact_name="Contact", emergency_contact_phone="+15550001111", emergency_contact_relation="Sibling",
+        )
+        self.teacher_profile.assigned_classes.set([self.class_a])
+
+        self.year = AcademicYear.objects.create(
+            tenant=self.legacy_tenant, name="2025/2026",
+            start_date=timezone.localdate(), end_date=timezone.localdate() + timedelta(days=270), is_active=True,
+        )
+        self.term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", academic_year=self.year, is_active=True,
+            start_date=timezone.localdate(), end_date=timezone.localdate() + timedelta(days=90),
+        )
+
+        student_user = User.objects.create_user(
+            email="student@traits.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=student_user, student_id="STU-TR-1", admission_number="ADM-TR-1",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.class_a,
+        )
+
+        other_student_user = User.objects.create_user(
+            email="other-student@traits.edu", password="StudentPass123", first_name="Oth", last_name="Er",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.other_class_student = StudentProfile.objects.create(
+            user=other_student_user, student_id="STU-TR-2", admission_number="ADM-TR-2",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.class_b,
+        )
+
+    def test_catalog_and_selection_start_empty(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.get(f"/api/app/results/traits/?student_id={self.student.student_id}")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIn("Time Management & Punctuality", response.data["catalog"]["affective"])
+        self.assertIn("Calligraphy & Script Legibility", response.data["catalog"]["psychomotor"])
+        self.assertEqual(response.data["selected"], {"affective": [], "psychomotor": []})
+        self.assertEqual(response.data["term"]["id"], self.term.id)
+
+    def test_teacher_can_save_and_read_back_traits_for_an_assigned_class(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        save_response = self.client.post(
+            "/api/app/results/traits/save/",
+            {
+                "student_id": self.student.student_id,
+                "affective": ["Time Management & Punctuality", "Emotional Regulation"],
+                "psychomotor": ["Calligraphy & Script Legibility"],
+            },
+            format="json",
+        )
+        self.assertEqual(save_response.status_code, 200, save_response.data)
+        self.assertEqual(
+            StudentTraitRecord.objects.filter(student=self.student, term=self.term).count(), 3
+        )
+
+        read_response = self.client.get(f"/api/app/results/traits/?student_id={self.student.student_id}")
+        self.assertEqual(read_response.status_code, 200)
+        # Printed in catalog order, not the order they were submitted in.
+        self.assertEqual(
+            read_response.data["selected"]["affective"],
+            ["Time Management & Punctuality", "Emotional Regulation"],
+        )
+        self.assertEqual(read_response.data["selected"]["psychomotor"], ["Calligraphy & Script Legibility"])
+
+    def test_resaving_replaces_the_previous_selection_rather_than_appending(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        self.client.post(
+            "/api/app/results/traits/save/",
+            {"student_id": self.student.student_id, "affective": ["Time Management & Punctuality"], "psychomotor": []},
+            format="json",
+        )
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+        self.client.post(
+            "/api/app/results/traits/save/",
+            {"student_id": self.student.student_id, "affective": ["Emotional Regulation"], "psychomotor": []},
+            format="json",
+        )
+        records = StudentTraitRecord.objects.filter(student=self.student, term=self.term)
+        self.assertEqual(records.count(), 1)
+        self.assertEqual(records.first().trait_name, "Emotional Regulation")
+
+    def test_teacher_cannot_set_traits_for_a_student_outside_their_assigned_classes(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.post(
+            "/api/app/results/traits/save/",
+            {"student_id": self.other_class_student.student_id, "affective": ["Emotional Regulation"], "psychomotor": []},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(StudentTraitRecord.objects.count(), 0)
+
+    def test_a_different_teacher_not_assigned_to_the_class_is_forbidden(self):
+        self.client.force_authenticate(user=self.other_teacher_user)
+        response = self.client.get(f"/api/app/results/traits/?student_id={self.student.student_id}")
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_can_set_traits_for_any_student_in_the_school(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            "/api/app/results/traits/save/",
+            {"student_id": self.other_class_student.student_id, "affective": ["Emotional Regulation"], "psychomotor": []},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(StudentTraitRecord.objects.filter(student=self.other_class_student).count(), 1)
+
+    def test_unknown_trait_names_are_silently_dropped(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.post(
+            "/api/app/results/traits/save/",
+            {"student_id": self.student.student_id, "affective": ["Not A Real Trait"], "psychomotor": ["Also Fake"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(StudentTraitRecord.objects.filter(student=self.student).count(), 0)
+
+    def test_flagged_traits_appear_on_the_single_report_card_in_catalog_order(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        self.client.post(
+            "/api/app/results/traits/save/",
+            {
+                "student_id": self.student.student_id,
+                "affective": ["Emotional Regulation", "Time Management & Punctuality"],
+                "psychomotor": ["Calligraphy & Script Legibility"],
+            },
+            format="json",
+        )
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f"/api/app/results/?student_id={self.student.student_id}&term_id={self.term.id}")
+        self.assertEqual(response.status_code, 200, response.data)
+        report = response.data["report_card"]
+        self.assertEqual(
+            report["affective_traits"],
+            ["Time Management & Punctuality", "Emotional Regulation"],
+        )
+        self.assertEqual(report["psychomotor_skills"], ["Calligraphy & Script Legibility"])
+
+    def test_report_card_traits_are_empty_when_none_flagged(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f"/api/app/results/?student_id={self.student.student_id}&term_id={self.term.id}")
+        self.assertEqual(response.status_code, 200, response.data)
+        report = response.data["report_card"]
+        self.assertEqual(report["affective_traits"], [])
+        self.assertEqual(report["psychomotor_skills"], [])
 
 
 class StudentDirectoryPagingTests(TestCase):

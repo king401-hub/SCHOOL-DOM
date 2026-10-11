@@ -418,6 +418,78 @@ class StudentSubjectScore(TenantAwareModel, TimeStampedModel):
             return None
 
 
+# Fixed report-card catalogs for StudentTraitRecord. Nothing in these two
+# lists carries a grade - a class teacher just flags which ones apply to a
+# student for the term, and the report card prints whichever were flagged,
+# in this order, under "Affective Traits" / "Psychomotor Skills".
+AFFECTIVE_TRAITS = [
+    "Time Management & Punctuality",
+    "Cognitive Engagement & Focus",
+    "Conduct and Discipline",
+    "Dependability & Responsibility",
+    "Classroom Attention Span",
+    "Respect for Authority & Peers",
+    "Personal Grooming & Organization",
+    "Interpersonal Etiquette",
+    "Academic Integrity & Truthfulness",
+    "Faculty Interaction & Rapport",
+    "Peer Interaction & Social Skills",
+    "Institutional Engagement",
+    "Emotional Regulation",
+    "Collaborative Skills & Teamwork",
+    "Proactive Initiative & Enterprise",
+    "Organizational Competencies",
+]
+
+PSYCHOMOTOR_SKILLS = [
+    "Calligraphy & Script Legibility",
+    "Reading Fluency & Comprehension",
+    "Spoken Language & Articulation",
+    "Musical Proficiency & Appreciation",
+    "Artistic & Visual Literacy",
+    "Physical Fitness & Motor Skills",
+    "Logical & Analytical Reasoning",
+]
+
+
+class StudentTraitRecord(TenantAwareModel, TimeStampedModel):
+    """A single affective trait or psychomotor skill (from AFFECTIVE_TRAITS /
+    PSYCHOMOTOR_SKILLS above) flagged by a class teacher as applicable to a
+    student for a term. No score - the report card just lists whichever
+    traits have a record, the same plain-list format the school's existing
+    paper report card already uses."""
+    AFFECTIVE = "affective"
+    PSYCHOMOTOR = "psychomotor"
+    CATEGORY_CHOICES = [(AFFECTIVE, "Affective Trait"), (PSYCHOMOTOR, "Psychomotor Skill")]
+
+    student = models.ForeignKey(
+        "users.StudentProfile",
+        on_delete=models.CASCADE,
+        related_name="trait_records",
+    )
+    term = models.ForeignKey(
+        "academic.Term",
+        on_delete=models.CASCADE,
+        related_name="trait_records",
+    )
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
+    trait_name = models.CharField(max_length=120)
+    teacher = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="submitted_trait_records",
+    )
+
+    class Meta:
+        unique_together = ("student", "term", "category", "trait_name")
+        ordering = ["category", "trait_name"]
+
+    def __str__(self):
+        return f"{self.student.student_id} - {self.trait_name}"
+
+
 class AttendanceRecord(TenantAwareModel, TimeStampedModel):
     STATUS_CHOICES = [
         ("present", "Present"),

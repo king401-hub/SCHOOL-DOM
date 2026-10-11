@@ -1262,6 +1262,31 @@ export function ReportCardSheet({ report, gradeScales = [], elementId }) {
           <div><span>Class Position</span><strong>{report?.class_position ? `${report.class_position} / ${report.class_size}` : "N/A"}</strong></div>
         </div>
 
+        {(report?.affective_traits?.length || report?.psychomotor_skills?.length) ? (
+          <div className="report-traits-grid">
+            {report.affective_traits?.length ? (
+              <div className="report-traits-col">
+                <h4>Affective Traits</h4>
+                <table className="report-traits-table">
+                  <tbody>
+                    {report.affective_traits.map((name) => <tr key={name}><td>{name}</td></tr>)}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            {report.psychomotor_skills?.length ? (
+              <div className="report-traits-col">
+                <h4>Psychomotor Skills</h4>
+                <table className="report-traits-table">
+                  <tbody>
+                    {report.psychomotor_skills.map((name) => <tr key={name}><td>{name}</td></tr>)}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className={`report-key-remarks-grid${gradingOn ? "" : " no-grade-key"}`}>
           {gradingOn ? (
             <div className="report-grade-key">

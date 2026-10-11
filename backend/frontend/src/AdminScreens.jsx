@@ -11600,9 +11600,21 @@ function ParentDirectoryTable({
   extraFilters,
 }) {
   const allSelected = Boolean(selection) && parents.length > 0 && selection.selectedIds.size === parents.length;
+  const [collapsed, setCollapsed] = useState(false);
   return (
     <article className="app-panel">
-      <h3>{title}</h3>
+      <div className="directory-table-head">
+        <h3>{title}</h3>
+        <button
+          type="button"
+          className="table-action directory-collapse-btn"
+          onClick={() => setCollapsed((prev) => !prev)}
+          aria-expanded={!collapsed}
+        >
+          <ChevronDown size={14} className={`directory-collapse-chevron${collapsed ? " is-collapsed" : ""}`} aria-hidden="true" />
+          {collapsed ? `Show (${parents.length})` : "Collapse"}
+        </button>
+      </div>
       <div className="directory-tools">
         <label className="panel-field full search-field">
           {searchLabel}
@@ -11610,7 +11622,7 @@ function ParentDirectoryTable({
         </label>
         {extraFilters}
       </div>
-      {parents.length > 0 ? (
+      {collapsed ? null : parents.length > 0 ? (
         <table className="data-table">
           <thead>
             <tr>
@@ -12176,9 +12188,12 @@ function ClassReportCardSmsPanel({ onLoadRecipients, onSendBatch, onFinished }) 
   );
 }
 
-function ReportCardSmsPanel({ onStudentSearch, onSearchReport, onSendReportSms }) {
+function ReportCardSmsPanel({ session, onSearchReport, onSendReportSms }) {
+  const [classId, setClassId] = useState("");
+  const [classOptions, setClassOptions] = useState([]);
   const [studentId, setStudentId] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
+  const [classStudentOptions, setClassStudentOptions] = useState([]);
+  const [classStudentsLoading, setClassStudentsLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -12188,25 +12203,41 @@ function ReportCardSmsPanel({ onStudentSearch, onSearchReport, onSendReportSms }
   const [sendFeedback, setSendFeedback] = useState("");
 
   useEffect(() => {
-    const query = studentId.trim();
-    if (query.length < 2 || !onStudentSearch) {
-      setSearchResults([]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await requestJson(session, "GET", "/api/app/attendance/class-students/?context=results");
+        if (!cancelled) setClassOptions(result?.classes || []);
+      } catch {
+        if (!cancelled) setClassOptions([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session]);
+
+  useEffect(() => {
+    if (!classId) {
+      setClassStudentOptions([]);
+      setStudentId("");
       return undefined;
     }
     let cancelled = false;
-    const timer = window.setTimeout(async () => {
+    setClassStudentsLoading(true);
+    (async () => {
       try {
-        const result = await onStudentSearch(query);
-        if (!cancelled) setSearchResults(result?.results || []);
+        const result = await requestJson(
+          session, "GET",
+          `/api/app/attendance/class-students/?context=results&class_id=${encodeURIComponent(classId)}`
+        );
+        if (!cancelled) setClassStudentOptions(result?.students || []);
       } catch {
-        if (!cancelled) setSearchResults([]);
+        if (!cancelled) setClassStudentOptions([]);
+      } finally {
+        if (!cancelled) setClassStudentsLoading(false);
       }
-    }, 300);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [studentId, onStudentSearch]);
+    })();
+    return () => { cancelled = true; };
+  }, [session, classId]);
 
   const loadReport = async (idOverride) => {
     const trimmed = (idOverride ?? studentId).trim();
@@ -12232,15 +12263,11 @@ function ReportCardSmsPanel({ onStudentSearch, onSearchReport, onSendReportSms }
     }
   };
 
-  const handlePick = (candidate) => {
-    setStudentId(candidate.student_id);
-    setSearchResults([]);
-    loadReport(candidate.student_id);
-  };
-
-  const handleSearchSubmit = (event) => {
-    event.preventDefault();
-    loadReport();
+  const handleSelectStudent = (event) => {
+    const value = event.target.value;
+    setStudentId(value);
+    setReport(null);
+    if (value) loadReport(value);
   };
 
   const handleSend = async (event) => {
@@ -12269,37 +12296,32 @@ function ReportCardSmsPanel({ onStudentSearch, onSearchReport, onSendReportSms }
         <h3>Send a Report Card</h3>
       </div>
       <div className="bulk-panel-body">
-        <form className="panel-form" onSubmit={handleSearchSubmit}>
+        <div className="panel-form">
           <div className="panel-form-grid">
-            <label className="panel-field" style={{ position: "relative" }}>
-              Student Name or ID
-              <input
-                value={studentId}
-                onChange={(event) => setStudentId(event.target.value)}
-                placeholder="e.g. STU2026-001 or Jane Doe"
-                autoComplete="off"
-              />
-              {searchResults.length ? (
-                <ul className="search-typeahead">
-                  {searchResults.map((candidate) => (
-                    <li key={candidate.id}>
-                      <button type="button" onClick={() => handlePick(candidate)}>
-                        <strong>{candidate.name}</strong>
-                        <small>{candidate.student_id} · {candidate.class_name}</small>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
+            <label className="panel-field">
+              Class
+              <select value={classId} onChange={(event) => setClassId(event.target.value)}>
+                <option value="">Select a class</option>
+                {classOptions.map((item) => (
+                  <option key={item.id} value={item.id}>{item.label || item.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="panel-field">
+              Student
+              <select value={studentId} onChange={handleSelectStudent} disabled={!classId || classStudentsLoading}>
+                <option value="">
+                  {!classId ? "Select a class first" : classStudentsLoading ? "Loading students..." : "Select a student"}
+                </option>
+                {classStudentOptions.map((student) => (
+                  <option key={student.id} value={student.student_id}>{student.name} ({student.student_id})</option>
+                ))}
+              </select>
             </label>
           </div>
+          {loading ? <p className="panel-empty">Looking up this student's report card...</p> : null}
           {loadError ? <p className="form-feedback error">{loadError}</p> : null}
-          <div className="panel-form-actions">
-            <button type="submit" disabled={loading}>
-              {loading ? <><Spinner size={12} /> Looking up...</> : "Find student"}
-            </button>
-          </div>
-        </form>
+        </div>
 
         {report ? (
           <form onSubmit={handleSend} style={{ marginTop: "1rem" }}>
@@ -12334,7 +12356,7 @@ function ReportCardSmsPanel({ onStudentSearch, onSearchReport, onSendReportSms }
   );
 }
 
-function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVerifyPurchase, onCancelPurchase, session, school, parentsData, onStudentSearch, onSearchReport, onSendReportSms, onLoadReportCardRecipients, onSendReportCardBatch, onReportCardsSent }) {
+function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVerifyPurchase, onCancelPurchase, session, school, parentsData, onSearchReport, onSendReportSms, onLoadReportCardRecipients, onSendReportCardBatch, onReportCardsSent }) {
   const pricing = data?.unit_pricing || { block_size: 100, block_price: "1000.00", minimum_units: 100, currency: "NGN" };
   const blockSize = pricing.block_size || 100;
   const blockPrice = Number(pricing.block_price || 1000);
@@ -12485,7 +12507,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
             onFinished={onReportCardsSent}
           />
 
-          <ReportCardSmsPanel onStudentSearch={onStudentSearch} onSearchReport={onSearchReport} onSendReportSms={onSendReportSms} />
+          <ReportCardSmsPanel session={session} onSearchReport={onSearchReport} onSendReportSms={onSendReportSms} />
 
           <article className="app-panel">
             <h3>Recent Transactions</h3>

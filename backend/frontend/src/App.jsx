@@ -5749,6 +5749,97 @@ function TeacherResultsPanel({ session, school, subjects = [], classOptions = []
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
   const [resultsTab, setResultsTab] = useState("rankings");
+
+  const [traitClassId, setTraitClassId] = useState("");
+  const [traitStudentId, setTraitStudentId] = useState("");
+  const [traitStudentOptions, setTraitStudentOptions] = useState([]);
+  const [traitStudentsLoading, setTraitStudentsLoading] = useState(false);
+  const [traitCatalog, setTraitCatalog] = useState({ affective: [], psychomotor: [] });
+  const [traitSelected, setTraitSelected] = useState({ affective: [], psychomotor: [] });
+  const [traitTermName, setTraitTermName] = useState("");
+  const [traitLoading, setTraitLoading] = useState(false);
+  const [traitSaving, setTraitSaving] = useState(false);
+  const [traitFeedback, setTraitFeedback] = useState("");
+  const [traitError, setTraitError] = useState("");
+
+  useEffect(() => {
+    if (!traitClassId) {
+      setTraitStudentOptions([]);
+      setTraitStudentId("");
+      return undefined;
+    }
+    let cancelled = false;
+    setTraitStudentsLoading(true);
+    (async () => {
+      try {
+        const result = await requestJson(
+          session, "GET",
+          `/api/app/attendance/class-students/?context=results&class_id=${encodeURIComponent(traitClassId)}`
+        );
+        if (!cancelled) setTraitStudentOptions(result?.students || []);
+      } catch {
+        if (!cancelled) setTraitStudentOptions([]);
+      } finally {
+        if (!cancelled) setTraitStudentsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, traitClassId]);
+
+  useEffect(() => {
+    if (!traitStudentId) {
+      setTraitCatalog({ affective: [], psychomotor: [] });
+      setTraitSelected({ affective: [], psychomotor: [] });
+      setTraitTermName("");
+      return undefined;
+    }
+    let cancelled = false;
+    setTraitLoading(true);
+    setTraitError("");
+    setTraitFeedback("");
+    (async () => {
+      try {
+        const result = await requestJson(session, "GET", `/api/app/results/traits/?student_id=${encodeURIComponent(traitStudentId)}`);
+        if (cancelled) return;
+        setTraitCatalog(result?.catalog || { affective: [], psychomotor: [] });
+        setTraitSelected(result?.selected || { affective: [], psychomotor: [] });
+        setTraitTermName(result?.term?.name || "");
+      } catch (loadError) {
+        if (!cancelled) setTraitError(loadError.message || "Could not load traits.");
+      } finally {
+        if (!cancelled) setTraitLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, traitStudentId]);
+
+  const toggleTrait = (category, name) => {
+    setTraitSelected((prev) => {
+      const current = prev[category] || [];
+      const next = current.includes(name) ? current.filter((item) => item !== name) : [...current, name];
+      return { ...prev, [category]: next };
+    });
+  };
+
+  const handleSaveTraits = async () => {
+    if (!traitStudentId) return;
+    setTraitSaving(true);
+    setTraitError("");
+    setTraitFeedback("");
+    try {
+      await requestJson(session, "POST", "/api/app/results/traits/save/", {
+        student_id: traitStudentId,
+        affective: traitSelected.affective,
+        psychomotor: traitSelected.psychomotor,
+      });
+      setTraitFeedback("Traits saved.");
+    } catch (saveError) {
+      setTraitError(saveError.message || "Could not save traits.");
+    } finally {
+      setTraitSaving(false);
+    }
+  };
+
   const subjectIdSet = useMemo(() => new Set(subjects.map((subject) => String(subject.id))), [subjects]);
   const subjectCbtResults = useMemo(
     () => cbtResults.filter((row) => !row.subject_id || subjectIdSet.has(String(row.subject_id))),
@@ -6155,6 +6246,78 @@ function TeacherResultsPanel({ session, school, subjects = [], classOptions = []
           )}
         </article>
       </div>
+
+      <article className="app-panel teacher-traits-card">
+        <div className="panel-head">
+          <div>
+            <h3>Affective Traits &amp; Psychomotor Skills</h3>
+            <small>Flag which traits apply to a student this term - they print on the student's report card.</small>
+          </div>
+        </div>
+        <div className="panel-form-grid">
+          <label className="panel-field">
+            Class
+            <select value={traitClassId} onChange={(event) => setTraitClassId(event.target.value)}>
+              <option value="">Select a class</option>
+              {classOptions.map((item) => (
+                <option key={item.id} value={item.id}>{item.label || item.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="panel-field">
+            Student
+            <select value={traitStudentId} onChange={(event) => setTraitStudentId(event.target.value)} disabled={!traitClassId || traitStudentsLoading}>
+              <option value="">
+                {!traitClassId ? "Select a class first" : traitStudentsLoading ? "Loading students..." : "Select a student"}
+              </option>
+              {traitStudentOptions.map((student) => (
+                <option key={student.id} value={student.student_id}>{student.name} ({student.student_id})</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {traitStudentId ? (
+          traitLoading ? (
+            <p className="panel-empty">Loading traits...</p>
+          ) : (
+            <>
+              {traitTermName ? (
+                <p className="field-note">Term: {traitTermName}</p>
+              ) : (
+                <p className="form-feedback error">No active term is set for your school - ask an admin to set one in School Settings first.</p>
+              )}
+              <div className="teacher-traits-grid">
+                <div className="teacher-traits-col">
+                  <h4>Affective Traits</h4>
+                  {traitCatalog.affective.map((name) => (
+                    <label key={name} className="teacher-trait-checkbox">
+                      <input type="checkbox" checked={traitSelected.affective.includes(name)} onChange={() => toggleTrait("affective", name)} />
+                      {name}
+                    </label>
+                  ))}
+                </div>
+                <div className="teacher-traits-col">
+                  <h4>Psychomotor Skills</h4>
+                  {traitCatalog.psychomotor.map((name) => (
+                    <label key={name} className="teacher-trait-checkbox">
+                      <input type="checkbox" checked={traitSelected.psychomotor.includes(name)} onChange={() => toggleTrait("psychomotor", name)} />
+                      {name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {traitError ? <p className="form-feedback error">{traitError}</p> : null}
+              {traitFeedback ? <p className="form-feedback success">{traitFeedback}</p> : null}
+              <div className="panel-form-actions">
+                <button type="button" onClick={handleSaveTraits} disabled={traitSaving || !traitTermName}>
+                  {traitSaving ? <><Spinner size={12} /> Saving...</> : "Save traits"}
+                </button>
+              </div>
+            </>
+          )
+        ) : null}
+      </article>
 
       {reviewingAttempt ? (
         <ExamSubmissionModal
@@ -9257,7 +9420,6 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         session={session}
         school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
         parentsData={screenData["/parents"]}
-        onStudentSearch={handleStudentSearch}
         onSearchReport={handleSearchReport}
         onSendReportSms={handleSendReportSms}
         onLoadReportCardRecipients={handleLoadReportCardRecipients}

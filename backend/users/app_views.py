@@ -57,6 +57,9 @@ from academic.models import (
     ResultBatch,
     ClassResultSnapshot,
     StudentSubjectScore,
+    StudentTraitRecord,
+    AFFECTIVE_TRAITS,
+    PSYCHOMOTOR_SKILLS,
     StudentClassPromotion,
     SchoolActivityCalendar,
     TeacherNote,
@@ -12364,6 +12367,16 @@ def _student_result_report(student_profile, class_group=None, term=None, request
                 position = idx
                 break
 
+    # Affective Traits / Psychomotor Skills: whichever of the two fixed
+    # catalogs the class teacher flagged for this student this term (see
+    # StudentTraitRecord) - printed in catalog order, not insertion order.
+    trait_qs = StudentTraitRecord.objects.filter(student=student_profile)
+    if term:
+        trait_qs = trait_qs.filter(term=term)
+    flagged_traits = set(trait_qs.values_list("trait_name", flat=True))
+    affective_traits = [name for name in AFFECTIVE_TRAITS if name in flagged_traits]
+    psychomotor_skills = [name for name in PSYCHOMOTOR_SKILLS if name in flagged_traits]
+
     return {
         "school": _school_payload(student_profile.user.tenant, request),
         "student": {
@@ -12383,6 +12396,8 @@ def _student_result_report(student_profile, class_group=None, term=None, request
         "class_position": position,
         "class_size": class_size,
         "class_teacher_signature": class_teacher_signature,
+        "affective_traits": affective_traits,
+        "psychomotor_skills": psychomotor_skills,
         # Lets the student-facing report card show the same grading key the
         # admin's copy of this report does, via the same tenant-configured
         # source of truth every other grade in this payload resolves through.
@@ -13937,6 +13952,125 @@ def student_report_card(request, student_code):
 
     report = _student_result_report(student_profile, class_group=class_group, term=term, request=request)
     return Response({"success": True, "report_card": report})
+
+
+def _require_teacher_owns_student(user, student_profile):
+    """None if the teacher may manage this student's traits, else a Response
+    to return as-is. Admins pass automatically; a teacher must currently be
+    assigned to the student's class (same scoping teacher_class_students
+    uses for everything else student-roster related)."""
+    if user.role in ADMIN_ROLES:
+        return None
+    assigned_ids = set(_teacher_assigned_classes(user).values_list("id", flat=True))
+    if not student_profile.current_class_id or student_profile.current_class_id not in assigned_ids:
+        return Response(
+            {"success": False, "message": "You can only manage traits for students in your own classes."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def student_trait_selection(request):
+    """The two fixed report-card catalogs (AFFECTIVE_TRAITS,
+    PSYCHOMOTOR_SKILLS) plus which of those are currently flagged for one
+    student in one term - backs the class teacher's trait checklist and the
+    admin's read of it on the single report card."""
+    user = request.user
+    if user.role not in {"teacher", *ADMIN_ROLES}:
+        return Response({"success": False, "message": "Only teachers and school administrators can view student traits."}, status=status.HTTP_403_FORBIDDEN)
+
+    student_code = request.query_params.get("student_id")
+    if not student_code:
+        return Response({"success": False, "message": "student_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+    student_profile = get_object_or_404(
+        StudentProfile.objects.select_related("user", "current_class"),
+        student_id__iexact=student_code,
+        user__tenant=user.tenant,
+    )
+    forbidden = _require_teacher_owns_student(user, student_profile)
+    if forbidden:
+        return forbidden
+
+    term_id = request.query_params.get("term_id")
+    if term_id:
+        term = get_object_or_404(_scope_to_user_tenant(Term.objects.all(), user), id=term_id)
+    else:
+        term = _active_term(user)
+
+    trait_qs = StudentTraitRecord.objects.filter(student=student_profile, term=term) if term else StudentTraitRecord.objects.none()
+    flagged = set(trait_qs.values_list("trait_name", flat=True))
+
+    return Response(
+        {
+            "success": True,
+            "term": {"id": term.id, "name": term.name} if term else None,
+            "catalog": {"affective": AFFECTIVE_TRAITS, "psychomotor": PSYCHOMOTOR_SKILLS},
+            "selected": {
+                "affective": [name for name in AFFECTIVE_TRAITS if name in flagged],
+                "psychomotor": [name for name in PSYCHOMOTOR_SKILLS if name in flagged],
+            },
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def save_student_trait_selection(request):
+    user = request.user
+    if user.role not in {"teacher", *ADMIN_ROLES}:
+        return Response({"success": False, "message": "Only teachers and school administrators can set student traits."}, status=status.HTTP_403_FORBIDDEN)
+
+    student_code = str(request.data.get("student_id") or "").strip()
+    if not student_code:
+        return Response({"success": False, "message": "student_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    student_profile = get_object_or_404(
+        StudentProfile.objects.select_related("user", "current_class"),
+        student_id__iexact=student_code,
+        user__tenant=user.tenant,
+    )
+    forbidden = _require_teacher_owns_student(user, student_profile)
+    if forbidden:
+        return forbidden
+
+    term_id = request.data.get("term_id")
+    if term_id:
+        term = get_object_or_404(_scope_to_user_tenant(Term.objects.all(), user), id=term_id)
+    else:
+        term = _active_term(user)
+    if not term:
+        return Response({"success": False, "message": "No active term is set for your school yet - set one in School Settings first."}, status=status.HTTP_400_BAD_REQUEST)
+
+    raw_affective = request.data.get("affective") or []
+    raw_psychomotor = request.data.get("psychomotor") or []
+    if not isinstance(raw_affective, (list, tuple)) or not isinstance(raw_psychomotor, (list, tuple)):
+        return Response({"success": False, "message": "affective and psychomotor must be lists of trait names."}, status=status.HTTP_400_BAD_REQUEST)
+    affective_selected = list(dict.fromkeys(name for name in raw_affective if name in AFFECTIVE_TRAITS))
+    psychomotor_selected = list(dict.fromkeys(name for name in raw_psychomotor if name in PSYCHOMOTOR_SKILLS))
+
+    tenant_obj = _tenant_for_model(StudentTraitRecord, user)
+    with db_transaction.atomic():
+        StudentTraitRecord.objects.filter(student=student_profile, term=term).delete()
+        StudentTraitRecord.objects.bulk_create(
+            [
+                StudentTraitRecord(
+                    tenant=tenant_obj, student=student_profile, term=term,
+                    category=StudentTraitRecord.AFFECTIVE, trait_name=name, teacher=user,
+                )
+                for name in affective_selected
+            ]
+            + [
+                StudentTraitRecord(
+                    tenant=tenant_obj, student=student_profile, term=term,
+                    category=StudentTraitRecord.PSYCHOMOTOR, trait_name=name, teacher=user,
+                )
+                for name in psychomotor_selected
+            ]
+        )
+
+    return Response({"success": True, "message": "Traits saved."})
 
 
 @api_view(["GET"])
