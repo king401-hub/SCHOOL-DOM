@@ -1038,7 +1038,7 @@ function InvoiceDocument({ id, school, bill, student, parent, invoiceNumber, vir
   );
 }
 
-function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPublish, defaultTitle = "" }) {
+function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPublish, defaultTitle = "", activeTermLabel = "" }) {
   const isEdit = Boolean(bill?.id);
   const isPublished = bill?.status === "published";
   // A new bill starts titled with the active term ("First Term 2026/2027").
@@ -1157,6 +1157,15 @@ function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPubl
             <label className="panel-field full">
               Bill title
               <input value={form.title} onChange={(e) => { titleTouched.current = true; setForm((c) => ({ ...c, title: e.target.value })); }} placeholder="e.g. First Term School Fees" disabled={isPublished} />
+            </label>
+            <label className="panel-field">
+              Term
+              <select value="current" disabled>
+                <option value="current">{isEdit ? (bill?.term_name || "—") : (activeTermLabel || "Current term")}</option>
+              </select>
+              <small className="field-note">
+                {isEdit ? "A bill's term is fixed once created." : "Bills always charge the current term - switch terms in Settings first if this is wrong."}
+              </small>
             </label>
             <label className="panel-field full">
               Classes
@@ -1775,7 +1784,34 @@ function AdminFinanceScreen({
   // same "bank_transfer" payment_method label.
   const cashPaymentRows = bankPaymentRows.filter((payment) => payment.recorded_by);
   const transactionHistory = finance?.transaction_history || [];
-  const financeLedgerRows = finance?.finance_ledger_logs || [];
+  const [ledgerTermId, setLedgerTermId] = useState("");
+  const [ledgerTermRows, setLedgerTermRows] = useState(null);
+  const [ledgerTermOptions, setLedgerTermOptions] = useState([]);
+  const [ledgerTermLoading, setLedgerTermLoading] = useState(false);
+  const { term: ledgerActiveTerm } = useCurrentTerm(session);
+
+  useEffect(() => {
+    let cancelled = false;
+    requestJson(session, "GET", "/api/app/terms/past-summary/")
+      .then((result) => { if (!cancelled) setLedgerTermOptions(result?.past_terms || []); })
+      .catch(() => { if (!cancelled) setLedgerTermOptions([]); });
+    return () => { cancelled = true; };
+  }, [session]);
+
+  const handleLedgerTermChange = (value) => {
+    setLedgerTermId(value);
+    if (!value) {
+      setLedgerTermRows(null);
+      return;
+    }
+    setLedgerTermLoading(true);
+    requestJson(session, "GET", `/api/finance/admin/finance-ledger/?term_id=${encodeURIComponent(value)}`)
+      .then((result) => setLedgerTermRows(result?.logs || []))
+      .catch(() => setLedgerTermRows([]))
+      .finally(() => setLedgerTermLoading(false));
+  };
+
+  const financeLedgerRows = ledgerTermRows !== null ? ledgerTermRows : (finance?.finance_ledger_logs || []);
   const [withdrawForm, setWithdrawForm] = useState({
     amount: "",
     account_number: "",
@@ -3679,14 +3715,30 @@ function AdminFinanceScreen({
             {recordSection === "ledger" ? (
               <article className="app-panel finance-record-panel">
                 <div className="mobile-section-head">
-                  <h3>Finance Ledger Log</h3>
-                  <small>Append-only record of financial activity</small>
+                  <div>
+                    <h3>Finance Ledger Log</h3>
+                    <small>{ledgerTermId ? "Full record for the selected term" : "Append-only record of financial activity (most recent)"}</small>
+                  </div>
+                  <label className="panel-field">
+                    Term
+                    <select value={ledgerTermId} onChange={(event) => handleLedgerTermChange(event.target.value)}>
+                      <option value="">Recent (all terms)</option>
+                      {ledgerActiveTerm?.id ? <option value={ledgerActiveTerm.id}>{ledgerActiveTerm.name} (current)</option> : null}
+                      {ledgerTermOptions.map((item) => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
               <div className="table-scroll">
-                <table className="data-table">
-                  <thead><tr><th>Date</th><th>Action</th><th>Description</th><th>Amount</th><th>Reference</th><th>Actor</th></tr></thead>
-                  <tbody>{financeLedgerRows.length ? visibleFinanceLedgerRows.map(renderLedgerRow) : <tr><td colSpan="6">No finance activity logged yet.</td></tr>}</tbody>
-                </table>
+                {ledgerTermLoading ? (
+                  <p className="panel-empty">Loading...</p>
+                ) : (
+                  <table className="data-table">
+                    <thead><tr><th>Date</th><th>Action</th><th>Description</th><th>Amount</th><th>Reference</th><th>Actor</th></tr></thead>
+                    <tbody>{financeLedgerRows.length ? visibleFinanceLedgerRows.map(renderLedgerRow) : <tr><td colSpan="6">No finance activity logged yet.</td></tr>}</tbody>
+                  </table>
+                )}
                 {renderFinanceMoreButton("financeLedger", financeLedgerRows.length)}
               </div>
               </article>
@@ -3765,6 +3817,7 @@ function AdminFinanceScreen({
           onSave={onBillSave}
           onPublish={onBillPublish}
           defaultTitle={defaultBillTitle}
+          activeTermLabel={activeTerm?.name ? [activeTerm.name, activeYear?.name].filter(Boolean).join(" · ") : ""}
         />
       ) : null}
 
@@ -10593,6 +10646,7 @@ function addMonthsAndDays(dateStr, months, days) {
 function AdminSettingsScreen({
   data,
   user,
+  session,
   loading,
   error,
   onRetry,
@@ -10625,6 +10679,11 @@ function AdminSettingsScreen({
   const [termName, setTermName] = useState("");
   const [termStart, setTermStart] = useState("");
   const [termEnd, setTermEnd] = useState("");
+  const [pastTerms, setPastTerms] = useState([]);
+  const [selectedPastTermId, setSelectedPastTermId] = useState("");
+  const [pastTermSummary, setPastTermSummary] = useState(null);
+  const [pastTermLoading, setPastTermLoading] = useState(false);
+  const [pastTermError, setPastTermError] = useState("");
   const [activityCalendar, setActivityCalendar] = useState([]);
   const today = useMemo(() => new Date(), []);
   const todayDateValue = useMemo(() => today.toISOString().slice(0, 10), [today]);
@@ -10699,6 +10758,26 @@ function AdminSettingsScreen({
     const timer = window.setTimeout(() => setActivityToast(null), 2800);
     return () => window.clearTimeout(timer);
   }, [activityToast]);
+
+  const loadPastTermSummary = useCallback((termId) => {
+    setPastTermLoading(true);
+    setPastTermError("");
+    const params = new URLSearchParams();
+    if (termId) params.set("term_id", termId);
+    requestJson(session, "GET", `/api/app/terms/past-summary/?${params.toString()}`)
+      .then((result) => {
+        setPastTerms(result?.past_terms || []);
+        setPastTermSummary(result?.term ? result : null);
+        setSelectedPastTermId(result?.term ? String(result.term.id) : "");
+      })
+      .catch((err) => setPastTermError(err.message || "Could not load past term overview."))
+      .finally(() => setPastTermLoading(false));
+  }, [session]);
+
+  useEffect(() => {
+    loadPastTermSummary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   const buildSettingsPayload = useCallback(
     (calendarItems = activityCalendar) => ({
@@ -11110,6 +11189,42 @@ onClick={() => handleThemeSelect("light")}
                             </small>
                           ) : null}
                         </label>
+                      </div>
+
+                      <div className="app-panel settings-last-term-overview">
+                        <div className="panel-head">
+                          <div>
+                            <h3>Last Term Overview</h3>
+                            <small>Check a previous term's numbers any time, not just right when it ends.</small>
+                          </div>
+                          {pastTerms.length ? (
+                            <select
+                              value={selectedPastTermId}
+                              onChange={(event) => { setSelectedPastTermId(event.target.value); loadPastTermSummary(event.target.value); }}
+                            >
+                              {pastTerms.map((item) => (
+                                <option key={item.id} value={item.id}>{item.name}</option>
+                              ))}
+                            </select>
+                          ) : null}
+                        </div>
+                        {pastTermLoading ? (
+                          <p className="panel-empty">Loading...</p>
+                        ) : pastTermError ? (
+                          <p className="form-feedback error">{pastTermError}</p>
+                        ) : pastTermSummary?.summary ? (
+                          <div className="metric-grid">
+                            <MetricCard label="Students" value={pastTermSummary.summary.student_count} />
+                            <MetricCard label="Results Published" value={pastTermSummary.summary.results_published} />
+                            <MetricCard
+                              label="Attendance"
+                              value={pastTermSummary.summary.attendance_percentage != null ? `${pastTermSummary.summary.attendance_percentage}%` : "—"}
+                            />
+                            <MetricCard label="Fees Collected" value={`${NAIRA_SYMBOL}${Number(pastTermSummary.summary.fees_collected || 0).toLocaleString()}`} />
+                          </div>
+                        ) : (
+                          <p className="panel-empty">No past terms yet - once a term ends, its overview appears here.</p>
+                        )}
                       </div>
 
                       <div className="settings-activity-calendar">

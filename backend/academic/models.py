@@ -127,6 +127,116 @@ class TermTransitionState(TenantAwareModel, TimeStampedModel):
         return f"TermTransitionState({self.tenant}) resolved={self.is_resolved}"
 
 
+def check_and_advance_term_transition(legacy_tenant):
+    """If `legacy_tenant`'s active Term has passed its end_date and no
+    unresolved TermTransitionState is already queued, advance to the next
+    Term if one exists (never auto-creates one - that's an admin decision)
+    and queue a TermTransitionState + admin notifications for the popup.
+
+    Cheap no-op in the common case (term still running, or already queued).
+    Shares its per-tenant body with academic.tasks.advance_terms (the
+    nightly sweep, for schools nobody has logged into in a while) but is
+    also called synchronously from the admin dashboard endpoint on every
+    load - this project has no confirmed Celery worker in production (see
+    core/background.py), so a nightly-only check could mean the popup never
+    appears at all. Calling this on login/dashboard-load guarantees it
+    fires the moment an admin is actually there to see it, regardless of
+    whether the Celery sweep ever runs."""
+    from django.utils import timezone
+
+    today = timezone.localdate()
+    term = (
+        Term.objects.filter(tenant=legacy_tenant, is_active=True, end_date__lt=today)
+        .select_related("academic_year")
+        .first()
+    )
+    if not term:
+        return None
+    if TermTransitionState.objects.filter(tenant=legacy_tenant, is_resolved=False).exists():
+        return None
+
+    is_non_k12 = _is_non_k12_legacy_tenant(legacy_tenant)
+
+    next_term = (
+        Term.objects.filter(tenant=legacy_tenant, academic_year=term.academic_year, start_date__gt=term.start_date)
+        .order_by("start_date")
+        .first()
+    )
+    session_also_ended = is_non_k12
+    if not next_term and term.academic_year_id:
+        next_year = (
+            AcademicYear.objects.filter(tenant=legacy_tenant, start_date__gt=term.academic_year.start_date)
+            .order_by("start_date")
+            .first()
+        )
+        if next_year:
+            # Self-heal: a non-K12 school's next year might already exist
+            # without its implicit term yet (e.g. created via Django admin
+            # before this feature shipped).
+            sync_implicit_term_for_non_k12_year(next_year)
+            next_term = Term.objects.filter(tenant=legacy_tenant, academic_year=next_year).order_by("start_date").first()
+        session_also_ended = True
+
+    term.is_active = False
+    term.save(update_fields=["is_active", "updated_at"])
+
+    next_term_missing = next_term is None
+    if next_term:
+        next_term.is_active = True
+        next_term.save(update_fields=["is_active", "updated_at"])
+        if next_term.academic_year_id and next_term.academic_year_id != term.academic_year_id:
+            AcademicYear.objects.filter(tenant=legacy_tenant, id=term.academic_year_id).update(is_active=False)
+            AcademicYear.objects.filter(tenant=legacy_tenant, id=next_term.academic_year_id).update(is_active=True)
+
+    state, _ = TermTransitionState.objects.update_or_create(
+        tenant=legacy_tenant,
+        defaults={
+            "ended_term": term,
+            "session_also_ended": session_also_ended,
+            "next_term_missing": next_term_missing,
+            "is_resolved": False,
+            "resolved_by": None,
+            "resolved_at": None,
+        },
+    )
+
+    from core.tenant import SchoolTenant
+    from notifications.models import Notification
+    from users.models import User
+
+    school = SchoolTenant.objects.filter(schema_name__iexact=legacy_tenant.slug).first()
+    if school:
+        if next_term_missing:
+            message = f"{term.name} has ended and no next term is set up yet. Please configure the next term/session."
+        elif session_also_ended:
+            message = f"{term.name} has ended, moving into {next_term.name}. The academic session has also ended - student promotion is ready to review."
+        else:
+            message = f"{term.name} has ended. You're now in {next_term.name}."
+        admins = User.objects.filter(
+            tenant=school, role__in=["school_admin", "principal", "school_superadmin"], is_active=True
+        )
+        for admin in admins:
+            try:
+                Notification.objects.create(
+                    tenant=school,
+                    user=admin,
+                    title="Term ended" if not session_also_ended else "Academic session ended",
+                    message=message,
+                    notification_type="reminder",
+                    priority=2,
+                    channel="in_app",
+                    event_type="term_transition",
+                    action_text="Review",
+                    deep_link="/dashboard",
+                    is_delivered=True,
+                    delivered_at=timezone.now(),
+                )
+            except Exception:
+                pass
+
+    return state
+
+
 class SchoolActivityCalendar(TenantAwareModel, TimeStampedModel):
     month = models.PositiveSmallIntegerField()
     year = models.PositiveIntegerField(null=True, blank=True)

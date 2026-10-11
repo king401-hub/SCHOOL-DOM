@@ -25,6 +25,7 @@ from academic.models import (
     StudentTraitRecord,
     Subject,
     Term,
+    TermTransitionState,
     TimetableEntry,
     TimetableSettings,
 )
@@ -7750,6 +7751,122 @@ class StudentTraitRecordTests(TestCase):
         report = response.data["report_card"]
         self.assertEqual(report["affective_traits"], [])
         self.assertEqual(report["psychomotor_skills"], [])
+
+
+class TermTransitionAutoCheckTests(TestCase):
+    """The term-ended popup (TermTransitionState) used to depend entirely on
+    a nightly Celery task that isn't reliably running in production, so a
+    school could sail past its term's end_date and the popup would simply
+    never appear. dashboard_snapshot now runs the same check synchronously
+    for an admin on every dashboard load - these confirm that actually
+    creates the TermTransitionState (and surfaces it in the payload) the
+    moment an admin logs in after the term has ended, with no Celery
+    involved at all."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(name="Transition School", schema_name="transition_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin = User.objects.create_user(
+            email="admin@transition.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.year = AcademicYear.objects.create(
+            tenant=self.legacy_tenant, name="2025/2026",
+            start_date=timezone.localdate() - timedelta(days=200), end_date=timezone.localdate() + timedelta(days=165), is_active=True,
+        )
+
+    def test_dashboard_load_creates_a_transition_state_for_an_ended_term_with_no_successor(self):
+        ended_term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", academic_year=self.year, is_active=True,
+            start_date=timezone.localdate() - timedelta(days=100), end_date=timezone.localdate() - timedelta(days=1),
+        )
+        self.assertEqual(TermTransitionState.objects.count(), 0)
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get("/api/app/dashboard/")
+        self.assertEqual(response.status_code, 200, response.data)
+
+        self.assertEqual(TermTransitionState.objects.count(), 1)
+        state = TermTransitionState.objects.get(tenant=self.legacy_tenant)
+        self.assertEqual(state.ended_term_id, ended_term.id)
+        self.assertTrue(state.next_term_missing)
+        self.assertFalse(state.is_resolved)
+
+        self.assertIsNotNone(response.data["term_transition"])
+        self.assertEqual(response.data["term_transition"]["next_term_missing"], True)
+
+        ended_term.refresh_from_db()
+        self.assertFalse(ended_term.is_active)
+
+    def test_dashboard_load_auto_advances_to_an_existing_successor_term(self):
+        ended_term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", academic_year=self.year, is_active=True,
+            start_date=timezone.localdate() - timedelta(days=100), end_date=timezone.localdate() - timedelta(days=1),
+        )
+        next_term = Term.objects.create(
+            tenant=self.legacy_tenant, name="Second Term", academic_year=self.year, is_active=False,
+            start_date=timezone.localdate(), end_date=timezone.localdate() + timedelta(days=89),
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get("/api/app/dashboard/")
+        self.assertEqual(response.status_code, 200, response.data)
+
+        ended_term.refresh_from_db()
+        next_term.refresh_from_db()
+        self.assertFalse(ended_term.is_active)
+        self.assertTrue(next_term.is_active)
+
+        state = TermTransitionState.objects.get(tenant=self.legacy_tenant)
+        self.assertFalse(state.next_term_missing)
+        self.assertFalse(state.session_also_ended)
+
+    def test_a_term_that_has_not_ended_yet_creates_nothing(self):
+        Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", academic_year=self.year, is_active=True,
+            start_date=timezone.localdate() - timedelta(days=10), end_date=timezone.localdate() + timedelta(days=80),
+        )
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get("/api/app/dashboard/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsNone(response.data["term_transition"])
+        self.assertEqual(TermTransitionState.objects.count(), 0)
+
+    def test_an_already_unresolved_transition_is_not_recreated_or_duplicated(self):
+        ended_term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", academic_year=self.year, is_active=False,
+            start_date=timezone.localdate() - timedelta(days=100), end_date=timezone.localdate() - timedelta(days=1),
+        )
+        TermTransitionState.objects.create(tenant=self.legacy_tenant, ended_term=ended_term, next_term_missing=True, is_resolved=False)
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get("/api/app/dashboard/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(TermTransitionState.objects.count(), 1)
+        self.assertIsNotNone(response.data["term_transition"])
+
+    def test_resolving_clears_it_and_a_later_dashboard_load_does_not_recreate_it(self):
+        ended_term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", academic_year=self.year, is_active=True,
+            start_date=timezone.localdate() - timedelta(days=100), end_date=timezone.localdate() - timedelta(days=1),
+        )
+        self.client.force_authenticate(user=self.admin)
+        self.client.get("/api/app/dashboard/")
+        state = TermTransitionState.objects.get(tenant=self.legacy_tenant)
+
+        resolve_response = self.client.post("/api/app/term-transition/resolve/", {}, format="json")
+        self.assertEqual(resolve_response.status_code, 200, resolve_response.data)
+        state.refresh_from_db()
+        self.assertTrue(state.is_resolved)
+
+        # ended_term is still the (now inactive) Term row with the same
+        # end_date in the past - re-running the check must not treat it as
+        # a fresh transition just because nothing moved into is_active yet.
+        second_response = self.client.get("/api/app/dashboard/")
+        self.assertEqual(second_response.status_code, 200, second_response.data)
+        self.assertIsNone(second_response.data["term_transition"])
+        self.assertEqual(TermTransitionState.objects.count(), 1)
 
 
 class StudentDirectoryPagingTests(TestCase):

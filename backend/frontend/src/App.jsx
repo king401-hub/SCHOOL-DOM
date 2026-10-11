@@ -9639,6 +9639,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
       <AdminSettingsScreen
         data={data}
         user={session?.user}
+        session={session}
         loading={loading}
         error={error}
         onRetry={handleRetry}

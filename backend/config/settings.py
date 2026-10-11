@@ -699,6 +699,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'licensing.tasks.sweep_expired_licenses',
         'schedule': 60 * 60 * 24,
     },
+    'schooldom-daily-term-advance-sweep': {
+        'task': 'academic.tasks.advance_terms',
+        'schedule': 60 * 60 * 24,
+    },
 }
 
 LOGGING = {

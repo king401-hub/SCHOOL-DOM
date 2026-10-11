@@ -1362,6 +1362,41 @@ def _bills_for_user(user):
     return Bill.objects.filter(tenant=tenant).prefetch_related("items", "classes")
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_finance_ledger(request):
+    """The Finance Ledger Log, optionally filtered to one term. The
+    dashboard's combined finance summary always caps this at the newest 100
+    rows with no way to reach anything older - picking a term here (old or
+    current) lifts that cap and scopes to that term's date range instead.
+    FinanceLedgerLog has no direct term FK (it predates per-term reporting),
+    so the filter is by created_at falling inside the term's
+    [start_date, end_date] - exact for any log written after that term
+    actually started, which is every log that matters here."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    logs_qs = FinanceLedgerLog.objects.select_related("actor").filter(tenant=user.tenant).order_by("-created_at")
+
+    term_id = request.query_params.get("term_id")
+    term = None
+    if term_id:
+        legacy_tenant = _legacy_tenant_for_user(user)
+        term = get_object_or_404(Term, id=term_id, tenant=legacy_tenant)
+        logs_qs = logs_qs.filter(created_at__date__gte=term.start_date, created_at__date__lte=term.end_date)
+
+    limit = 500 if term_id else 100
+    total = logs_qs.count()
+    rows = FinanceLedgerLogSerializer(logs_qs[:limit], many=True).data
+    return Response({
+        "success": True,
+        "logs": rows,
+        "count": total,
+        "term": {"id": term.id, "name": term.name} if term else None,
+    })
+
+
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def admin_bills(request):

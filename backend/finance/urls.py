@@ -103,6 +103,7 @@ urlpatterns = [
     path("admin/bills/<uuid:bill_id>/publish/", views.admin_bill_publish, name="admin_bill_publish"),
     path("admin/bills/<uuid:bill_id>/duplicate/", views.admin_bill_duplicate, name="admin_bill_duplicate"),
     path("admin/bills/<uuid:bill_id>/send/", views.admin_bill_send, name="admin_bill_send"),
+    path("admin/finance-ledger/", views.admin_finance_ledger, name="admin_finance_ledger"),
     path("admin/activation-credits/purchase/", views.admin_activation_credit_purchase, name="admin_activation_credit_purchase"),
     path("admin/activation-credits/verify/", views.admin_activation_credit_verify, name="admin_activation_credit_verify"),
     path("admin/activation-credits/assign/", views.admin_activation_credit_assign, name="admin_activation_credit_assign"),

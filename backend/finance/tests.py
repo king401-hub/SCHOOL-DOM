@@ -10,7 +10,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import SchoolTenant
-from academic.models import Class
+from academic.models import AcademicYear, Class, Term
 from finance.models import (
     ActivationCreditPool,
     ActivationCreditTransaction,
@@ -5391,3 +5391,73 @@ class SubaccountChangeStepUpTests(TestCase):
         second = self.client.post("/api/finance/admin/paystack/split/setup/", payload)
 
         self.assertEqual(second.status_code, 400, second.data)
+
+
+class FinanceLedgerTermFilterTests(TestCase):
+    """The Finance Ledger Log used to always be the newest 100 rows with no
+    way to reach anything older - admin/finance-ledger/ adds a ?term_id
+    filter (by date range, since the ledger predates per-term reporting) so
+    an admin can pull up an old term's activity instead of only ever seeing
+    whatever's most recent."""
+
+    def setUp(self):
+        from datetime import timedelta
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(name="Ledger School", schema_name="ledger_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin = User.objects.create_user(
+            email="admin@ledger.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.year = AcademicYear.objects.create(
+            tenant=self.legacy_tenant, name="2025/2026",
+            start_date=timezone.localdate() - timedelta(days=200), end_date=timezone.localdate() + timedelta(days=165), is_active=True,
+        )
+        self.old_term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", academic_year=self.year, is_active=False,
+            start_date=timezone.localdate() - timedelta(days=100), end_date=timezone.localdate() - timedelta(days=10),
+        )
+        self.current_term = Term.objects.create(
+            tenant=self.legacy_tenant, name="Second Term", academic_year=self.year, is_active=True,
+            start_date=timezone.localdate() - timedelta(days=9), end_date=timezone.localdate() + timedelta(days=80),
+        )
+
+        def make_log(description, when):
+            log = FinanceLedgerLog.objects.create(tenant=self.school, action="bill_created", description=description, amount=Decimal("1000.00"))
+            FinanceLedgerLog.objects.filter(id=log.id).update(created_at=when)
+            return log
+
+        self.old_term_log = make_log("Old term fee", timezone.now() - timedelta(days=50))
+        self.current_term_log = make_log("Current term fee", timezone.now() - timedelta(days=2))
+
+        self.client.force_authenticate(user=self.admin)
+
+    def test_no_term_id_returns_everything_newest_first_capped_at_100(self):
+        response = self.client.get("/api/finance/admin/finance-ledger/")
+        self.assertEqual(response.status_code, 200, response.data)
+        descriptions = [row["description"] for row in response.data["logs"]]
+        self.assertIn("Old term fee", descriptions)
+        self.assertIn("Current term fee", descriptions)
+        self.assertIsNone(response.data["term"])
+
+    def test_old_term_id_returns_only_that_terms_logs(self):
+        response = self.client.get(f"/api/finance/admin/finance-ledger/?term_id={self.old_term.id}")
+        self.assertEqual(response.status_code, 200, response.data)
+        descriptions = [row["description"] for row in response.data["logs"]]
+        self.assertEqual(descriptions, ["Old term fee"])
+        self.assertEqual(response.data["term"]["id"], self.old_term.id)
+
+    def test_current_term_id_returns_only_that_terms_logs(self):
+        response = self.client.get(f"/api/finance/admin/finance-ledger/?term_id={self.current_term.id}")
+        self.assertEqual(response.status_code, 200, response.data)
+        descriptions = [row["description"] for row in response.data["logs"]]
+        self.assertEqual(descriptions, ["Current term fee"])
+
+    def test_non_finance_role_is_forbidden(self):
+        teacher = User.objects.create_user(
+            email="teacher@ledger.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client.force_authenticate(user=teacher)
+        response = self.client.get("/api/finance/admin/finance-ledger/")
+        self.assertEqual(response.status_code, 403)

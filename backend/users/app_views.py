@@ -60,6 +60,7 @@ from academic.models import (
     StudentTraitRecord,
     AFFECTIVE_TRAITS,
     PSYCHOMOTOR_SKILLS,
+    check_and_advance_term_transition,
     StudentClassPromotion,
     SchoolActivityCalendar,
     TeacherNote,
@@ -3974,11 +3975,19 @@ def dashboard_snapshot(request):
     except Exception:
         pass
 
-    term_transition = (
-        _term_transition_payload(_pending_term_transition(user))
-        if user.role in ADMIN_ROLES
-        else None
-    )
+    term_transition = None
+    if user.role in ADMIN_ROLES:
+        # No confirmed Celery worker in production runs the nightly sweep
+        # reliably (see academic/tasks.advance_terms) - checking here too
+        # means the popup appears the moment an admin logs in after the
+        # term ends, not whenever/if the sweep next happens to run.
+        legacy_tenant = _tenant_for_model(Term, user)
+        if legacy_tenant:
+            try:
+                check_and_advance_term_transition(legacy_tenant)
+            except Exception:
+                pass
+        term_transition = _term_transition_payload(_pending_term_transition(user))
 
     return Response(
         {
@@ -4046,23 +4055,11 @@ def term_transition_resolve(request):
     return Response({"success": True, "message": "Term transition confirmed."})
 
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def term_transition_summary(request):
-    """Compact stats for the term that just ended, for the transition
-    popup - reuses existing aggregations rather than a new report."""
-    user = request.user
-    if getattr(user, "role", None) not in ADMIN_ROLES:
-        return Response(
-            {"success": False, "message": "Only school administrators can view this summary."},
-            status=status.HTTP_403_FORBIDDEN,
-        )
-
-    state = _pending_term_transition(user)
-    term = state.ended_term if state else None
-    if not term:
-        return Response({"success": False, "message": "No ended term to summarize."}, status=status.HTTP_400_BAD_REQUEST)
-
+def _term_summary_payload(term, user):
+    """Compact stats for one term - shared by the term-transition popup
+    (the term that JUST ended) and the Settings page's persistent "Last
+    Term Overview" (whichever past term an admin picks), so both read the
+    same aggregations."""
     student_count = StudentProfile.objects.filter(user__tenant=user.tenant, current_term=term).count()
     if not student_count:
         # Non-K12/implicit-term schools (and any school that doesn't stamp
@@ -4081,18 +4078,70 @@ def term_transition_summary(request):
         student__user__tenant=user.tenant, bill__term=term,
     ).aggregate(total=Sum("amount_paid"))["total"] or 0
 
-    return Response(
-        {
-            "success": True,
-            "term": {"id": term.id, "name": term.name, "start_date": term.start_date, "end_date": term.end_date},
-            "summary": {
-                "student_count": student_count,
-                "results_published": results_published,
-                "attendance_percentage": attendance_percentage,
-                "fees_collected": fees_collected,
-            },
-        }
-    )
+    return {
+        "term": {"id": term.id, "name": term.name, "start_date": term.start_date, "end_date": term.end_date},
+        "summary": {
+            "student_count": student_count,
+            "results_published": results_published,
+            "attendance_percentage": attendance_percentage,
+            "fees_collected": fees_collected,
+        },
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def term_transition_summary(request):
+    """Compact stats for the term that just ended, for the transition
+    popup - reuses existing aggregations rather than a new report."""
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only school administrators can view this summary."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    state = _pending_term_transition(user)
+    term = state.ended_term if state else None
+    if not term:
+        return Response({"success": False, "message": "No ended term to summarize."}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({"success": True, **_term_summary_payload(term, user)})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def past_terms_summary(request):
+    """Settings page > Last Term Overview: every past (non-active) term for
+    the school, newest first, so an admin can check a previous term's
+    numbers any time - not just in the one-shot popup right when it ends.
+    ?term_id picks one explicitly; otherwise the most recently ended term."""
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only school administrators can view this summary."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    past_terms_qs = _scope_to_user_tenant(Term.objects.all(), user).filter(is_active=False).order_by("-end_date", "-start_date")
+    past_terms = list(past_terms_qs[:50])
+
+    term_id = request.query_params.get("term_id")
+    term = None
+    if term_id:
+        term = next((item for item in past_terms if str(item.id) == str(term_id)), None)
+    if not term:
+        term = past_terms[0] if past_terms else None
+
+    payload = {
+        "success": True,
+        "past_terms": [{"id": item.id, "name": item.name, "end_date": item.end_date} for item in past_terms],
+        "term": None,
+        "summary": None,
+    }
+    if term:
+        payload.update(_term_summary_payload(term, user))
+    return Response(payload)
 
 
 def _public_admin_app_school(request):
