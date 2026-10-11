@@ -160,7 +160,7 @@ function TermTransitionPopup({ data, session, onResolved, onNavigate }) {
             Configure the next term/session, then this notice will clear on its own.
           </p>
           <div className="panel-form-actions term-transition-actions">
-            <button type="button" className="btn-primary" onClick={() => onNavigate?.("/timetables")}>
+            <button type="button" className="btn-primary" onClick={() => onNavigate?.("/settings")}>
               Open Term Settings
             </button>
           </div>
