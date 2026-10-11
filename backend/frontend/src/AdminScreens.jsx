@@ -8243,6 +8243,7 @@ export function IdCardPreview({ person, school, qrDataUrl, theme }) {
             <strong><span>Flip card to verify {person.email || person.secondary_label || "SchoolDom profile verification"}
 </span></strong>
           </footer>
+          <p className="id-card-powered-by">Powered by Schooldom</p>
         </article>
 
         <article className="id-card-preview-card id-card-face id-card-back">
@@ -8256,23 +8257,23 @@ export function IdCardPreview({ person, school, qrDataUrl, theme }) {
               <span>Official ID verification</span>
             </div>
           </header>
-          <section className="id-card-back-qr-panel">
-            <p>Scan to verify</p>
-            <div className="id-card-back-qr">
-              {qrDataUrl ? <img src={qrDataUrl} alt={`${person.name} verification QR code`} /> : <span>QR</span>}
+          <section className="id-card-back-body">
+            <div className="id-card-back-qr-panel">
+              <p>Scan to verify</p>
+              <div className="id-card-back-qr">
+                {qrDataUrl ? <img src={qrDataUrl} alt={`${person.name} verification QR code`} /> : <span>QR</span>}
+              </div>
+              <strong>{person.unique_id || "No ID assigned"}</strong>
+              <span>{person.name || "Unnamed user"}</span>
             </div>
-            <strong>{person.unique_id || "No ID assigned"}</strong>
-            <span>{person.name || "Unnamed user"}</span>
+            <div className="id-card-back-return">
+              <p className="id-card-back-return-lead">If found please return to the following address or call the number below:</p>
+              {brand.address ? <address className="id-card-back-address">{brand.address}</address> : null}
+              {brand.phone ? <p className="id-card-back-phone">Tel: {brand.phone}</p> : null}
+              <p className="id-card-back-validity">Valid only when the scan page confirms this profile as verified and active.</p>
+            </div>
           </section>
-          <footer className="id-card-back-footer">
-            <span>Valid only when the scan page confirms this profile as verified and active.</span>
-            {brand.email ? (
-              <>
-                <br />
-                <span>Contact: {brand.email}</span>
-              </>
-            ) : null}
-          </footer>
+          <p className="id-card-powered-by">Powered by Schooldom</p>
         </article>
       </div>
       <button type="button" className="id-card-flip-button" onClick={() => setIsFlipped((value) => !value)}>
