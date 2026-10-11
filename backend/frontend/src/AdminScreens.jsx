@@ -1867,21 +1867,9 @@ function AdminFinanceScreen({
   const [subaccountOtpSending, setSubaccountOtpSending] = useState(false);
   const [subaccountOtpMessage, setSubaccountOtpMessage] = useState("");
   // Hides the ₦ figures on the Overview tab (shoulder-surfing protection) -
-  // remembered per browser so it stays hidden across visits.
-  const [hideOverviewAmounts, setHideOverviewAmounts] = useState(() => {
-    try {
-      return localStorage.getItem("schooldom_hide_finance_overview") === "true";
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem("schooldom_hide_finance_overview", hideOverviewAmounts ? "true" : "false");
-    } catch {
-      /* ignore - purely a remembered UI preference */
-    }
-  }, [hideOverviewAmounts]);
+  // always starts hidden on entering the Finance page; the admin can reveal
+  // it for this visit via the toggle, but the next visit hides it again.
+  const [hideOverviewAmounts, setHideOverviewAmounts] = useState(true);
   const anyBusy = Boolean(busyAction) || Boolean(resendBusyId) || vaListLoading || Boolean(vaBusyParentId);
   const [resolveLoading, setResolveLoading] = useState(false);
   const [resolveError, setResolveError] = useState("");
