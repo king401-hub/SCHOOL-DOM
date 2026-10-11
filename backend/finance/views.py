@@ -128,6 +128,7 @@ from finance.services import (
     allocate_split_payment,
     create_paystack_subaccount,
     sync_school_subaccount_with_paystack,
+    update_paystack_subaccount,
     list_paystack_banks,
     resolve_paystack_account,
     get_fee_payment_breakdown,
@@ -3503,13 +3504,88 @@ def admin_paystack_resolve_account(request):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def admin_subaccount_request_otp(request):
+    """
+    Emails the signed-in admin a one-time code before they're allowed to
+    change the settlement bank account on an already-live Paystack
+    subaccount. Unconditional - not gated by ADMIN_OTP_ENABLED or the
+    admin-OTP email exemption list - because this protects where fee money
+    gets routed, not just login.
+    """
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+
+    from users.views import ADMIN_OTP_EXPIRY_MINUTES, send_admin_otp
+
+    challenge = send_admin_otp(user, purpose="change_subaccount")
+    return Response({
+        "success": True,
+        "message": "A verification code was sent to your email.",
+        "otp_challenge": challenge,
+        "otp_expires_in": ADMIN_OTP_EXPIRY_MINUTES * 60,
+    })
+
+
+def _verify_subaccount_change_step_up(request, user):
+    """
+    Password + emailed-OTP gate for changing where an already-live Paystack
+    subaccount settles. Returns an error Response to short-circuit the caller,
+    or None once both checks pass (the OTP code is consumed on success so it
+    can't be replayed).
+    """
+    from django.contrib.auth.hashers import check_password
+
+    from users.views import ADMIN_OTP_MAX_ATTEMPTS, clear_admin_otp, get_admin_email_device
+
+    current_password = str(request.data.get("current_password") or "")
+    otp_code = str(request.data.get("otp_code") or "").strip()
+    otp_challenge = str(request.data.get("otp_challenge") or "").strip()
+
+    if not (current_password and otp_code and otp_challenge):
+        return Response(
+            {"success": False, "message": "Changing the settlement account needs your password and the emailed verification code."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not user.check_password(current_password):
+        return Response({"success": False, "message": "Incorrect password."}, status=status.HTTP_400_BAD_REQUEST)
+
+    otp_user = get_admin_email_device(user, challenge=otp_challenge)
+    if not otp_user:
+        return Response(
+            {"success": False, "message": "Verification code expired or invalid - request a new one."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if user.admin_otp_attempts >= ADMIN_OTP_MAX_ATTEMPTS:
+        return Response(
+            {"success": False, "message": "Too many incorrect codes - request a new one."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+    if not user.admin_otp_hash or not check_password(otp_code, user.admin_otp_hash):
+        user.admin_otp_attempts += 1
+        user.save(update_fields=["admin_otp_attempts"])
+        remaining = max(ADMIN_OTP_MAX_ATTEMPTS - user.admin_otp_attempts, 0)
+        return Response(
+            {"success": False, "message": f"Invalid verification code. {remaining} attempt(s) remaining."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    clear_admin_otp(user)
+    return None
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def admin_paystack_split_setup(request):
     """
-    Create a Paystack subaccount for the school so parents can pay via split.
+    Create - or, with password + emailed OTP, change - the Paystack
+    subaccount that parents' split payments settle into.
 
-    Body: { "account_number": "...", "bank_code": "...", "account_name": "..." }
-    (Uses existing bank details on AdminWallet if not supplied.)
-    Admin / principal / accountant only.
+    Body: { "account_number", "bank_code", "account_name" } always; plus
+    "current_password", "otp_code", "otp_challenge" (from
+    admin_subaccount_request_otp above) when a subaccount already exists -
+    changing where live fee money settles needs both, creating the first one
+    does not, since nothing is routed anywhere yet.
     """
     user = request.user
     if user.role not in FINANCE_ROLES:
@@ -3527,7 +3603,15 @@ def admin_paystack_split_setup(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Persist bank details if they changed
+    is_changing_existing = bool(admin_wallet.subaccount_code)
+
+    if is_changing_existing:
+        step_up_error = _verify_subaccount_change_step_up(request, user)
+        if step_up_error:
+            return step_up_error
+
+    # Persist bank details only now that any required step-up has passed -
+    # never save a new settlement account before it's actually verified.
     changed = []
     for field, val in [("bank_account_number", account_number), ("bank_code", bank_code), ("bank_account_name", account_name)]:
         if getattr(admin_wallet, field) != val:
@@ -3537,9 +3621,10 @@ def admin_paystack_split_setup(request):
         changed.append("updated_at")
         admin_wallet.save(update_fields=changed)
 
-    if admin_wallet.subaccount_code:
-        # The subaccount may have been deleted on the Paystack dashboard —
-        # verify and clear the stale code so setup can proceed.
+    if is_changing_existing:
+        # The subaccount may have been deleted on the Paystack dashboard since
+        # we last saw it - verify first so a "change" doesn't silently try to
+        # update a code Paystack no longer recognises.
         sync = sync_school_subaccount_with_paystack(user.tenant)
         if sync.get("cleared"):
             admin_wallet.refresh_from_db()
@@ -3549,12 +3634,25 @@ def admin_paystack_split_setup(request):
                 "Paystack subaccount was deleted on Paystack; cleared stale code.",
                 reference=sync.get("old_code", ""),
             )
-        else:
-            return Response({
-                "success": True,
-                "message": "Subaccount already exists.",
-                "subaccount_code": admin_wallet.subaccount_code,
-            })
+            is_changing_existing = False  # fall through to create a fresh one below
+
+    if is_changing_existing:
+        try:
+            update_paystack_subaccount(admin_wallet.subaccount_code, bank_code, account_number)
+        except Exception as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        record_finance_activity(
+            user.tenant, user,
+            "paystack_subaccount_updated",
+            "Changed the settlement bank account for split payments.",
+            reference=admin_wallet.subaccount_code,
+        )
+        return Response({
+            "success": True,
+            "message": "Settlement bank account updated.",
+            "subaccount_code": admin_wallet.subaccount_code,
+        })
 
     try:
         subaccount = create_paystack_subaccount(

@@ -5285,3 +5285,109 @@ class DuplicateVirtualAccountNumberGuardTests(TestCase):
         response = self._assign(self.parent_two, "0123456789")
 
         self.assertEqual(response.status_code, 200, response.data)
+
+
+class SubaccountChangeStepUpTests(TestCase):
+    """Changing the settlement bank account on an already-live Paystack
+    subaccount needs the admin's password and an emailed OTP - creating the
+    first one does not, since nothing is routed anywhere yet."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Step Up School", schema_name="step_up_school", is_active=True,
+        )
+        self.admin_user = User.objects.create_user(
+            email="admin@stepup.edu", password="AdminPass123", first_name="Admin", last_name="User",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin_user)
+
+    def _request_otp(self):
+        import re
+
+        from django.core.cache import cache
+
+        cache.clear()  # otherwise an identical repeat POST replays from the 10s idempotency cache
+        response = self.client.post("/api/finance/admin/paystack/split/request-otp/")
+        self.assertEqual(response.status_code, 200, response.data)
+        # send_admin_otp sets a transient _admin_otp_debug_code on the User
+        # instance it was handed - that's a *different* instance than
+        # self.admin_user (DRF auth re-loads the user per request), so pull
+        # the real code out of the email it actually sent instead.
+        match = re.search(r"\b(\d{6})\b", mail.outbox[-1].body)
+        self.assertIsNotNone(match, "OTP email didn't contain a 6-digit code")
+        return response.data["otp_challenge"], match.group(1)
+
+    @patch("finance.views.create_paystack_subaccount")
+    def test_first_time_creation_needs_no_password_or_otp(self, mock_create):
+        mock_create.return_value = {"subaccount_code": "ACCT_new"}
+
+        response = self.client.post("/api/finance/admin/paystack/split/setup/", {
+            "account_number": "0123456789", "bank_code": "058", "account_name": "Step Up School",
+        })
+
+        self.assertEqual(response.status_code, 200, response.data)
+        mock_create.assert_called_once()
+
+    @patch("finance.views.sync_school_subaccount_with_paystack")
+    def test_changing_an_existing_subaccount_without_step_up_is_rejected(self, mock_sync):
+        AdminWallet.objects.create(tenant=self.school, subaccount_code="ACCT_existing")
+
+        response = self.client.post("/api/finance/admin/paystack/split/setup/", {
+            "account_number": "9999999999", "bank_code": "058", "account_name": "New Bank Name",
+        })
+
+        self.assertEqual(response.status_code, 400, response.data)
+        mock_sync.assert_not_called()
+        wallet = AdminWallet.objects.get(tenant=self.school)
+        self.assertEqual(wallet.bank_account_number, "")  # never persisted - step-up never passed
+
+    @patch("finance.views.sync_school_subaccount_with_paystack")
+    def test_changing_an_existing_subaccount_with_wrong_password_is_rejected(self, mock_sync):
+        AdminWallet.objects.create(tenant=self.school, subaccount_code="ACCT_existing")
+        challenge, _code = self._request_otp()
+
+        response = self.client.post("/api/finance/admin/paystack/split/setup/", {
+            "account_number": "9999999999", "bank_code": "058", "account_name": "New Bank Name",
+            "current_password": "WrongPassword", "otp_code": "000000", "otp_challenge": challenge,
+        })
+
+        self.assertEqual(response.status_code, 400, response.data)
+        mock_sync.assert_not_called()
+
+    @patch("finance.views.update_paystack_subaccount")
+    @patch("finance.views.sync_school_subaccount_with_paystack")
+    def test_changing_an_existing_subaccount_with_valid_step_up_succeeds(self, mock_sync, mock_update):
+        mock_sync.return_value = {"cleared": False}
+        AdminWallet.objects.create(tenant=self.school, subaccount_code="ACCT_existing")
+        challenge, code = self._request_otp()
+
+        response = self.client.post("/api/finance/admin/paystack/split/setup/", {
+            "account_number": "9999999999", "bank_code": "058", "account_name": "New Bank Name",
+            "current_password": "AdminPass123", "otp_code": code, "otp_challenge": challenge,
+        })
+
+        self.assertEqual(response.status_code, 200, response.data)
+        mock_update.assert_called_once_with("ACCT_existing", "058", "9999999999")
+        wallet = AdminWallet.objects.get(tenant=self.school)
+        self.assertEqual(wallet.bank_account_number, "9999999999")
+
+    @patch("finance.views.update_paystack_subaccount")
+    @patch("finance.views.sync_school_subaccount_with_paystack")
+    def test_otp_code_cannot_be_reused_for_a_second_change(self, mock_sync, mock_update):
+        mock_sync.return_value = {"cleared": False}
+        AdminWallet.objects.create(tenant=self.school, subaccount_code="ACCT_existing")
+        challenge, code = self._request_otp()
+        payload = {
+            "account_number": "9999999999", "bank_code": "058", "account_name": "New Bank Name",
+            "current_password": "AdminPass123", "otp_code": code, "otp_challenge": challenge,
+        }
+        first = self.client.post("/api/finance/admin/paystack/split/setup/", payload)
+        self.assertEqual(first.status_code, 200, first.data)
+
+        from django.core.cache import cache
+        cache.clear()  # otherwise the idempotency middleware replays `first`'s response verbatim
+        second = self.client.post("/api/finance/admin/paystack/split/setup/", payload)
+
+        self.assertEqual(second.status_code, 400, second.data)

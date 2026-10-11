@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown, Download, Clock, Copy, Briefcase, CalendarClock, Wallet, UserCheck, CheckCircle2, XCircle, Banknote } from "lucide-react";
+import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown, Download, Clock, Copy, Briefcase, CalendarClock, Wallet, UserCheck, CheckCircle2, XCircle, Banknote, Eye, EyeOff } from "lucide-react";
 import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
@@ -1738,6 +1738,7 @@ function AdminFinanceScreen({
   onStudentFeeSave,
   onPaymentAccountSave,
   onPaystackSubaccountSetup,
+  onRequestSubaccountOtp,
   onPurchaseCredits,
   onVerifyCredits,
   onAssignCredits,
@@ -1857,6 +1858,30 @@ function AdminFinanceScreen({
   const [confirm, confirmDialog] = useConfirm();
   const [subaccountMessage, setSubaccountMessage] = useState("");
   const [subaccountError, setSubaccountError] = useState("");
+  // Changing an already-live settlement account (not the first-time setup)
+  // needs the admin's password plus an emailed OTP - see
+  // handleSubaccountSetupSubmit / handleRequestSubaccountOtp.
+  const [subaccountPassword, setSubaccountPassword] = useState("");
+  const [subaccountOtpCode, setSubaccountOtpCode] = useState("");
+  const [subaccountOtpChallenge, setSubaccountOtpChallenge] = useState("");
+  const [subaccountOtpSending, setSubaccountOtpSending] = useState(false);
+  const [subaccountOtpMessage, setSubaccountOtpMessage] = useState("");
+  // Hides the ₦ figures on the Overview tab (shoulder-surfing protection) -
+  // remembered per browser so it stays hidden across visits.
+  const [hideOverviewAmounts, setHideOverviewAmounts] = useState(() => {
+    try {
+      return localStorage.getItem("schooldom_hide_finance_overview") === "true";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("schooldom_hide_finance_overview", hideOverviewAmounts ? "true" : "false");
+    } catch {
+      /* ignore - purely a remembered UI preference */
+    }
+  }, [hideOverviewAmounts]);
   const anyBusy = Boolean(busyAction) || Boolean(resendBusyId) || vaListLoading || Boolean(vaBusyParentId);
   const [resolveLoading, setResolveLoading] = useState(false);
   const [resolveError, setResolveError] = useState("");
@@ -2224,6 +2249,21 @@ function AdminFinanceScreen({
     return () => { cancelled = true; };
   }, [subaccountForm.account_number, subaccountForm.bank_code, session]);
 
+  const handleRequestSubaccountOtp = async () => {
+    setSubaccountOtpMessage("");
+    setSubaccountError("");
+    setSubaccountOtpSending(true);
+    try {
+      const result = await onRequestSubaccountOtp();
+      setSubaccountOtpChallenge(result?.otp_challenge || "");
+      setSubaccountOtpMessage(result?.message || "Verification code sent to your email.");
+    } catch (err) {
+      setSubaccountError(err.message || "Could not send a verification code.");
+    } finally {
+      setSubaccountOtpSending(false);
+    }
+  };
+
   const handleSubaccountSetupSubmit = async (event) => {
     event.preventDefault();
     setSubaccountMessage("");
@@ -2232,10 +2272,30 @@ function AdminFinanceScreen({
       setSubaccountError("Select a valid bank from the list.");
       return;
     }
+    // Changing an already-live settlement account needs the step-up; the
+    // very first setup doesn't, since nothing is routed anywhere yet.
+    const isChangingExisting = Boolean(adminWallet.subaccount_code);
+    if (isChangingExisting && (!subaccountPassword || !subaccountOtpCode || !subaccountOtpChallenge)) {
+      setSubaccountError("Enter your password and the emailed verification code first.");
+      return;
+    }
     setBusyAction("subaccount");
     try {
-      const result = await onPaystackSubaccountSetup(subaccountForm);
+      const payload = isChangingExisting
+        ? {
+            ...subaccountForm,
+            current_password: subaccountPassword,
+            otp_code: subaccountOtpCode,
+            otp_challenge: subaccountOtpChallenge,
+          }
+        : subaccountForm;
+      const result = await onPaystackSubaccountSetup(payload);
       setSubaccountMessage(result?.message || "Subaccount created.");
+      // Never leave a password or a (now-consumed) OTP sitting in state.
+      setSubaccountPassword("");
+      setSubaccountOtpCode("");
+      setSubaccountOtpChallenge("");
+      setSubaccountOtpMessage("");
     } catch (err) {
       setSubaccountError(err.message || "Unable to create subaccount.");
     } finally {
@@ -2825,6 +2885,19 @@ function AdminFinanceScreen({
 
           {financeSection === "overview" ? (
           <>
+          <div className="finance-overview-head">
+            <h3>Overview</h3>
+            <button
+              type="button"
+              className="finance-visibility-toggle"
+              onClick={() => setHideOverviewAmounts((current) => !current)}
+              aria-pressed={hideOverviewAmounts}
+              title={hideOverviewAmounts ? "Show amounts" : "Hide amounts"}
+            >
+              {hideOverviewAmounts ? <EyeOff size={16} /> : <Eye size={16} />}
+              {hideOverviewAmounts ? "Show amounts" : "Hide amounts"}
+            </button>
+          </div>
           <div className="finance-summary-grid">
             <article className="finance-summary-card tone-expected">
               <div className="finance-summary-icon" aria-hidden="true">
@@ -2832,7 +2905,7 @@ function AdminFinanceScreen({
               </div>
               <div>
                 <p>Expected Fees</p>
-                <strong>{formatFinanceAmount(expectedAmount)}</strong>
+                <strong>{hideOverviewAmounts ? `${NAIRA_SYMBOL}••••••` : formatFinanceAmount(expectedAmount)}</strong>
               </div>
             </article>
             <article className="finance-summary-card tone-received">
@@ -2841,7 +2914,7 @@ function AdminFinanceScreen({
               </div>
               <div>
                 <p>Fees Collected</p>
-                <strong>{formatFinanceAmount(receivedAmount)}</strong>
+                <strong>{hideOverviewAmounts ? `${NAIRA_SYMBOL}••••••` : formatFinanceAmount(receivedAmount)}</strong>
               </div>
             </article>
             <article className="finance-summary-card tone-outstanding">
@@ -2850,7 +2923,7 @@ function AdminFinanceScreen({
               </div>
               <div>
                 <p>Outstanding</p>
-                <strong>{formatFinanceAmount(outstandingAmount)}</strong>
+                <strong>{hideOverviewAmounts ? `${NAIRA_SYMBOL}••••••` : formatFinanceAmount(outstandingAmount)}</strong>
               </div>
             </article>
             <article className="finance-summary-card tone-outstanding" title="Sum of settled expense records">
@@ -2859,7 +2932,7 @@ function AdminFinanceScreen({
               </div>
               <div>
                 <p>Total Outflow</p>
-                <strong>{formatFinanceAmount(totalOutflowAmount)}</strong>
+                <strong>{hideOverviewAmounts ? `${NAIRA_SYMBOL}••••••` : formatFinanceAmount(totalOutflowAmount)}</strong>
               </div>
             </article>
             <article
@@ -3282,6 +3355,48 @@ function AdminFinanceScreen({
                       {resolveError ? <small className="field-note" style={{ color: "#ef4444" }}>{resolveError}</small> : null}
                     </label>
                   </div>
+
+                  {adminWallet.subaccount_code ? (
+                    <div className="panel-form-grid subaccount-step-up">
+                      <p className="panel-form-note">
+                        Changing the account fees already settle into needs your password and a one-time code sent to your email.
+                      </p>
+                      <label className="panel-field">
+                        Your password
+                        <input
+                          type="password"
+                          value={subaccountPassword}
+                          onChange={(event) => setSubaccountPassword(event.target.value)}
+                          placeholder="Current password"
+                          autoComplete="current-password"
+                          required
+                        />
+                      </label>
+                      <label className="panel-field">
+                        Verification code
+                        <div className="panel-field-inline">
+                          <input
+                            value={subaccountOtpCode}
+                            onChange={(event) => setSubaccountOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                            placeholder="6-digit code"
+                            inputMode="numeric"
+                            maxLength={6}
+                            required
+                          />
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={handleRequestSubaccountOtp}
+                            disabled={!onRequestSubaccountOtp || subaccountOtpSending || anyBusy}
+                          >
+                            {subaccountOtpSending ? <Spinner size={12} /> : subaccountOtpChallenge ? "Resend code" : "Send code"}
+                          </button>
+                        </div>
+                        {subaccountOtpMessage ? <small className="field-note">{subaccountOtpMessage}</small> : null}
+                      </label>
+                    </div>
+                  ) : null}
+
                   <div className="panel-form-actions">
                     <button type="submit" disabled={!onPaystackSubaccountSetup || anyBusy}>
                       {busyAction === "subaccount" ? <><Spinner /> Saving...</> : adminWallet.subaccount_code ? "Update bank account" : "Create subaccount"}

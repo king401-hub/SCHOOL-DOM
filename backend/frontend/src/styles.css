@@ -5236,6 +5236,15 @@ body[data-theme="dark"] .panel-field { color: #94a3b8; }
    row-mate, and the grid then stretches the shorter field's input to match. */
 .panel-form-grid > .panel-form-note { grid-column: 1 / -1; margin: -0.25rem 0 0; }
 
+.panel-field-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.panel-field-inline input { flex: 1; min-width: 0; }
+.panel-field-inline button { white-space: nowrap; }
+
 .form-hint {
   margin: 0;
   font-size: 0.78rem;
@@ -20744,6 +20753,46 @@ body[data-theme="dark"] .lesson-plan-dialog-meta span {
   font-weight: 800;
   cursor: pointer;
   margin-bottom: 1rem;
+}
+
+.finance-overview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.finance-overview-head h3 {
+  margin: 0;
+}
+
+.finance-visibility-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.finance-visibility-toggle:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+body[data-theme="dark"] .finance-visibility-toggle {
+  background: #111827;
+  border-color: #1e293b;
+  color: #cbd5e1;
+}
+
+body[data-theme="dark"] .finance-visibility-toggle:hover {
+  background: #1e293b;
+  border-color: #334155;
 }
 
 .finance-summary-grid {

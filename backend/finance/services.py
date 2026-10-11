@@ -347,6 +347,25 @@ def create_paystack_subaccount(
     return data["data"]
 
 
+def update_paystack_subaccount(subaccount_code: str, bank_code: str, account_number: str) -> dict:
+    """
+    Point an existing Paystack subaccount at a different settlement bank
+    account - this is what actually moves where a school's split payments
+    pay out to; create_paystack_subaccount above only runs once, the first
+    time a school sets up split payments.
+    """
+    url = f"{_paystack_base_url()}/subaccount/{subaccount_code}"
+    payload = {"settlement_bank": bank_code, "account_number": account_number}
+
+    response = requests.put(url, json=payload, headers=_paystack_headers(), timeout=30)
+    data = _paystack_json(response)
+
+    if response.status_code not in (200, 201) or data.get("status") is not True:
+        raise RuntimeError(data.get("message", "Failed to update subaccount"))
+
+    return data["data"]
+
+
 def verify_paystack_subaccount(subaccount_code: str):
     """
     Check whether a subaccount still exists (and is active) on Paystack.

@@ -49,7 +49,10 @@ urlpatterns = [
 
     # Setup split code for school (admin only)
     path("admin/paystack/split/setup/", views.admin_paystack_split_setup, name="admin_paystack_split_setup"),
-    
+    # Email a one-time code before letting an admin change an already-live
+    # subaccount's settlement bank account (admin only)
+    path("admin/paystack/split/request-otp/", views.admin_subaccount_request_otp, name="admin_subaccount_request_otp"),
+
     # Get split status for school
     path("admin/paystack/split/status/", views.admin_paystack_split_status, name="admin_paystack_split_status"),
     

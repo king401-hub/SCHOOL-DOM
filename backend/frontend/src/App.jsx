@@ -7703,7 +7703,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       addAdminNotification({
         category: "Finance",
         module: "Payment Accounts",
-        action: "Created subaccount for split payments.",
+        action: payload.current_password ? "Changed the settlement bank account." : "Created subaccount for split payments.",
         status: "Success",
         priority: "High",
         tone: "success",
@@ -7712,6 +7712,14 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       return result;
     },
     [addAdminNotification, loadScreen, session]
+  );
+
+  // Emails the signed-in admin a one-time code before they're allowed to
+  // change where an already-live Paystack subaccount settles - see
+  // AdminFinanceScreen's "Settlement Bank Account" card.
+  const handleAdminRequestSubaccountOtp = useCallback(
+    async () => requestJson(session, "POST", "/api/finance/admin/paystack/split/request-otp/", {}),
+    [session]
   );
 
   const handleAdminClassFeeSave = useCallback(
@@ -9221,6 +9229,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onWithdraw={handleAdminWithdraw}
         onPaymentAccountSave={handleAdminPaymentAccountSave}
         onPaystackSubaccountSetup={handleAdminPaystackSubaccountSetup}
+        onRequestSubaccountOtp={handleAdminRequestSubaccountOtp}
         onClassFeeSave={handleAdminClassFeeSave}
         onClassFeeDelete={handleAdminClassFeeDelete}
         onBillsLoad={handleAdminBillsLoad}
