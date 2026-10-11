@@ -95,6 +95,15 @@ function TermTransitionPopup({ data, session, onResolved, onNavigate }) {
   const [summaryError, setSummaryError] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // "Open Term Settings" sends the admin to /settings to actually fix this,
+  // but this popup is rendered unconditionally at the top of the app (so it
+  // survives route changes) and isn't tied to the dashboard route - without
+  // this it would keep floating over the Settings page they were just sent
+  // to, blocking the very form they need to fill in. There's no matching
+  // reset: the backend hasn't resolved anything yet (that needs an actual
+  // next term), so this stays dismissed for the session - a full reload
+  // (or the term actually getting configured) is what brings it back.
+  const [dismissedForSettings, setDismissedForSettings] = useState(false);
 
   useEffect(() => {
     if (!data || data.next_term_missing) {
@@ -116,7 +125,7 @@ function TermTransitionPopup({ data, session, onResolved, onNavigate }) {
     };
   }, [data, session]);
 
-  if (!data) return null;
+  if (!data || dismissedForSettings) return null;
 
   const handleConfirm = async () => {
     setBusy(true);
@@ -160,7 +169,14 @@ function TermTransitionPopup({ data, session, onResolved, onNavigate }) {
             Configure the next term/session, then this notice will clear on its own.
           </p>
           <div className="panel-form-actions term-transition-actions">
-            <button type="button" className="btn-primary" onClick={() => onNavigate?.("/settings")}>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setDismissedForSettings(true);
+                onNavigate?.("/settings");
+              }}
+            >
               Open Term Settings
             </button>
           </div>
