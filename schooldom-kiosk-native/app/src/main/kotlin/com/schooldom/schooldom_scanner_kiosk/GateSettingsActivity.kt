@@ -49,10 +49,8 @@ class GateSettingsActivity : Activity() {
         saveButton = findViewById(R.id.saveButton)
 
         rows = mapOf(
-            "early_start" to timeRow(R.id.rowEarlyStart, "Early / Clock-in start", 7, 30),
-            "early_end" to timeRow(R.id.rowEarlyEnd, "Early / Clock-in end", 8, 30),
-            "late_start" to timeRow(R.id.rowLateStart, "Late start", 8, 31),
-            "late_end" to timeRow(R.id.rowLateEnd, "Late end", 10, 0),
+            "early_start" to timeRow(R.id.rowEarlyStart, "Clock-in start", 7, 30),
+            "early_end" to timeRow(R.id.rowEarlyEnd, "Clock-in end", 10, 0),
             "clockout_start" to timeRow(R.id.rowClockoutStart, "Clock-out start", 13, 0),
             "clockout_end" to timeRow(R.id.rowClockoutEnd, "Clock-out end", 16, 0),
         )
@@ -141,6 +139,28 @@ class GateSettingsActivity : Activity() {
     private fun formatForApi(hour: Int, minute: Int): String =
         String.format(Locale.US, "%02d:%02d", hour, minute)
 
+    /** Renders whatever the server most recently said the settings are -
+     * called after both a fresh load and a successful save, so a save is
+     * always confirmed against the real post-save server state rather than
+     * just echoing back what the admin typed. Must run on the UI thread. */
+    private fun applySettingsData(data: JSONObject) {
+        val mode = data.optString("mode", "attendance_only")
+        if (mode == "fee_tracker") {
+            (findViewById<View>(R.id.modeFeeTracker) as android.widget.RadioButton).isChecked = true
+        } else {
+            (findViewById<View>(R.id.modeAttendanceOnly) as android.widget.RadioButton).isChecked = true
+        }
+        duplicateSecondsInput.setText(data.optInt("duplicate_protection_seconds", 30).toString())
+        for ((key, row) in rows) {
+            val parsed = parseTime(data.optString(key, ""))
+            if (parsed != null) {
+                row.hour = parsed.first
+                row.minute = parsed.second
+                refreshRowDisplay(row)
+            }
+        }
+    }
+
     private fun load() {
         settingsBusy.visibility = View.VISIBLE
         settingsScroll.visibility = View.GONE
@@ -148,23 +168,8 @@ class GateSettingsActivity : Activity() {
             try {
                 val res = GateEndpoints.loadGateSettings(this)
                 val data = res.optJSONObject("data") ?: JSONObject()
-                val mode = data.optString("mode", "attendance_only")
-                val duplicateSeconds = data.optInt("duplicate_protection_seconds", 30)
                 runOnUiThread {
-                    if (mode == "fee_tracker") {
-                        (findViewById<View>(R.id.modeFeeTracker) as android.widget.RadioButton).isChecked = true
-                    } else {
-                        (findViewById<View>(R.id.modeAttendanceOnly) as android.widget.RadioButton).isChecked = true
-                    }
-                    duplicateSecondsInput.setText(duplicateSeconds.toString())
-                    for ((key, row) in rows) {
-                        val parsed = parseTime(data.optString(key, ""))
-                        if (parsed != null) {
-                            row.hour = parsed.first
-                            row.minute = parsed.second
-                            refreshRowDisplay(row)
-                        }
-                    }
+                    applySettingsData(data)
                     settingsBusy.visibility = View.GONE
                     settingsScroll.visibility = View.VISIBLE
                 }
@@ -189,8 +194,17 @@ class GateSettingsActivity : Activity() {
         saveButton.isEnabled = false
         worker.execute {
             try {
-                GateEndpoints.updateGateSettings(this, fields)
+                val res = GateEndpoints.updateGateSettings(this, fields)
+                val data = res.optJSONObject("data") ?: JSONObject()
+                GateSettingsCache.save(this, data)
+                val seconds = data.optInt("duplicate_protection_seconds", -1)
+                if (seconds > 0) ScanHandler.cooldownSeconds = seconds
                 runOnUiThread {
+                    // Re-render from exactly what the server just echoed back,
+                    // not from local state - the only real proof a save took
+                    // is the canonical post-save value, not an optimistic
+                    // assumption that what was sent is what got stored.
+                    applySettingsData(data)
                     saveButton.isEnabled = true
                     Toast.makeText(this, "Settings saved.", Toast.LENGTH_SHORT).show()
                 }

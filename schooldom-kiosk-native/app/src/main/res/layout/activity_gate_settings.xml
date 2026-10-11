@@ -89,8 +89,6 @@
 
                 <include layout="@layout/row_time_setting" android:id="@+id/rowEarlyStart" android:layout_width="match_parent" android:layout_height="wrap_content"/>
                 <include layout="@layout/row_time_setting" android:id="@+id/rowEarlyEnd" android:layout_width="match_parent" android:layout_height="wrap_content"/>
-                <include layout="@layout/row_time_setting" android:id="@+id/rowLateStart" android:layout_width="match_parent" android:layout_height="wrap_content"/>
-                <include layout="@layout/row_time_setting" android:id="@+id/rowLateEnd" android:layout_width="match_parent" android:layout_height="wrap_content"/>
                 <include layout="@layout/row_time_setting" android:id="@+id/rowClockoutStart" android:layout_width="match_parent" android:layout_height="wrap_content"/>
                 <include layout="@layout/row_time_setting" android:id="@+id/rowClockoutEnd" android:layout_width="match_parent" android:layout_height="wrap_content"/>
             </LinearLayout>

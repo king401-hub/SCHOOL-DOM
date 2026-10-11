@@ -208,6 +208,12 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
             null,
         )
         wakeLock?.let { if (!it.isHeld) it.acquire(24 * 60 * 60 * 1000L) }
+        // Picks up any change made in Settings (reached from this same
+        // screen) the moment the admin backs out of it, instead of leaving
+        // the running session on whatever it loaded at app launch until a
+        // full restart - this was the real cause behind "I changed the
+        // clock-in/out window and saved, but it didn't change."
+        loadGateSettings()
     }
 
     override fun onPause() {
