@@ -20,7 +20,7 @@ import {
   Sparkles,
   Trophy,
 } from "lucide-react";
-import { CurrentTermBadge, requestJson } from "../AppShared";
+import { CurrentTermBadge, TermCountdownWidget, requestJson } from "../AppShared";
 import {
   Avatar,
   CountUp,
@@ -368,6 +368,8 @@ export default function TeacherHome({ session, data = {}, isRefreshing, onTabCha
           <small>{subjects.length ? pluralize(subjects.length, "subject") : "Edit profile"}</small>
         </button>
       </header>
+
+      <TermCountdownWidget session={session} />
 
       <div className="ts-stat-grid">
         <StatTile index={1} tone="indigo" icon={ClipboardList} label="Assessments" value={metrics.total_assessments ?? 0}

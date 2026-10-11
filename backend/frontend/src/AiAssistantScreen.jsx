@@ -10,6 +10,7 @@ import {
   MetricCard,
   refreshAccessToken,
   renderAiMarkdownLite,
+  TermCountdownWidget,
 } from "./AppShared";
 
 const MAX_HISTORY_TURNS = 20;
@@ -447,6 +448,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
       </header>
       <div className="ai-assistant-scroll" ref={scrollRef}>
         <div className="ai-assistant-stats">
+          <TermCountdownWidget session={session} />
           {loading && !data ? (
             <div className="metric-grid">
               {[0, 1, 2, 3, 4].map((i) => (

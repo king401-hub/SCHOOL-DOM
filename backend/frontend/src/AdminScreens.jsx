@@ -5236,6 +5236,12 @@ function AdminResultsScreen({
   const [feedback, setFeedback] = useState("");
   const [searchError, setSearchError] = useState("");
   const [showSmsModal, setShowSmsModal] = useState(false);
+  const [adminTraitCatalog, setAdminTraitCatalog] = useState({ affective: [], psychomotor: [] });
+  const [adminTraitSelected, setAdminTraitSelected] = useState({ affective: [], psychomotor: [] });
+  const [adminTraitLoading, setAdminTraitLoading] = useState(false);
+  const [adminTraitSaving, setAdminTraitSaving] = useState(false);
+  const [adminTraitFeedback, setAdminTraitFeedback] = useState("");
+  const [adminTraitError, setAdminTraitError] = useState("");
   const [confirm, confirmDialog] = useConfirm();
   const [smsPhone, setSmsPhone] = useState("");
   const [smsBusy, setSmsBusy] = useState(false);
@@ -5396,6 +5402,68 @@ function AdminResultsScreen({
     setStudentId(value);
     setReport(null);
     if (value) runSearch(value);
+  };
+
+  const loadedStudentCode = report?.student?.student_id || "";
+
+  useEffect(() => {
+    if (!loadedStudentCode) {
+      setAdminTraitCatalog({ affective: [], psychomotor: [] });
+      setAdminTraitSelected({ affective: [], psychomotor: [] });
+      return undefined;
+    }
+    let cancelled = false;
+    setAdminTraitLoading(true);
+    setAdminTraitError("");
+    setAdminTraitFeedback("");
+    (async () => {
+      try {
+        const params = new URLSearchParams({ student_id: loadedStudentCode });
+        if (singleReportTermId) params.set("term_id", singleReportTermId);
+        const result = await requestJson(session, "GET", `/api/app/results/traits/?${params.toString()}`);
+        if (cancelled) return;
+        setAdminTraitCatalog(result?.catalog || { affective: [], psychomotor: [] });
+        setAdminTraitSelected(result?.selected || { affective: [], psychomotor: [] });
+      } catch (loadError) {
+        if (!cancelled) setAdminTraitError(loadError.message || "Could not load traits.");
+      } finally {
+        if (!cancelled) setAdminTraitLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, loadedStudentCode, singleReportTermId]);
+
+  const toggleAdminTrait = (category, name) => {
+    setAdminTraitSelected((prev) => {
+      const current = prev[category] || [];
+      const next = current.includes(name) ? current.filter((item) => item !== name) : [...current, name];
+      return { ...prev, [category]: next };
+    });
+  };
+
+  const handleSaveAdminTraits = async () => {
+    if (!loadedStudentCode) return;
+    setAdminTraitSaving(true);
+    setAdminTraitError("");
+    setAdminTraitFeedback("");
+    try {
+      const payload = {
+        student_id: loadedStudentCode,
+        affective: adminTraitSelected.affective,
+        psychomotor: adminTraitSelected.psychomotor,
+      };
+      if (singleReportTermId) payload.term_id = singleReportTermId;
+      await requestJson(session, "POST", "/api/app/results/traits/save/", payload);
+      setAdminTraitFeedback("Traits saved.");
+      // Re-run the search so the printed report card below immediately
+      // reflects the newly saved traits, instead of showing stale ones
+      // until the admin manually regenerates it.
+      runSearch(loadedStudentCode);
+    } catch (saveError) {
+      setAdminTraitError(saveError.message || "Could not save traits.");
+    } finally {
+      setAdminTraitSaving(false);
+    }
   };
 
   const handleLoadBroadsheet = async () => {
@@ -5692,6 +5760,50 @@ function AdminResultsScreen({
             </div>
           </div>
           <ReportCardSheet report={report} gradeScales={data?.grade_scales || []} elementId="report-card-image-target" />
+        </article>
+      ) : null}
+
+      {report ? (
+        <article className="app-panel teacher-traits-card no-print">
+          <div className="panel-head">
+            <div>
+              <h3>Affective Traits &amp; Psychomotor Skills</h3>
+              <small>Flag which traits apply to {report.student?.name || "this student"} for this term - they print on the report card above.</small>
+            </div>
+          </div>
+          {adminTraitLoading ? (
+            <p className="panel-empty">Loading traits...</p>
+          ) : (
+            <>
+              <div className="teacher-traits-grid">
+                <div className="teacher-traits-col">
+                  <h4>Affective Traits</h4>
+                  {adminTraitCatalog.affective.map((name) => (
+                    <label key={name} className="teacher-trait-checkbox">
+                      <input type="checkbox" checked={adminTraitSelected.affective.includes(name)} onChange={() => toggleAdminTrait("affective", name)} />
+                      {name}
+                    </label>
+                  ))}
+                </div>
+                <div className="teacher-traits-col">
+                  <h4>Psychomotor Skills</h4>
+                  {adminTraitCatalog.psychomotor.map((name) => (
+                    <label key={name} className="teacher-trait-checkbox">
+                      <input type="checkbox" checked={adminTraitSelected.psychomotor.includes(name)} onChange={() => toggleAdminTrait("psychomotor", name)} />
+                      {name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {adminTraitError ? <p className="form-feedback error">{adminTraitError}</p> : null}
+              {adminTraitFeedback ? <p className="form-feedback success">{adminTraitFeedback}</p> : null}
+              <div className="panel-form-actions">
+                <button type="button" onClick={handleSaveAdminTraits} disabled={adminTraitSaving}>
+                  {adminTraitSaving ? <><Spinner size={12} /> Saving...</> : "Save traits"}
+                </button>
+              </div>
+            </>
+          )}
         </article>
       ) : null}
 

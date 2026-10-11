@@ -106,6 +106,7 @@ import {
   downloadPrintablePng,
   downloadPrintablePdf,
   CurrentTermBadge,
+  TermCountdownWidget,
   TopbarClock,
   describeReceiptOutcome,
 } from "./AppShared";
@@ -1225,6 +1226,8 @@ function StudentDashboard({
             </button>
           </div>
         </section>
+
+        <TermCountdownWidget session={session} />
 
         <section className="student-stats-grid student-dashboard-stats">
           {statCards.map((card) => (
@@ -10547,6 +10550,7 @@ function ParentDashboard({ session, data, onRefresh, onSignOut, isRefreshing, on
         {/* ── DASHBOARD TAB ── */}
         {activeTab === "dashboard" ? (
           <>
+            <TermCountdownWidget session={session} />
             {/* Virtual Account Card */}
             <article className="app-panel" style={{ borderLeft: virtualAccount ? "4px solid #14b8a6" : "4px solid #f59e0b" }}>
               <h3>

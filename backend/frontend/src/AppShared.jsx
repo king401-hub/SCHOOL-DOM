@@ -774,6 +774,47 @@ export function CurrentTermBadge({ session, showWhenEmpty = false, className = "
   );
 }
 
+/** Live "135 days:54hrs:12mins:3sec"-style countdown to the end of the
+ * current term, shown at the top of each role's dashboard. Term.end_date is
+ * a date only (no time), so the term is treated as running through the end
+ * of that day (23:59:59 local) rather than its midnight start. */
+export function TermCountdownWidget({ session, className = "" }) {
+  const { loaded, term } = useCurrentTerm(session);
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  if (!loaded || !term) return null;
+
+  const endOfTerm = term.end_date ? new Date(`${String(term.end_date).slice(0, 10)}T23:59:59`) : null;
+  if (!endOfTerm || Number.isNaN(endOfTerm.getTime())) return null;
+
+  const diffMs = endOfTerm.getTime() - now.getTime();
+  const ended = diffMs <= 0;
+  const totalSeconds = Math.max(Math.floor(diffMs / 1000), 0);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return (
+    <div className={`term-countdown-widget${className ? ` ${className}` : ""}`}>
+      <CalendarDays size={18} strokeWidth={2} aria-hidden="true" />
+      <div className="term-countdown-widget__text">
+        <span className="term-countdown-widget__label">{term.name} {ended ? "has ended" : "ends in"}</span>
+        {ended ? null : (
+          <strong className="term-countdown-widget__clock">
+            {days} days:{hours}hrs:{minutes}mins:{seconds}sec
+          </strong>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Live clock shown in the app topbar. Formatting (date order, 12h/24h) is left
  * to the viewer's own browser locale rather than a fixed one, so it reads
  * correctly wherever the admin actually is; the time itself is the browser's
