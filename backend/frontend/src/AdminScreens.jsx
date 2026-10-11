@@ -12325,7 +12325,7 @@ function ReportCardSmsPanel({ session, onSearchReport, onSendReportSms }) {
 
         {report ? (
           <form onSubmit={handleSend} style={{ marginTop: "1rem" }}>
-            <div style={{ background: "var(--surface-2, #f8fafc)", borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "0.9rem", fontSize: "0.85rem" }}>
+            <div style={{ background: "var(--surface-2, #f8fafc)", color: "#1e293b", borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "0.9rem", fontSize: "0.85rem" }}>
               <strong>{report.student?.name}</strong> · {report.student?.class_name || "—"}
               <br />
               Average: {report.average_score ?? 0}
