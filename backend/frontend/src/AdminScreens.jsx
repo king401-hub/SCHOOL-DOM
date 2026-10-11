@@ -132,65 +132,75 @@ function TermTransitionPopup({ data, session, onResolved, onNavigate }) {
   };
 
   return (
-    <Popup open onClose={() => {}} closeOnBackdrop={false} labelledBy="term-transition-title" role="alertdialog">
-      <div style={{ padding: "0.5rem 0.25rem", minWidth: "360px", maxWidth: "480px" }}>
-        <h3 id="term-transition-title" style={{ marginTop: 0 }}>
+    <Popup
+      open
+      onClose={() => {}}
+      closeOnBackdrop={false}
+      labelledBy="term-transition-title"
+      role="alertdialog"
+      extraCardClassName="term-transition-card"
+    >
+      <div className="term-transition-head">
+        <span className="term-transition-icon" aria-hidden="true">
+          <CalendarClock size={22} />
+        </span>
+        <h3 id="term-transition-title">
           {data.next_term_missing
             ? "A term has ended"
             : data.session_also_ended
             ? "The academic session has ended"
             : "A new term has begun"}
         </h3>
-
-        {data.next_term_missing ? (
-          <>
-            <p>
-              {data.ended_term?.name || "The active term"} has ended and no next term is set up yet. Configure the
-              next term/session, then this notice will clear on its own.
-            </p>
-            <div className="panel-form-actions">
-              <button type="button" className="btn-primary" onClick={() => onNavigate?.("/timetables")}>
-                Open Term Settings
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p>
-              {data.ended_term?.name || "The previous term"} has ended
-              {data.session_also_ended ? " and so has the academic session." : "."}
-            </p>
-            {summary ? (
-              <div className="metric-grid" style={{ margin: "1rem 0" }}>
-                <MetricCard label="Students" value={summary.student_count} />
-                <MetricCard label="Results Published" value={summary.results_published} />
-                <MetricCard
-                  label="Attendance"
-                  value={summary.attendance_percentage != null ? `${summary.attendance_percentage}%` : "—"}
-                />
-                <MetricCard label="Fees Collected" value={`${NAIRA_SYMBOL}${Number(summary.fees_collected || 0).toLocaleString()}`} />
-              </div>
-            ) : summaryError ? (
-              <p className="form-feedback error">{summaryError}</p>
-            ) : (
-              <p className="panel-empty compact">Loading previous term summary...</p>
-            )}
-            {data.session_also_ended ? (
-              <div className="panel-form-actions">
-                <button type="button" className="btn-secondary" onClick={() => onNavigate?.("/classes")}>
-                  Review Student Promotion
-                </button>
-              </div>
-            ) : null}
-            {error ? <p className="form-feedback error">{error}</p> : null}
-            <div className="panel-form-actions">
-              <button type="button" className="btn-primary" onClick={handleConfirm} disabled={busy}>
-                {busy ? <><Spinner size={12} /> Confirming...</> : "Confirm and continue"}
-              </button>
-            </div>
-          </>
-        )}
       </div>
+
+      {data.next_term_missing ? (
+        <>
+          <p className="term-transition-body">
+            <strong>{data.ended_term?.name || "The active term"}</strong> has ended and no next term is set up yet.
+            Configure the next term/session, then this notice will clear on its own.
+          </p>
+          <div className="panel-form-actions term-transition-actions">
+            <button type="button" className="btn-primary" onClick={() => onNavigate?.("/timetables")}>
+              Open Term Settings
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="term-transition-body">
+            <strong>{data.ended_term?.name || "The previous term"}</strong> has ended
+            {data.session_also_ended ? " and so has the academic session." : "."}
+          </p>
+          {summary ? (
+            <div className="metric-grid term-transition-summary">
+              <MetricCard label="Students" value={summary.student_count} />
+              <MetricCard label="Results Published" value={summary.results_published} />
+              <MetricCard
+                label="Attendance"
+                value={summary.attendance_percentage != null ? `${summary.attendance_percentage}%` : "—"}
+              />
+              <MetricCard label="Fees Collected" value={`${NAIRA_SYMBOL}${Number(summary.fees_collected || 0).toLocaleString()}`} />
+            </div>
+          ) : summaryError ? (
+            <p className="form-feedback error">{summaryError}</p>
+          ) : (
+            <p className="panel-empty compact">Loading previous term summary...</p>
+          )}
+          {data.session_also_ended ? (
+            <div className="panel-form-actions term-transition-actions">
+              <button type="button" className="btn-secondary" onClick={() => onNavigate?.("/classes")}>
+                Review Student Promotion
+              </button>
+            </div>
+          ) : null}
+          {error ? <p className="form-feedback error">{error}</p> : null}
+          <div className="panel-form-actions term-transition-actions">
+            <button type="button" className="btn-primary" onClick={handleConfirm} disabled={busy}>
+              {busy ? <><Spinner size={12} /> Confirming...</> : "Confirm and continue"}
+            </button>
+          </div>
+        </>
+      )}
     </Popup>
   );
 }

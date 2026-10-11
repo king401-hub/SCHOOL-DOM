@@ -5836,6 +5836,69 @@ body[data-theme="dark"] .edit-modal-close:hover {
   color: #f87171;
 }
 
+/* ── Term transition notice (TermTransitionPopup) ────────────────────────── */
+/* .edit-modal-card has no padding of its own (it's supplied by whichever
+   child wrapper a given modal uses, e.g. .edit-modal-head) - this popup has
+   no such wrapper, so .term-transition-card supplies its own, plus a
+   sensible width instead of the shared card's form-sized min(960px, ...). */
+
+.term-transition-card {
+  width: min(420px, calc(100vw - 32px));
+  padding: 1.6rem 1.75rem 1.75rem;
+}
+
+.term-transition-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.term-transition-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0f766e, #0ea5e9);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(14, 165, 233, 0.28);
+}
+
+.term-transition-head h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: #0f172a;
+}
+
+body[data-theme="dark"] .term-transition-head h3 { color: #f1f5f9; }
+
+.term-transition-body {
+  margin: 0 0 1.1rem;
+  color: #475569;
+  line-height: 1.55;
+  font-size: 0.9rem;
+}
+
+body[data-theme="dark"] .term-transition-body { color: #94a3b8; }
+
+.term-transition-summary { margin: 0 0 1.1rem; }
+
+.term-transition-actions {
+  justify-content: center;
+  margin-top: 0.2rem;
+}
+
+.term-transition-actions .btn-primary,
+.term-transition-actions .btn-secondary {
+  width: 100%;
+  justify-content: center;
+}
+
 /* ── Form sections inside modals ─────────────────────────────────────────── */
 
 .form-section {
