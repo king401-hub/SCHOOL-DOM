@@ -1036,6 +1036,7 @@ def _director_payload(user, request=None):
         "last_name": user.last_name or "",
         "email": user.email or "",
         "phone": user.phone or "",
+        "phone_verified_at": user.phone_verified_at.isoformat() if user.phone_verified_at else None,
         "address": user.director_address or "",
         "proof_of_address": _media_url(request, user.director_proof_of_address),
         "id_type": user.director_id_type or "",
@@ -4005,12 +4006,15 @@ def dashboard_snapshot(request):
                 pass
         term_transition = _term_transition_payload(_pending_term_transition(user))
 
+    from users.views import needs_phone_verification
+
     return Response(
         {
             "success": True,
             "school": _school_payload(user.tenant, request),
             "alerts": alerts,
             "term_transition": term_transition,
+            "phone_verification_needed": needs_phone_verification(user),
             "metrics": {
                 "active_students": active_students,
                 "new_students_7d": new_students_7d,
@@ -4123,6 +4127,102 @@ def term_transition_summary(request):
         return Response({"success": False, "message": "No ended term to summarize."}, status=status.HTTP_400_BAD_REQUEST)
 
     return Response({"success": True, **_term_summary_payload(term, user)})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def account_phone_send_otp(request):
+    """Authenticated counterpart to the login-flow phone OTP in users.views -
+    used from Settings by an admin who is already signed in and just needs
+    to add/confirm a phone number, not re-prove who they are. Also doubles
+    as "resend": call it again with no body to get a fresh code on the
+    phone already on file."""
+    from users.views import (
+        PHONE_OTP_EXPIRY_MINUTES,
+        needs_phone_verification,
+        normalize_phone_number,
+        phone_otp_debug_payload,
+        send_phone_otp,
+    )
+
+    user = request.user
+    if not needs_phone_verification(user):
+        return Response(
+            {"success": False, "message": "Phone verification is not required for this account."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    raw_phone = request.data.get("phone")
+    if raw_phone is not None:
+        phone = str(raw_phone).strip()
+        if not normalize_phone_number(phone).startswith("234"):
+            return Response({"success": False, "message": "Enter a valid Nigerian phone number."}, status=status.HTTP_400_BAD_REQUEST)
+        if user.phone != phone:
+            user.phone = phone
+            user.save(update_fields=["phone"])
+    if not user.phone:
+        return Response({"success": False, "message": "Add a phone number first."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        challenge = send_phone_otp(user, purpose="settings")
+    except Exception:
+        logger.warning("Phone OTP send failed for %s via Settings.", user.email, exc_info=True)
+        return Response(
+            {"success": False, "message": "Could not send the verification code. Please try again shortly."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    return Response({
+        "success": True,
+        "phone": user.phone,
+        "phone_otp_challenge": challenge,
+        "phone_otp_expires_in": PHONE_OTP_EXPIRY_MINUTES * 60,
+        "message": "Enter the 6-digit code sent to your phone.",
+        **phone_otp_debug_payload(user),
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def account_phone_verify_otp(request):
+    from django.contrib.auth.hashers import check_password
+
+    from users.views import PHONE_OTP_MAX_ATTEMPTS, clear_phone_otp, get_phone_otp_device
+
+    user = request.user
+    code = str(request.data.get("code") or "").strip()
+    challenge = str(request.data.get("challenge") or "").strip()
+    if not code or not challenge:
+        return Response({"success": False, "message": "Code and challenge are required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not re.fullmatch(r"\d{6}", code):
+        return Response({"success": False, "message": "Code must be 6 digits."}, status=status.HTTP_400_BAD_REQUEST)
+
+    otp_user = get_phone_otp_device(user, challenge=challenge)
+    if not otp_user:
+        return Response(
+            {"success": False, "message": "Verification code expired or invalid - request a new one."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    too_many_response = Response(
+        {"success": False, "message": "Too many incorrect codes. Request a new one."},
+        status=status.HTTP_429_TOO_MANY_REQUESTS,
+    )
+    if user.phone_otp_attempts >= PHONE_OTP_MAX_ATTEMPTS:
+        return too_many_response
+    if not user.phone_otp_hash or not check_password(code, user.phone_otp_hash):
+        user.phone_otp_attempts += 1
+        user.save(update_fields=["phone_otp_attempts"])
+        remaining = max(PHONE_OTP_MAX_ATTEMPTS - user.phone_otp_attempts, 0)
+        if remaining == 0:
+            return too_many_response
+        return Response(
+            {"success": False, "message": f"Invalid code. {remaining} attempt(s) remaining."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    clear_phone_otp(user)
+    return Response({"success": True, "message": "Phone verified."})
 
 
 @api_view(["GET"])

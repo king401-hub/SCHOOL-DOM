@@ -136,6 +136,7 @@ const AdminResultsScreen = lazyAdminScreen("AdminResultsScreen");
 const AdminTableScreen = lazyAdminScreen("AdminTableScreen");
 const AdminClassesScreen = lazyAdminScreen("AdminClassesScreen");
 const TermTransitionPopup = lazyAdminScreen("TermTransitionPopup");
+const PhoneVerificationBanner = lazyAdminScreen("PhoneVerificationBanner");
 const AdminHRPayrollScreen = lazyAdminScreen("AdminHRPayrollScreen");
 const AdminPayrollScreen = lazyAdminScreen("AdminPayrollScreen");
 const AdminNonTeachingStaffScreen = lazyAdminScreen("AdminNonTeachingStaffScreen");
@@ -7093,6 +7094,11 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const [countriesList, setCountriesList] = useState([]);
   const [navOpen, setNavOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  // Set when the phone-verification banner's "Add phone number" button
+  // navigates to /settings, so AdminSettingsScreen knows to scroll to and
+  // pulse the phone field - cleared once it's done that (see
+  // onHighlightConsumed below), not on every settings visit.
+  const [settingsHighlight, setSettingsHighlight] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpTickets, setHelpTickets] = useState(null);
   const [helpTicketsLoading, setHelpTicketsLoading] = useState(false);
@@ -9649,6 +9655,8 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         themePreference={themePreference}
         onThemeChange={onThemeChange}
         countries={countriesList}
+        highlightField={settingsHighlight}
+        onHighlightConsumed={() => setSettingsHighlight("")}
       />
             );
   }
@@ -9916,6 +9924,16 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
             session={session}
             onNavigate={onNavigate}
             onResolved={() => loadScreen("/dashboard", true)}
+          />
+        </Suspense>
+
+        <Suspense fallback={null}>
+          <PhoneVerificationBanner
+            visible={Boolean(screenData["/dashboard"]?.phone_verification_needed)}
+            onGoToSettings={() => {
+              setSettingsHighlight("phone");
+              onNavigate("/settings");
+            }}
           />
         </Suspense>
 

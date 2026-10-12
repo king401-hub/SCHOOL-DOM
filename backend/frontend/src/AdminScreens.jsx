@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown, Download, Clock, Copy, Briefcase, CalendarClock, Wallet, UserCheck, CheckCircle2, XCircle, Banknote, Eye, EyeOff } from "lucide-react";
+import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown, Download, Clock, Copy, Briefcase, CalendarClock, Wallet, UserCheck, CheckCircle2, XCircle, Banknote, Eye, EyeOff, Smartphone } from "lucide-react";
 import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
@@ -218,6 +218,40 @@ function TermTransitionPopup({ data, session, onResolved, onNavigate }) {
         </>
       )}
     </Popup>
+  );
+}
+
+/** Non-blocking slide-in nudge for an admin whose phone is unverified - see
+ * dashboard_snapshot's phone_verification_needed (backend/users/app_views.py).
+ * Unlike TermTransitionPopup this is explicitly dismissible and never blocks
+ * the rest of the app: it re-appears on the next full page load if the admin
+ * dismissed it without actually verifying, but never traps them mid-task. */
+function PhoneVerificationBanner({ visible, onGoToSettings }) {
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    setDismissed(false);
+  }, [visible]);
+
+  if (!visible || dismissed) return null;
+
+  return (
+    <div className="phone-verify-banner" role="status">
+      <span className="phone-verify-banner-icon" aria-hidden="true">
+        <Smartphone size={18} />
+      </span>
+      <div className="phone-verify-banner-body">
+        <strong>Confirm your phone number</strong>
+        <span>Add and verify a phone number so you can be reached and recover your account by SMS.</span>
+      </div>
+      <div className="phone-verify-banner-actions">
+        <button type="button" className="btn-primary" onClick={onGoToSettings}>
+          Add phone number
+        </button>
+        <button type="button" className="phone-verify-banner-dismiss" onClick={() => setDismissed(true)} aria-label="Dismiss">
+          <X size={14} />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -9630,11 +9664,70 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
     setAdminFirstName(director.first_name || user?.first_name || "");
     setAdminMiddleName(director.middle_name || user?.middle_name || "");
     setAdminLastName(director.last_name || user?.last_name || "");
+    setDirectorPhoneInput(director.phone || "");
   }, [
     school.cac_registered_name, school.cac_certificate, school.entrance_photo, school.proof_of_address, school.ministry_approval_number,
     director.address, director.id_type, director.proof_of_address, director.id_document, director.passport_photo, director.signature,
     director.first_name, director.middle_name, director.last_name, user?.first_name, user?.middle_name, user?.last_name,
+    director.phone,
   ]);
+
+  // Arriving from the phone-verification banner (see App.jsx): scroll the
+  // director phone field into view and pulse it briefly so it's obvious
+  // what to do next, then tell the parent to clear the signal so it doesn't
+  // re-fire on an unrelated later visit to this screen.
+  useEffect(() => {
+    if (highlightField !== "phone") return undefined;
+    phoneHighlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setIsPhoneFieldPulsing(true);
+    const timer = window.setTimeout(() => {
+      setIsPhoneFieldPulsing(false);
+      onHighlightConsumed?.();
+    }, 2600);
+    return () => window.clearTimeout(timer);
+  }, [highlightField, onHighlightConsumed]);
+
+  const handleSendPhoneOtp = async (event) => {
+    event?.preventDefault?.();
+    setPhoneOtpError("");
+    setPhoneOtpMessage("");
+    setPhoneOtpBusy(true);
+    try {
+      const result = await requestJson(session, "POST", "/api/app/phone/send-otp/", { phone: directorPhoneInput.trim() });
+      setPhoneOtpChallenge(result?.phone_otp_challenge || "");
+      setPhoneOtpExpiresIn(result?.phone_otp_expires_in || 600);
+      setPhoneOtpDebugCode(result?.debug_phone_otp || "");
+      setPhoneOtpCode("");
+      setPhoneOtpStage("code-sent");
+      setPhoneOtpMessage(result?.message || "Enter the 6-digit code sent to your phone.");
+    } catch (err) {
+      setPhoneOtpError(err.message || "Could not send a verification code.");
+    } finally {
+      setPhoneOtpBusy(false);
+    }
+  };
+
+  const handleVerifyPhoneOtp = async (event) => {
+    event.preventDefault();
+    setPhoneOtpError("");
+    setPhoneOtpMessage("");
+    setPhoneOtpBusy(true);
+    try {
+      const result = await requestJson(session, "POST", "/api/app/phone/verify-otp/", {
+        code: phoneOtpCode.trim(),
+        challenge: phoneOtpChallenge,
+      });
+      setPhoneOtpMessage(result?.message || "Phone verified.");
+      setPhoneJustVerifiedAt(new Date().toISOString());
+      setPhoneOtpStage("idle");
+      setPhoneOtpCode("");
+      setPhoneOtpChallenge("");
+    } catch (err) {
+      setPhoneOtpError(err.message || "Verification failed.");
+    } finally {
+      setPhoneOtpBusy(false);
+    }
+  };
 
   const handleEntrancePhotoChange = (event) => {
     const file = event.target.files?.[0] || null;
@@ -9793,6 +9886,56 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
                   Email
                   <input value={director.email || user?.email || ""} disabled />
                 </label>
+                <div
+                  ref={phoneHighlightRef}
+                  className={`panel-field full settings-phone-verification${isPhoneFieldPulsing ? " settings-field-pulse" : ""}`}
+                >
+                  <span>Your phone number</span>
+                  {phoneJustVerifiedAt || director.phone_verified_at ? (
+                    <div className="settings-phone-verified-row">
+                      <input value={director.phone || directorPhoneInput} disabled />
+                      <span className="settings-phone-verified-badge">Verified</span>
+                    </div>
+                  ) : phoneOtpStage === "code-sent" ? (
+                    <form className="panel-form-grid" onSubmit={handleVerifyPhoneOtp}>
+                      <p className="panel-form-note">Code sent to {directorPhoneInput || director.phone}.</p>
+                      <label className="panel-field">
+                        Verification code
+                        <input
+                          value={phoneOtpCode}
+                          onChange={(event) => setPhoneOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                          placeholder="000000"
+                          inputMode="numeric"
+                          maxLength={6}
+                          required
+                        />
+                      </label>
+                      <div className="panel-form-actions">
+                        <button type="submit" disabled={phoneOtpCode.length !== 6 || phoneOtpBusy}>
+                          {phoneOtpBusy ? <><Spinner size={12} /> Verifying...</> : "Verify"}
+                        </button>
+                        <button type="button" className="btn-secondary" onClick={handleSendPhoneOtp} disabled={phoneOtpBusy}>
+                          Resend code
+                        </button>
+                      </div>
+                      {phoneOtpDebugCode ? <small className="field-note">Local dev code: {phoneOtpDebugCode}</small> : null}
+                    </form>
+                  ) : (
+                    <div className="settings-phone-input-row">
+                      <input
+                        value={directorPhoneInput}
+                        onChange={(event) => setDirectorPhoneInput(event.target.value)}
+                        placeholder="08012345678"
+                        disabled={phoneOtpBusy}
+                      />
+                      <button type="button" onClick={handleSendPhoneOtp} disabled={!directorPhoneInput.trim() || phoneOtpBusy}>
+                        {phoneOtpBusy ? <><Spinner size={12} /> Sending...</> : "Send code"}
+                      </button>
+                    </div>
+                  )}
+                  {phoneOtpError ? <p className="form-feedback error">{phoneOtpError}</p> : null}
+                  {phoneOtpMessage && !phoneOtpError ? <p className="form-feedback success">{phoneOtpMessage}</p> : null}
+                </div>
                 <label className="panel-field full">
                   Address
                   <textarea value={directorAddress} onChange={(event) => setDirectorAddress(event.target.value)} disabled={!canEdit || isSaving} />
@@ -10687,6 +10830,8 @@ function AdminSettingsScreen({
   themePreference,
   onThemeChange,
   countries = [],
+  highlightField = "",
+  onHighlightConsumed,
 }) {
   const school = data?.school || {};
   const canEdit = Boolean(data?.can_edit);
@@ -10714,6 +10859,25 @@ function AdminSettingsScreen({
   const [selectedPastTermId, setSelectedPastTermId] = useState("");
   const [pastTermSummary, setPastTermSummary] = useState(null);
   const [pastTermLoading, setPastTermLoading] = useState(false);
+  // Director's own phone + its OTP confirmation - separate from `phone`
+  // above, which is the SCHOOL's contact phone saved through the normal
+  // settings PATCH. Changing a verified phone always has to go through
+  // OTP, so this has its own send/verify flow instead of the form-wide save.
+  const [directorPhoneInput, setDirectorPhoneInput] = useState("");
+  const [phoneOtpStage, setPhoneOtpStage] = useState("idle"); // idle | code-sent
+  const [phoneOtpCode, setPhoneOtpCode] = useState("");
+  const [phoneOtpChallenge, setPhoneOtpChallenge] = useState("");
+  const [phoneOtpExpiresIn, setPhoneOtpExpiresIn] = useState(0);
+  const [phoneOtpDebugCode, setPhoneOtpDebugCode] = useState("");
+  const [phoneOtpBusy, setPhoneOtpBusy] = useState(false);
+  const [phoneOtpError, setPhoneOtpError] = useState("");
+  const [phoneOtpMessage, setPhoneOtpMessage] = useState("");
+  // Overrides the server's director.phone_verified_at the instant
+  // verification succeeds, since nothing re-fetches /school/settings/ right
+  // after - null until a successful verify sets it for this session.
+  const [phoneJustVerifiedAt, setPhoneJustVerifiedAt] = useState(null);
+  const phoneHighlightRef = useRef(null);
+  const [isPhoneFieldPulsing, setIsPhoneFieldPulsing] = useState(false);
   const [pastTermError, setPastTermError] = useState("");
   const [activityCalendar, setActivityCalendar] = useState([]);
   const today = useMemo(() => new Date(), []);
@@ -15607,6 +15771,7 @@ function AdminLicenseScreen({ data, loading, error, onRetry, onActivate, onPurch
 
 export {
   TermTransitionPopup,
+  PhoneVerificationBanner,
   AdminDashboardScreen,
   AdminPerformanceHeatmapScreen,
   AdminFinanceScreen,

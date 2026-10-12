@@ -9139,3 +9139,61 @@ class SignupPhoneVerificationTests(TestCase):
         self.assertIn("access", email_step.data)
         self.assertFalse(email_step.data.get("requires_phone_otp"))
         _sms.assert_not_called()
+
+
+@override_settings(ADMIN_OTP_ENABLED=True, ADMIN_OTP_DEBUG_CODE_ENABLED=True)
+class AccountPhoneVerificationEndpointTests(TestCase):
+    """The authenticated /api/app/phone/* pair - used from Settings by an
+    admin who is already signed in, as opposed to the pre-session
+    /api/auth/admin/* phone endpoints used during login/signup."""
+
+    def setUp(self):
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+        self.school = SchoolTenant.objects.create(name="Acct Phone School", schema_name="acctphoneschool", is_active=True)
+        self.admin = User.objects.create_user(
+            email="admin@acctphone.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    @patch("users.views.send_kudisms", return_value=KUDISMS_SENT)
+    def test_send_otp_saves_phone_and_sends_code(self, _sms):
+        response = self.client.post("/api/app/phone/send-otp/", {"phone": "08031234567"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["phone_otp_challenge"])
+        self.assertIn("debug_phone_otp", response.data)
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.phone, "08031234567")
+        self.assertIsNone(self.admin.phone_verified_at)
+
+    @patch("users.views.send_kudisms", return_value=KUDISMS_SENT)
+    def test_send_otp_with_invalid_phone_is_rejected(self, _sms):
+        response = self.client.post("/api/app/phone/send-otp/", {"phone": "123"}, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        _sms.assert_not_called()
+
+    @patch("users.views.send_kudisms", return_value=KUDISMS_SENT)
+    def test_verify_otp_completes_verification(self, _sms):
+        send = self.client.post("/api/app/phone/send-otp/", {"phone": "08031234567"}, format="json")
+        verify = self.client.post("/api/app/phone/verify-otp/", {
+            "code": send.data["debug_phone_otp"], "challenge": send.data["phone_otp_challenge"],
+        }, format="json")
+        self.assertEqual(verify.status_code, 200, verify.data)
+        self.admin.refresh_from_db()
+        self.assertIsNotNone(self.admin.phone_verified_at)
+
+    @patch("users.views.send_kudisms", return_value=KUDISMS_SENT)
+    def test_already_verified_account_cannot_resend(self, _sms):
+        self.admin.phone = "08031234567"
+        self.admin.phone_verified_at = timezone.now()
+        self.admin.save(update_fields=["phone", "phone_verified_at"])
+        response = self.client.post("/api/app/phone/send-otp/", {}, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        _sms.assert_not_called()
+
+    def test_endpoints_require_authentication(self):
+        anon = APIClient()
+        response = anon.post("/api/app/phone/send-otp/", {"phone": "08031234567"}, format="json")
+        self.assertEqual(response.status_code, 401)
