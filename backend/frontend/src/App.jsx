@@ -4074,7 +4074,7 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
         if (!cancelled) setResources(response?.resources || []);
       })
       .catch((loadError) => {
-        if (!cancelled) setError(loadError.message || "Could not load the NERDC Curriculum.");
+        if (!cancelled) setError(loadError.message || "Could not load the NERDC Scheme of Work.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -4091,9 +4091,9 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
   // alphabetical (which would put "JSS 1-3" - the Hausa/Igbo fallback range -
   // ahead of "JSS 1" alphabetically, which reads oddly).
   const gradeSortKey = (label) => {
-    const match = /^(Primary|JSS)\s+(\d+)(?:-(\d+))?$/.exec(label || "");
-    if (!match) return [2, 0, label || ""];
-    const bandRank = match[1] === "Primary" ? 0 : 1;
+    const match = /^(Primary|JSS|SS)\s+(\d+)(?:-(\d+))?$/.exec(label || "");
+    if (!match) return [3, 0, label || ""];
+    const bandRank = match[1] === "Primary" ? 0 : match[1] === "JSS" ? 1 : 2;
     return [bandRank, match[3] != null ? 1 : 0, Number(match[2])];
   };
   const compareGradeKeys = (a, b) => {
@@ -4149,7 +4149,7 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
       const response = await requestJson(session, "GET", `/api/app/academic/lesson-resources/${resource.id}/`);
       if (response?.resource) onPick(response.resource);
     } catch (pickError) {
-      setError(pickError.message || "Could not load that NERDC Curriculum topic.");
+      setError(pickError.message || "Could not load that NERDC Scheme of Work topic.");
     } finally {
       setApplyingId(null);
     }
@@ -4166,8 +4166,8 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
       >
         <div className="lesson-plan-dialog-head">
           <div>
-            <h3 id="lesson-resource-dialog-title">NERDC Curriculum</h3>
-            <small>Pick a topic from the government-approved NERDC Curriculum to pre-fill the {itemLabel.toLowerCase()} form below - you can still edit everything and attach your own file.</small>
+            <h3 id="lesson-resource-dialog-title">NERDC Scheme of Work</h3>
+            <small>Pick a topic from the government-approved NERDC Scheme of Work to pre-fill the {itemLabel.toLowerCase()} form below - you can still edit everything and attach your own file.</small>
           </div>
           <button type="button" className="table-action ghost" onClick={onClose}>Close</button>
         </div>
@@ -4197,10 +4197,10 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
         ) : null}
         {error ? <p className="form-feedback error">{error}</p> : null}
         {loading ? (
-          <p className="panel-empty">Loading the NERDC Curriculum...</p>
+          <p className="panel-empty">Loading the NERDC Scheme of Work...</p>
         ) : groups.length === 0 ? (
           <p className="panel-empty">
-            {resources.length === 0 ? "No NERDC Curriculum content available yet." : "No topics match that subject/class combination."}
+            {resources.length === 0 ? "No NERDC Scheme of Work content available yet." : "No topics match that subject/class combination."}
           </p>
         ) : (
           <div className="lesson-resource-groups">
@@ -4330,8 +4330,8 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
     setResourcePickerOpen(false);
     setFeedback(
       matchedSubject || !resource.subject
-        ? `Applied "${resource.title}" from the NERDC Curriculum. Review it below, then attach your own file if you have one.`
-        : `Applied "${resource.title}" from the NERDC Curriculum. Your school doesn't have a "${resource.subject}" subject set up, so the subject field was left as-is - check it before saving.`
+        ? `Applied "${resource.title}" from the NERDC Scheme of Work. Review it below, then attach your own file if you have one.`
+        : `Applied "${resource.title}" from the NERDC Scheme of Work. Your school doesn't have a "${resource.subject}" subject set up, so the subject field was left as-is - check it before saving.`
     );
   };
 
@@ -4394,7 +4394,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
         <form className="panel-form" onSubmit={handlePlanSubmit}>
           <div className="panel-form-actions">
             <button type="button" className="pill-button ghost" onClick={() => setResourcePickerOpen(true)}>
-              NERDC Curriculum
+              NERDC Scheme of Work
             </button>
           </div>
           <div className="panel-form-grid">
