@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Menu, X, ChevronDown, Sun, Moon } from 'lucide-react';
+import LanguageSwitcher from './LanguageSwitcher';
 
-function ThemeToggle() {
+function ThemeToggle({ label }: { label: string }) {
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
     (localStorage.getItem('sd-theme') as 'dark' | 'light') || 'dark'
   );
@@ -12,7 +14,7 @@ function ThemeToggle() {
   return (
     <button
       onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
-      aria-label="Toggle theme"
+      aria-label={label}
       className="h-9 w-9 rounded-xl border border-white/8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer shrink-0"
     >
       {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" style={{ color: '#475569' }} />}
@@ -24,25 +26,26 @@ interface NavbarProps {
   onSignIn: () => void;
 }
 
-const NAV_LINKS = [
-  { label: 'Features', href: '#features' },
-  { label: 'CBT App', href: '#cbt' },
-  { label: 'Pricing', href: '#pricing' },
-  { label: 'Testimonials', href: '#testimonials' },
-  {
-    label: 'More', href: '#', children: [
-      { label: 'FAQ', href: '/#/faq' },
-      { label: 'Contact', href: '/#/contact' },
-      { label: 'About', href: '#' },
-    ]
-  },
-];
-
 export default function Navbar({ onSignIn }: NavbarProps) {
+  const { t } = useTranslation();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [activeLink, setActiveLink] = useState('');
+
+  const NAV_LINKS = [
+    { label: t('nav.features'), href: '#features' },
+    { label: t('nav.cbt'), href: '#cbt' },
+    { label: t('nav.pricing'), href: '#pricing' },
+    { label: t('nav.testimonials'), href: '#testimonials' },
+    {
+      label: t('nav.more'), href: '#', children: [
+        { label: t('nav.faq'), href: '/#/faq' },
+        { label: t('nav.contact'), href: '/#/contact' },
+        { label: t('nav.about'), href: '#' },
+      ]
+    },
+  ];
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -131,13 +134,15 @@ export default function Navbar({ onSignIn }: NavbarProps) {
           </div>
 
           <div className="hidden md:flex items-center gap-3">
-            <ThemeToggle />
-            <button onClick={onSignIn} className="btn-ghost text-sm px-5 py-2">Sign In</button>
-            <a href="/#/signup" className="btn-primary text-sm px-5 py-2">Get Started Free</a>
+            <LanguageSwitcher />
+            <ThemeToggle label={t('nav.toggleTheme')} />
+            <button onClick={onSignIn} className="btn-ghost text-sm px-5 py-2">{t('nav.signIn')}</button>
+            <a href="/#/signup" className="btn-primary text-sm px-5 py-2">{t('nav.getStarted')}</a>
           </div>
 
           <div className="md:hidden flex items-center gap-2">
-            <ThemeToggle />
+            <LanguageSwitcher />
+            <ThemeToggle label={t('nav.toggleTheme')} />
             <button
               className="p-2 rounded-xl border border-white/8 text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
               onClick={() => setMobileOpen(o => !o)}
@@ -162,12 +167,12 @@ export default function Navbar({ onSignIn }: NavbarProps) {
                   {link.label}
                 </button>
               ))}
-              <a href="/#/faq" className="block px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">FAQ</a>
-              <a href="/#/contact" className="block px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">Contact</a>
+              <a href="/#/faq" className="block px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">{t('nav.faq')}</a>
+              <a href="/#/contact" className="block px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">{t('nav.contact')}</a>
             </div>
             <div className="p-4 border-t border-white/5 space-y-2">
-              <a href="/#/signup" className="w-full btn-primary text-sm py-2.5 justify-center">Get Started Free</a>
-              <button onClick={onSignIn} className="w-full btn-ghost text-sm py-2.5 justify-center">Sign In</button>
+              <a href="/#/signup" className="w-full btn-primary text-sm py-2.5 justify-center">{t('nav.getStarted')}</a>
+              <button onClick={onSignIn} className="w-full btn-ghost text-sm py-2.5 justify-center">{t('nav.signIn')}</button>
             </div>
           </div>
         </div>

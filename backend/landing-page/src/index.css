@@ -401,3 +401,17 @@ input:focus, select:focus, textarea:focus {
 .light .signup-shell .sd-card { background: #eef1f6; border-color: rgba(15, 23, 42, 0.09); }
 .light .signup-shell .sd-input { background: #f3f5f9; border-color: rgba(15, 23, 42, 0.13); }
 .light .signup-shell { background: #e4e9f0; }
+
+/* --- RTL (Arabic) --- Flexbox/grid order already mirrors automatically off
+   the <html dir="rtl"> the i18n config sets, which covers most of this
+   layout. These are the few spots pinned with a physical left/right
+   absolute position (corner badges) that don't mirror on their own and
+   read as visually wrong - pinned to the wrong corner - without this. */
+[dir="rtl"] .badge.absolute,
+[dir="rtl"] div.absolute > .badge {
+  right: auto;
+}
+[dir="rtl"] .relative > .absolute.top-4.right-4 {
+  right: auto;
+  left: 1rem;
+}

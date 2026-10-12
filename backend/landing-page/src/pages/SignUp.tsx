@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Trans, useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeft, ArrowRight, ShieldCheck, Users, CheckCircle2,
@@ -22,13 +23,6 @@ type SchoolGatePlan = 'basic' | 'premium';
 const SESSION_KEY = 'schooldom.session';
 const ADMIN_APP_URL = (import.meta as any).env?.VITE_ADMIN_APP_URL || '/app/';
 
-const ROLES: { value: Role; title: string; desc: string; icon: typeof ShieldCheck }[] = [
-  { value: 'school_admin', title: 'School Admin', desc: 'Direct management of single school operations, staff, and configurations.', icon: ShieldCheck },
-  { value: 'school_superadmin', title: 'Proprietor', desc: 'Group management overseeing multiple campuses and administrative keys.', icon: Users },
-];
-
-const STEP_LABELS = ['Account & Onboarding Role', 'Configure Institutional Profile', 'Verify & Activate'];
-
 function parseErrorMessage(data: any, fallback: string): string {
   if (!data) return fallback;
   if (typeof data.message === 'string' && data.message.trim().length > 0) return data.message;
@@ -43,7 +37,7 @@ function parseErrorMessage(data: any, fallback: string): string {
   return fallback;
 }
 
-async function postJson(path: string, body: any) {
+async function postJson(path: string, body: any, fallbacks: { network: string; requestFailed: string }) {
   let res: Response;
   try {
     res = await fetch(path, {
@@ -52,16 +46,17 @@ async function postJson(path: string, body: any) {
       body: JSON.stringify(body),
     });
   } catch {
-    throw new Error('Unable to reach the server. Check your connection and try again.');
+    throw new Error(fallbacks.network);
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.success === false) {
-    throw new Error(parseErrorMessage(data, 'Request failed. Please try again.'));
+    throw new Error(parseErrorMessage(data, fallbacks.requestFailed));
   }
   return data;
 }
 
-function Stepper({ step }: { step: number }) {
+function Stepper({ step, stepLabels }: { step: number; stepLabels: string[] }) {
+  const { t } = useTranslation();
   return (
     <div className="mb-8">
       <div className="flex items-center gap-3 mb-3">
@@ -70,12 +65,12 @@ function Stepper({ step }: { step: number }) {
           {step}
         </div>
         <div>
-          <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold">Onboarding Progress</p>
-          <p className="text-white text-sm font-bold">{STEP_LABELS[step - 1]}</p>
+          <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold">{t('signup.onboardingProgress')}</p>
+          <p className="text-white text-sm font-bold">{stepLabels[step - 1]}</p>
         </div>
       </div>
       <div className="flex gap-1.5">
-        {STEP_LABELS.map((_, i) => (
+        {stepLabels.map((_, i) => (
           <div key={i} className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
             <div className="h-full rounded-full transition-all duration-500"
               style={{ width: i <= step - 1 ? '100%' : '0%', background: 'linear-gradient(90deg,#22c55e,#0ea5e9)' }} />
@@ -87,6 +82,13 @@ function Stepper({ step }: { step: number }) {
 }
 
 export default function SignUpPage() {
+  const { t } = useTranslation();
+  const ROLES: { value: Role; title: string; desc: string; icon: typeof ShieldCheck }[] = [
+    { value: 'school_admin', title: t('signup.roles.schoolAdmin.title'), desc: t('signup.roles.schoolAdmin.desc'), icon: ShieldCheck },
+    { value: 'school_superadmin', title: t('signup.roles.proprietor.title'), desc: t('signup.roles.proprietor.desc'), icon: Users },
+  ];
+  const STEP_LABELS = t('signup.stepLabels', { returnObjects: true }) as string[];
+  const errorFallbacks = { network: t('signup.errors.connection'), requestFailed: t('signup.errors.requestFailed') };
   const [searchParams] = useSearchParams();
   const initialTier = searchParams.get('tier') === 'non_k12' ? 'non_k12' : 'k12';
   const initialProduct = searchParams.get('product') === 'schoolgate' ? 'schoolgate' : 'full';
@@ -201,7 +203,7 @@ export default function SignUpPage() {
           address: address.trim(),
           product,
           schoolgate_plan: schoolgatePlan,
-        });
+        }, errorFallbacks);
         code = schoolData?.school?.school_code || '';
         setSchoolCode(code);
       }
@@ -209,7 +211,10 @@ export default function SignUpPage() {
       const parts = fullName.trim().split(/\s+/);
       const firstName = parts[0] || '';
       const lastName = parts.slice(1).join(' ') || parts[0] || '';
-      const roleMeta = ROLES.find(r => r.value === role);
+      // Sent to the backend as a stable, English admin_title regardless of UI
+      // language - this is stored/displayed account metadata, not something
+      // that should silently vary with whatever language the admin signed up in.
+      const adminTitle = role === 'school_superadmin' ? 'Proprietor' : 'School Admin';
 
       const regData = await postJson('/api/auth/register/', {
         first_name: firstName,
@@ -219,12 +224,12 @@ export default function SignUpPage() {
         password,
         confirm_password: confirmPassword,
         role,
-        admin_title: roleMeta?.title || '',
+        admin_title: adminTitle,
         phone: phone.trim(),
         school_code: isProprietor ? '' : code,
         school_group_name: isProprietor ? schoolGroupName.trim() : '',
         terms_accepted: certified,
-      });
+      }, errorFallbacks);
 
       if (regData.requires_otp) {
         setOtpChallenge(regData.otp_challenge);
@@ -234,7 +239,7 @@ export default function SignUpPage() {
         finalizeSession(regData, code);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      setError(err instanceof Error ? err.message : t('signup.errors.somethingWrong'));
     } finally {
       setSubmitting(false);
     }
@@ -250,11 +255,11 @@ export default function SignUpPage() {
         email: email.trim(),
         code: otpCode.trim(),
         challenge: otpChallenge,
-      });
-      if (!data.success || !data.access) throw new Error(parseErrorMessage(data, 'Verification failed.'));
+      }, errorFallbacks);
+      if (!data.success || !data.access) throw new Error(parseErrorMessage(data, t('signup.errors.verificationFailed')));
       finalizeSession(data, schoolCode);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Verification failed.');
+      setError(err instanceof Error ? err.message : t('signup.errors.verificationFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -265,11 +270,11 @@ export default function SignUpPage() {
     setIsResending(true);
     setError('');
     try {
-      const data = await postJson('/api/auth/admin/resend-otp/', { email: email.trim(), challenge: otpChallenge });
+      const data = await postJson('/api/auth/admin/resend-otp/', { email: email.trim(), challenge: otpChallenge }, errorFallbacks);
       setOtpChallenge(data.otp_challenge || otpChallenge);
       setOtpExpiresIn(data.otp_expires_in || 600);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not resend code.');
+      setError(err instanceof Error ? err.message : t('signup.errors.resendFailed'));
     } finally {
       setIsResending(false);
     }
@@ -297,14 +302,14 @@ export default function SignUpPage() {
             style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)' }}>
             <CheckCircle2 className="h-8 w-8" style={{ color: '#22c55e' }} />
           </motion.div>
-          <h1 className="font-display font-black text-white text-2xl mb-2">Your school is live!</h1>
+          <h1 className="font-display font-black text-white text-2xl mb-2">{t('signup.activated.title')}</h1>
           <p className="text-slate-400 text-sm mb-6">
             {schoolCode
-              ? <>Your unique school code is <strong className="text-white">{schoolCode}</strong> — keep it safe, you'll need it to sign in.</>
-              : 'You can create your first school from the dashboard.'}
+              ? <Trans i18nKey="signup.activated.withCode" values={{ code: schoolCode }} components={{ bold: <strong className="text-white" /> }} />
+              : t('signup.activated.withoutCode')}
           </p>
           <a href={ADMIN_APP_URL} className="btn-primary w-full justify-center py-3.5 text-base">
-            Go to Dashboard <ArrowRight className="h-4 w-4" />
+            {t('signup.activated.goToDashboard')} <ArrowRight className="h-4 w-4" />
           </a>
         </motion.div>
       </div>
@@ -318,22 +323,22 @@ export default function SignUpPage() {
 
       <div className="max-w-3xl mx-auto" style={{ animation: 'fadeInUp 0.6s ease' }}>
         <a href="/" className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-300 text-sm mb-8 transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Back to home
+          <ArrowLeft className="h-4 w-4" /> {t('signup.backToHome')}
         </a>
 
         <div className="rounded-3xl p-8 sm:p-10 sd-card overflow-hidden">
-          <Stepper step={step} />
+          <Stepper step={step} stepLabels={STEP_LABELS} />
 
           <AnimatePresence mode="wait">
           {step === 1 && (
             <motion.div key="step1" {...stepMotion} className="space-y-6">
               <div>
-                <h1 className="font-display font-black text-white text-2xl mb-1">Onboard your School Platform</h1>
-                <p className="text-slate-400 text-sm">Begin by choosing your structural role and entering your representative contact details.</p>
+                <h1 className="font-display font-black text-white text-2xl mb-1">{t('signup.step1.title')}</h1>
+                <p className="text-slate-400 text-sm">{t('signup.step1.subtitle')}</p>
               </div>
 
               <div>
-                <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold mb-3">Choose your primary role</p>
+                <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold mb-3">{t('signup.step1.chooseRole')}</p>
                 <div className="grid sm:grid-cols-2 gap-3">
                   {ROLES.map(r => {
                     const Icon = r.icon;
@@ -365,53 +370,53 @@ export default function SignUpPage() {
               </div>
 
               <div>
-                <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold mb-3">Representative contact details</p>
+                <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold mb-3">{t('signup.step1.contactDetails')}</p>
                 <div className="space-y-4">
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">Full Name</label>
+                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step1.fullName')}</label>
                       <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}
-                        placeholder="Dr. Eleanor Vance" autoComplete="name" className={inputCls} />
+                        placeholder={t('signup.step1.fullNamePlaceholder')} autoComplete="name" className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">Middle Name (optional)</label>
+                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step1.middleName')}</label>
                       <input type="text" value={middleName} onChange={e => setMiddleName(e.target.value)}
-                        placeholder="Optional" autoComplete="additional-name" className={inputCls} />
+                        placeholder={t('signup.step1.middleNamePlaceholder')} autoComplete="additional-name" className={inputCls} />
                     </div>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">Professional Email Address</label>
+                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step1.email')}</label>
                       <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                        placeholder="vance.e@academy.edu" autoComplete="email" className={inputCls} />
+                        placeholder={t('signup.step1.emailPlaceholder')} autoComplete="email" className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">Direct Contact Phone</label>
+                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step1.phone')}</label>
                       <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-                        placeholder="+234 80x xxx xxxx" autoComplete="tel" className={inputCls} />
+                        placeholder={t('signup.step1.phonePlaceholder')} autoComplete="tel" className={inputCls} />
                     </div>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">Password</label>
+                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step1.password')}</label>
                       <div className="relative">
                         <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
-                          placeholder="Minimum 8 characters" autoComplete="new-password" className={inputCls} />
+                          placeholder={t('signup.step1.passwordPlaceholder')} autoComplete="new-password" className={inputCls} />
                         <button type="button" onClick={() => setShowPassword(s => !s)}
                           className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
-                          aria-label={showPassword ? 'Hide password' : 'Show password'}>
+                          aria-label={showPassword ? t('signup.step1.hidePassword') : t('signup.step1.showPassword')}>
                           {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
                       </div>
                     </div>
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">Confirm Password</label>
+                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step1.confirmPassword')}</label>
                       <input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
-                        placeholder="Re-enter password" autoComplete="new-password" className={inputCls} />
+                        placeholder={t('signup.step1.confirmPasswordPlaceholder')} autoComplete="new-password" className={inputCls} />
                     </div>
                   </div>
                   {password && confirmPassword && password !== confirmPassword && (
-                    <p className="text-xs" style={{ color: '#f87171' }}>Passwords do not match.</p>
+                    <p className="text-xs" style={{ color: '#f87171' }}>{t('signup.step1.passwordMismatch')}</p>
                   )}
                 </div>
               </div>
@@ -420,7 +425,7 @@ export default function SignUpPage() {
 
               <button type="button" disabled={!canStep1} onClick={() => { setError(''); setStep(2); }}
                 className="w-full btn-primary justify-center py-3.5 text-base">
-                Continue to School Profile <ArrowRight className="h-4 w-4" />
+                {t('signup.step1.continue')} <ArrowRight className="h-4 w-4" />
               </button>
             </motion.div>
           )}
@@ -429,80 +434,77 @@ export default function SignUpPage() {
             <motion.div key="step2" {...stepMotion} className="space-y-6">
               <div>
                 <h1 className="font-display font-black text-white text-2xl mb-1">
-                  {isProprietor ? 'Configure Group Profile' : 'Configure Institutional Details'}
+                  {isProprietor ? t('signup.step2.titleProprietor') : t('signup.step2.titleSchool')}
                 </h1>
                 <p className="text-slate-400 text-sm">
-                  {isProprietor
-                    ? 'Set up your organization name. You will create and manage individual schools from your dashboard.'
-                    : "Provide information regarding your school, including the Schooldom tier."}
+                  {isProprietor ? t('signup.step2.subtitleProprietor') : t('signup.step2.subtitleSchool')}
                 </p>
               </div>
 
               {isProprietor ? (
                 <div>
-                  <label className="block text-slate-500 text-xs mb-1.5">Official Group / Organization Name</label>
+                  <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step2.groupName')}</label>
                   <input type="text" value={schoolGroupName} onChange={e => setSchoolGroupName(e.target.value)}
-                    placeholder="Pinecrest Education Group" className={inputCls} />
+                    placeholder={t('signup.step2.groupNamePlaceholder')} className={inputCls} />
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-slate-500 text-xs mb-1.5">Official School Name</label>
+                    <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step2.schoolName')}</label>
                     <input type="text" value={schoolName} onChange={e => setSchoolName(e.target.value)}
-                      placeholder="Pinecrest Academy High" className={inputCls} />
+                      placeholder={t('signup.step2.schoolNamePlaceholder')} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-slate-500 text-xs mb-1.5">Schooldom Tier</label>
+                    <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step2.tier')}</label>
                     <select value={schoolType} onChange={e => setSchoolType(e.target.value as SchoolType)} className={inputCls}>
-                      <option value="k12">K-12 Education</option>
-                      <option value="non_k12">Non-K12 (Vocational, Tertiary, Academies)</option>
+                      <option value="k12">{t('signup.step2.tierK12')}</option>
+                      <option value="non_k12">{t('signup.step2.tierNonK12')}</option>
                     </select>
-                    <p className="text-slate-500 text-xs mt-1.5">Select 'K-12' for foundational schools, or 'Non-K12' for higher/vocational education.</p>
+                    <p className="text-slate-500 text-xs mt-1.5">{t('signup.step2.tierHelp')}</p>
                   </div>
                   <div>
-                    <label className="block text-slate-500 text-xs mb-1.5">What do you need?</label>
+                    <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step2.whatDoYouNeed')}</label>
                     <select value={product} onChange={e => setProduct(e.target.value as Product)} className={inputCls}>
-                      <option value="full">Full SchoolDom</option>
-                      <option value="schoolgate">SchoolGate only</option>
+                      <option value="full">{t('signup.step2.productFull')}</option>
+                      <option value="schoolgate">{t('signup.step2.productSchoolgate')}</option>
                     </select>
                     <p className="text-slate-500 text-xs mt-1.5">
-                      SchoolGate gives you Attendance, Staff, Finance, and Students only - billed per student each
-                      term. You can activate full School Management later at any time.
+                      {t('signup.step2.productHelp')}
                     </p>
                   </div>
                   {product === 'schoolgate' && (
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">SchoolGate plan</label>
+                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step2.schoolgatePlan')}</label>
                       <select value={schoolgatePlan} onChange={e => setSchoolgatePlan(e.target.value as SchoolGatePlan)} className={inputCls}>
-                        <option value="basic">Basic - ₦700 / student / term</option>
-                        <option value="premium">Premium - ₦1,500 / student / term</option>
+                        <option value="basic">{t('signup.step2.schoolgateBasic')}</option>
+                        <option value="premium">{t('signup.step2.schoolgatePremium')}</option>
                       </select>
                     </div>
                   )}
                   <div>
-                    <label className="block text-slate-500 text-xs mb-1.5">Institutional Physical Address (Optional)</label>
+                    <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step2.address')}</label>
                     <input type="text" value={address} onChange={e => setAddress(e.target.value)}
-                      placeholder="402 Academic Circle, Suite 100" className={inputCls} />
+                      placeholder={t('signup.step2.addressPlaceholder')} className={inputCls} />
                   </div>
                 </div>
               )}
 
               <label className="flex items-start gap-3 text-slate-400 text-xs cursor-pointer">
                 <input type="checkbox" checked={certified} onChange={e => setCertified(e.target.checked)} className="mt-0.5" />
-                <span>I certify that I am authorized to onboard this {isProprietor ? 'organization' : 'school'} and I agree to the Institutional Onboarding Charter and Data Protection Agreement.</span>
+                <span>{isProprietor ? t('signup.step2.certifyOrg') : t('signup.step2.certifySchool')}</span>
               </label>
 
               {error && errorBox(error)}
 
               <div className="flex gap-3">
                 <button type="button" onClick={() => { setError(''); setStep(1); }} className="btn-ghost py-3.5 px-6 text-sm">
-                  <ArrowLeft className="h-4 w-4" /> Back
+                  <ArrowLeft className="h-4 w-4" /> {t('signup.step2.back')}
                 </button>
                 <button type="button" disabled={!canStep2 || submitting} onClick={handleGenerateCode}
                   className="flex-1 btn-primary justify-center py-3.5 text-base">
                   {submitting
-                    ? <span className="flex items-center gap-2"><Spinner /> Generating...</span>
-                    : <>Generate Verification Code <ArrowRight className="h-4 w-4" /></>}
+                    ? <span className="flex items-center gap-2"><Spinner /> {t('signup.step2.generating')}</span>
+                    : <>{t('signup.step2.generateCode')} <ArrowRight className="h-4 w-4" /></>}
                 </button>
               </div>
             </motion.div>
@@ -511,41 +513,43 @@ export default function SignUpPage() {
           {step === 3 && (
             <motion.form key="step3" {...stepMotion} onSubmit={handleVerifyOtp} className="space-y-6">
               <div>
-                <h1 className="font-display font-black text-white text-2xl mb-1">Verify Your Account</h1>
-                <p className="text-slate-400 text-sm">We sent a 6-digit verification code to <strong className="text-white">{email}</strong>.</p>
+                <h1 className="font-display font-black text-white text-2xl mb-1">{t('signup.step3.title')}</h1>
+                <p className="text-slate-400 text-sm">
+                  <Trans i18nKey="signup.step3.subtitle" values={{ email }} components={{ bold: <strong className="text-white" /> }} />
+                </p>
               </div>
 
               {schoolCode && (
                 <div className="rounded-2xl p-4 flex items-center justify-between gap-3"
                   style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)' }}>
                   <div>
-                    <p className="text-slate-500 text-[10px] uppercase tracking-wider">Your unique school code</p>
+                    <p className="text-slate-500 text-[10px] uppercase tracking-wider">{t('signup.step3.schoolCodeLabel')}</p>
                     <p className="font-display font-black text-lg" style={{ color: '#22c55e' }}>{schoolCode}</p>
                   </div>
                   <button type="button" onClick={copyCode} className="btn-ghost text-xs py-2 px-3">
-                    {codeCopied ? <><Check className="h-3.5 w-3.5" /> Copied</> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+                    {codeCopied ? <><Check className="h-3.5 w-3.5" /> {t('signup.step3.copied')}</> : <><Copy className="h-3.5 w-3.5" /> {t('signup.step3.copy')}</>}
                   </button>
                 </div>
               )}
 
               <div>
-                <label className="block text-slate-500 text-xs mb-1.5">Verification Code</label>
+                <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step3.verificationCode')}</label>
                 <input type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={otpCode}
                   onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="000000" autoComplete="one-time-code"
                   className={`${inputCls} text-center tracking-[0.5em] font-mono text-lg`} />
-                <p className="text-slate-500 text-xs mt-1.5">Code expires in about {Math.max(Math.ceil(otpExpiresIn / 60), 1)} minutes.</p>
+                <p className="text-slate-500 text-xs mt-1.5">{t('signup.step3.codeExpires', { minutes: Math.max(Math.ceil(otpExpiresIn / 60), 1) })}</p>
               </div>
 
               {error && errorBox(error)}
 
               <button type="submit" disabled={otpCode.length !== 6 || submitting} className="w-full btn-primary justify-center py-3.5 text-base">
                 {submitting
-                  ? <span className="flex items-center gap-2"><Spinner /> Verifying...</span>
-                  : 'Activate Account'}
+                  ? <span className="flex items-center gap-2"><Spinner /> {t('signup.step3.verifying')}</span>
+                  : t('signup.step3.activate')}
               </button>
               <button type="button" disabled={isResending} onClick={handleResendOtp} className="w-full btn-ghost justify-center py-2.5 text-sm">
-                {isResending ? <span className="flex items-center gap-2"><Spinner /> Sending...</span> : 'Resend code'}
+                {isResending ? <span className="flex items-center gap-2"><Spinner /> {t('signup.step3.sending')}</span> : t('signup.step3.resend')}
               </button>
             </motion.form>
           )}

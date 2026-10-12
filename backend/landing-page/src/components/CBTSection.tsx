@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Monitor, Wifi, WifiOff, Shield, Zap, CheckCircle, Download, ArrowRight } from 'lucide-react';
 
 function useVisible(threshold = 0.15) {
@@ -115,17 +116,23 @@ function CBTAppMockup() {
   );
 }
 
-const FEATURES = [
-  { icon: WifiOff, title: 'Fully Offline', desc: 'Exams run completely without internet. Zero dependency on connectivity.', color: '#f97316' },
-  { icon: Shield, title: 'Anti-Cheat Built In', desc: 'Tab lock, copy-paste disable, and session monitoring baked in.', color: '#8b5cf6' },
-  { icon: Zap, title: 'Instant Sync', desc: 'Auto-uploads results and logs the moment internet is restored.', color: '#0ea5e9' },
-  { icon: Monitor, title: 'Windows 7+', desc: 'Compatible from Windows 7 to Windows 11. No upgrade required.', color: '#22c55e' },
-  { icon: CheckCircle, title: 'Auto Marking', desc: 'Objective and theory sections graded instantly after submission.', color: '#10b981' },
-  { icon: Download, title: 'Easy Deploy', desc: 'One-click school setup. Download, install, configure — done.', color: '#ec4899' },
-];
+interface CbtFeature { icon: typeof WifiOff; title: string; desc: string; color: string }
+
+function buildFeatures(t: (key: string) => string): CbtFeature[] {
+  return [
+    { icon: WifiOff, title: t('cbt.features.offline.title'), desc: t('cbt.features.offline.desc'), color: '#f97316' },
+    { icon: Shield, title: t('cbt.features.antiCheat.title'), desc: t('cbt.features.antiCheat.desc'), color: '#8b5cf6' },
+    { icon: Zap, title: t('cbt.features.sync.title'), desc: t('cbt.features.sync.desc'), color: '#0ea5e9' },
+    { icon: Monitor, title: t('cbt.features.windows.title'), desc: t('cbt.features.windows.desc'), color: '#22c55e' },
+    { icon: CheckCircle, title: t('cbt.features.marking.title'), desc: t('cbt.features.marking.desc'), color: '#10b981' },
+    { icon: Download, title: t('cbt.features.deploy.title'), desc: t('cbt.features.deploy.desc'), color: '#ec4899' },
+  ];
+}
 
 export default function CBTSection() {
+  const { t } = useTranslation();
   const { ref, visible } = useVisible(0.1);
+  const FEATURES = buildFeatures(t);
 
   return (
     <section id="cbt" ref={ref} className="py-28 px-4 relative overflow-hidden">
@@ -137,14 +144,14 @@ export default function CBTSection() {
           {/* Left */}
           <div style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateX(-30px)', transition: 'all 0.7s ease' }}>
             <span className="badge badge-blue mb-5">
-              <Monitor className="h-3 w-3" /> Desktop CBT App
+              <Monitor className="h-3 w-3" /> {t('cbt.badge')}
             </span>
             <h2 className="font-display font-black text-4xl sm:text-5xl text-white leading-tight mb-5">
-              Exams that work even{' '}
-              <span className="gradient-text-reverse">without internet</span>
+              {t('cbt.title')}{' '}
+              <span className="gradient-text-reverse">{t('cbt.titleHighlight')}</span>
             </h2>
             <p className="text-slate-400 text-base leading-relaxed mb-8">
-              Our desktop CBT application is built for the Nigerian reality — schools with patchy internet, shared computers, and high-stakes exams. Students take exams offline; results sync automatically.
+              {t('cbt.subtitle')}
             </p>
 
             <div className="grid grid-cols-2 gap-3 mb-8">
@@ -164,11 +171,11 @@ export default function CBTSection() {
               <div className="flex items-center gap-2 px-4 py-3 rounded-xl border text-sm"
                 style={{ background: 'rgba(34,197,94,0.06)', borderColor: 'rgba(34,197,94,0.2)', color: '#22c55e' }}>
                 <Monitor className="h-4 w-4" />
-                Included with your Schooldom subscription
+                {t('cbt.includedBadge')}
               </div>
               <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-white/8 text-slate-400 text-sm">
                 <Wifi className="h-4 w-4 text-green-400" />
-                Mobile app coming soon
+                {t('cbt.mobileSoon')}
               </div>
             </div>
           </div>
@@ -178,9 +185,9 @@ export default function CBTSection() {
             <CBTAppMockup />
             <div className="mt-4 grid grid-cols-3 gap-3">
               {[
-                { val: '127', label: 'Live sessions', color: '#0ea5e9' },
-                { val: '99.8%', label: 'Uptime', color: '#22c55e' },
-                { val: '2.8s', label: 'Submit speed', color: '#8b5cf6' },
+                { val: '127', label: t('cbt.statLiveSessions'), color: '#0ea5e9' },
+                { val: '99.8%', label: t('cbt.statUptime'), color: '#22c55e' },
+                { val: '2.8s', label: t('cbt.statSubmitSpeed'), color: '#8b5cf6' },
               ].map(s => (
                 <div key={s.label} className="rounded-xl p-3 text-center sd-card">
                   <p className="font-display font-black text-xl" style={{ color: s.color }}>{s.val}</p>

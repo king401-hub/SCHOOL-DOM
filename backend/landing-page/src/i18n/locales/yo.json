@@ -1,0 +1,497 @@
+{
+  "common": {
+    "backToHome": "Pada sí ilé",
+    "learnMore": "Kọ́ ẹ̀kọ́ síwájú sí i"
+  },
+  "nav": {
+    "features": "Àwọn ẹ̀yà",
+    "cbt": "App CBT",
+    "pricing": "Owó iye",
+    "testimonials": "Ẹ̀rí àwọn èèyàn",
+    "more": "Síwájú sí i",
+    "faq": "Ìbéèrè Tí A Sábà Ń Béèrè",
+    "contact": "Kàn sí wa",
+    "about": "Nípa wa",
+    "signIn": "Wọlé",
+    "getStarted": "Bẹ̀rẹ̀ lọ́fẹ̀ẹ́",
+    "toggleTheme": "Yí àwọ̀ padà",
+    "whatsapp": "Bá wa sọ̀rọ̀ lórí WhatsApp"
+  },
+  "hero": {
+    "badge": "Ìpele Platform Ìṣàkóso Ilé-Ìwé Nọ́mbà 1 ní Áfíríkà",
+    "titleLine1": "Platform Ilé-Ìwé",
+    "titleLine2": "Pípé Fún",
+    "phrases": ["Àwọn Ilé-Ìwé K-12", "Àwọn Yunifásítì", "Àwọn Ilé-Ìṣẹ́ Ìmọ̀ Iṣẹ́", "Àwọn Àjọ Ilé-Ìwé"],
+    "subtitle": "Owó ilé-ìwé, àwọn ìdánwò CBT, wíwá sí ilé-ìwé, àwọn ìwé ìròyìn, owó oṣù òṣìṣẹ́, àti ìbánisọ̀rọ̀ pẹ̀lú àwọn òbí — gbogbo rẹ̀ lórí platform kan tí a ṣe fún àwọn ilé-ìwé Áfíríkà.",
+    "ctaPrimary": "Bẹ̀rẹ̀ lọ́fẹ̀ẹ́",
+    "ctaSecondary": "Wo Àfihàn Tààràtà",
+    "trustedBy": "Ilé-ìwé tó ju 300 ní Nàìjíríà gbẹ́kẹ̀lé wa",
+    "statSchools": "Àwọn Ilé-Ìwé",
+    "statStudents": "Àwọn Akẹ́kọ̀ọ́",
+    "statProcessed": "Tí A Ti Ṣe",
+    "chipCollected": "₦2.4M ti a gbà lónìí",
+    "chipExams": "Àwọn ìdánwò 127 ń lọ lọ́wọ́",
+    "chipAttendance": "Ìpín 94.2% ìwá sí ilé-ìwé"
+  },
+  "features": {
+    "badge": "Platform Pípé",
+    "title": "Gbogbo irinṣẹ́ tí ilé-ìwé rẹ nílò",
+    "titleHighlight": "ní ibi kan",
+    "subtitle": "Láti orí dasibodu kan, ṣàkóso gbogbo apá ilé-ẹ̀kọ́ rẹ — ẹ̀kọ́, owó, àti iṣẹ́ ìṣàkóso.",
+    "showcase": {
+      "finance": {
+        "badge": "Ẹ̀yà Owó",
+        "title": "Gba owó ilé-ìwé, tẹ̀lé náírà kọ̀ọ̀kan",
+        "desc": "Ìṣàkóso owó pípé — ṣe àwọn invoice nípasẹ̀ SMS, gba owó nípasẹ̀ àwọn ẹ̀rọ ìsanwó tó ní ààbò, pèsè àwọn receipt lẹ́sẹ̀kẹsẹ̀, kí o sì tẹ̀lé owó tí ó kù fún akẹ́kọ̀ọ́ kọ̀ọ̀kan.",
+        "points": ["Ìsanwó nípasẹ̀ káàdì àti ìfilọ́lẹ̀ báńkì", "Fífi invoice ránṣẹ́ nípasẹ̀ SMS", "Ṣíṣe receipt láìfọwọ́kàn", "Ìkìlọ̀ fún owó tí ó kù", "Ìtàn owó ìwé fún ọ̀pọ̀ ìgbà"]
+      },
+      "cbt": {
+        "badge": "Ẹ̀yà CBT",
+        "title": "Ṣe àwọn ìdánwò níbikíbi, lórí ayélujára tàbí rárá",
+        "desc": "Ẹ̀rọ CBT wa tó jẹ́ hybrid jẹ́ kí àwọn akẹ́kọ̀ọ́ lè ṣe ìdánwò láìsí ayélujára. Àwọn àbájáde máa ń dọ́gba lẹ́sẹ̀kẹsẹ̀ tí ìsopọ̀ bá padà. A ṣe é fún ipò gidi ilé-ìwé Nàìjíríà.",
+        "points": ["Ẹ̀rọ ìdánwò tó lè ṣiṣẹ́ 100% láìsí ayélujára", "Ìdọ́gba láìfọwọ́kàn nígbà tí ìsopọ̀ bá padà", "Ìdènà jìbìtì àti àbójútó", "Àwọn báńkì ìbéèrè tó jẹ́ àdáni", "Ìṣirò àbájáde lẹ́sẹ̀kẹsẹ̀"]
+      },
+      "attendance": {
+        "badge": "Ẹ̀yà Wíwá Sí Ilé-Ìwé",
+        "title": "Wíwá sí ilé-ìwé pẹ̀lú QR ní ìṣẹ́jú àáyá",
+        "desc": "Àwọn akẹ́kọ̀ọ́ á fi fóònù wọn kà koodu QR ní ẹnu ọ̀nà tàbí nínú kíláàsì. Àwọn òbí á gba SMS lẹ́sẹ̀kẹsẹ̀ tí àwọn ọmọ bá pẹ́ dé tàbí tí wọn kò bá wá. Dasibodu kan tó ń ṣiṣẹ́ lẹ́sẹ̀kẹsẹ̀ á máa tẹ̀lé kíláàsì kọ̀ọ̀kan.",
+        "points": ["Kíkà koodu QR", "Àwọn dasibodu fún kíláàsì kọ̀ọ̀kan", "Ìkìlọ̀ SMS lẹ́sẹ̀kẹsẹ̀ fún àwọn òbí", "Ìtẹ̀lé àwọn tó pẹ́ dé", "Ìtúpalẹ̀ wíwá sí ilé-ìwé fún oṣù kọ̀ọ̀kan"]
+      }
+    },
+    "grid": {
+      "cbtEngine": { "title": "Ẹ̀rọ CBT Hybrid", "desc": "Ẹ̀rọ ìdánwò tó ṣiṣẹ́ láìsí ayélujára ní àkọ́kọ́. Àwọn akẹ́kọ̀ọ́ ń ṣe ìdánwò láìsí ayélujára. Ó máa ń dọ́gba fúnra rẹ̀ nígbà tí ayélujára bá wà." },
+      "finance": { "title": "Ìwé Owó Ilé-Ìwé àti Ìṣúná", "desc": "Ẹ̀rọ owó pípé — gbígba owó ilé-ìwé, ṣíṣe receipt, títẹ̀lé owó tó kù, ìsanwó tó ní ààbò." },
+      "students": { "title": "Ìṣàkóso Akẹ́kọ̀ọ́", "desc": "Gbogbo ìgbésí ayé akẹ́kọ̀ọ́ láti ìgbà tí wọ́n gbà wọ́n títí di ìgbà tí wọ́n parí. Àwọn profaili, ìforúkọsílẹ̀, àwọn transcript." },
+      "attendance": { "title": "Wíwá Sí Ilé-Ìwé Pẹ̀lú QR", "desc": "Kíkà koodu QR. Dasibodu wíwá sí ilé-ìwé lẹ́sẹ̀kẹsẹ̀. Ìkìlọ̀ SMS fún àwọn òbí." },
+      "reportCards": { "title": "Ìwé Ìròyìn Láìfọwọ́kàn", "desc": "Ṣe àwọn ìwé ìròyìn gíga ní ìṣẹ́jú àáyá. Àwọn ìpele ìdíwọ̀n àdáni, àlàyé, àti PDF." },
+      "parentPortal": { "title": "Ẹnu-ọ̀nà Àwọn Òbí", "desc": "Àwọn òbí á máa tẹ̀lé owó, àbájáde, wíwá sí ilé-ìwé, kí wọ́n sì bá àwọn olùkọ́ sọ̀rọ̀ láti orí fóònù wọn." },
+      "hr": { "title": "HR àti Owó Oṣù", "desc": "Ìṣàkóso òṣìṣẹ́, ìtẹ̀lé ìsinmi, ìṣirò owó oṣù, àti àyẹ̀wò iṣẹ́." },
+      "desktopCbt": { "title": "App CBT Fún Kọ̀mpútà", "desc": "App CBT tó lè bá Win7 mu, tó ṣiṣẹ́ láìsí ayélujára, fún àwọn ilé-ìwé tí kò ní ẹ̀rọ ayélujára." }
+    }
+  },
+  "cbt": {
+    "badge": "App CBT Fún Kọ̀mpútà",
+    "title": "Àwọn ìdánwò tó ṣiṣẹ́ kódà",
+    "titleHighlight": "láìsí ayélujára",
+    "subtitle": "A ṣe app CBT kọ̀mpútà wa fún ipò gidi Nàìjíríà — àwọn ilé-ìwé tí ayélujára wọn kò dára, àwọn kọ̀mpútà tí wọ́n ń pín, àti àwọn ìdánwò pàtàkì. Àwọn akẹ́kọ̀ọ́ á ṣe ìdánwò láìsí ayélujára; àwọn àbájáde á sì dọ́gba fúnra wọn.",
+    "includedBadge": "Ó wà pẹ̀lú ìforúkọsílẹ̀ Schooldom rẹ",
+    "mobileSoon": "App fóònù ń bọ̀ láìpẹ́",
+    "features": {
+      "offline": { "title": "Láìsí Ayélujára Pátápátá", "desc": "Àwọn ìdánwò ń ṣiṣẹ́ láìsí ayélujára rárá. Kò sí ìgbẹ́kẹ̀lé sí ìsopọ̀ rárá." },
+      "antiCheat": { "title": "Ìdènà Jìbìtì Tí A Fi Sí I", "desc": "Ìdènà tab, ìdènà copy-paste, àti àbójútó ìgbà kọ̀ọ̀kan ti wà pẹ̀lú rẹ̀." },
+      "sync": { "title": "Ìdọ́gba Lẹ́sẹ̀kẹsẹ̀", "desc": "Ó máa fi àwọn àbájáde àti ìròyìn ránṣẹ́ lẹ́sẹ̀kẹsẹ̀ tí ayélujára bá padà." },
+      "windows": { "title": "Windows 7+", "desc": "Ó bá Windows 7 títí di Windows 11 mu. Kò sí ìyípadà tó yẹ kó o ṣe." },
+      "marking": { "title": "Ìṣàmì Láìfọwọ́kàn", "desc": "Àwọn apá objective àti theory ni a óò ṣàmì sí lẹ́sẹ̀kẹsẹ̀ lẹ́yìn tí a bá fi lọ." },
+      "deploy": { "title": "Ìfisílẹ̀ Tó Rọrùn", "desc": "Ìgbékalẹ̀ ilé-ìwé ní ìtẹ̀ kan. Gbà, fi sí ẹ̀rọ, ṣe ìgbékalẹ̀ — ó ti parí." }
+    },
+    "statLiveSessions": "Àwọn ìgbà tó ń lọ lọ́wọ́",
+    "statUptime": "Ìgbà Tó Ń Ṣiṣẹ́",
+    "statSubmitSpeed": "Bí Ó Ṣe Yára Tó Láti Fi Ránṣẹ́"
+  },
+  "demo": {
+    "badge": "Ipa Platform",
+    "title": "Àwọn nọ́mbà tó ń sọ̀rọ̀",
+    "titleHighlight": "fúnra wọn",
+    "subtitle": "Àwọn ilé-ìwé gidi, àwọn àbájáde gidi. Èyí ni ipa tí Schooldom ń ní kárí Nàìjíríà.",
+    "stats": {
+      "schools": { "label": "Àwọn Ilé-Ìwé Tó Darapọ̀", "desc": "Kárí ìpínlẹ̀ 26 ní Nàìjíríà" },
+      "students": { "label": "Àwọn Akẹ́kọ̀ọ́ Tó Ń Ṣiṣẹ́ Lọ́wọ́", "desc": "Tí a ń ṣàkóso lórí platform náà" },
+      "fees": { "label": "Owó Tí A Ti Ṣe", "desc": "Nípasẹ̀ àwọn ẹ̀rọ ìsanwó tó ní ààbò" },
+      "exams": { "label": "Àwọn Ìdánwò Tí A Ṣe", "desc": "CBT lórí ayélujára àti láìsí ayélujára" },
+      "retention": { "label": "Ìdúró Ilé-Ìwé", "desc": "Àwọn ilé-ìwé tó tún forúkọsílẹ̀" },
+      "setup": { "label": "Àkókò Ìgbékalẹ̀", "desc": "Àkókò àpapọ̀ fún ìdápọ̀mọ́ra" }
+    },
+    "trustedByInstitutions": "Àwọn ilé-ẹ̀kọ́ bí ìwọ̀nyí gbẹ́kẹ̀lé wa",
+    "trust": {
+      "ndpa": "Ó Bá NDPA Mu",
+      "aws": "AWS Ìwọ̀ Oòrùn Áfíríkà",
+      "uptime": "Ìdájọ́ Iṣẹ́ 99.9% SLA",
+      "iso": "Ó Bá ISO 27001 Mu"
+    }
+  },
+  "testimonials": {
+    "badge": "Ẹ̀rí Àwọn Èèyàn",
+    "title": "Àwọn ilé-ìwé fẹ́ràn",
+    "titleHighlight": "ohun tí a ti kọ́",
+    "subtitle": "Àwọn ìtàn gidi láti ọ̀dọ̀ àwọn alákòóso ilé-ìwé gidi kárí Nàìjíríà.",
+    "ratingSummary": "láti ọwọ́ ẹ̀rí ilé-ìwé tó ju 300",
+    "studentsLabel": "akẹ́kọ̀ọ́",
+    "quotes": {
+      "adewale": "Schooldom yí bí a ṣe ń ṣe àwọn ìdánwò padà. Ìpín àṣeyọrí CBT wa dìde láti 71% sí 89% ní ìgbà kan nítorí a ti dí àwọn káwọ́ iwájú ìwé àtẹ̀jáde. Ipò láìsí ayélujára jẹ́ olùgbàlà nígbà tí iná bá kú.",
+      "chidinma": "Kí Schooldom tó dé, gbígba owó ilé-ìwé jẹ́ ìṣòro ńlá — àwọn òbí á wá pẹ̀lú receipt tí wọ́n fi ọwọ́ kọ, a kò sì lè fi wọ́n wé ara wọn rí. Nísisìyí, a tẹ̀lé kobo kọ̀ọ̀kan, àwọn òbí sì ń san owó tààràtà nípasẹ̀ ìfilọ́lẹ̀ báńkì.",
+      "ibrahim": "App CBT láìsí ayélujára jẹ́ gan-an ohun tí a nílò. A ní kọ̀mpútà Windows 7 méjìlá, Schooldom sì ń ṣiṣẹ́ dáadáa. Àwọn akẹ́kọ̀ọ́ á gba àbájáde wọn lẹ́sẹ̀kẹsẹ̀ lẹ́yìn tí wọ́n bá fi ìdánwò lọ.",
+      "funmilayo": "Ẹ̀yà Child Monitor ń fún àwọn òbí wa ní àlàáfíà ọkàn. Wọ́n á rí nígbà tí àwọn ọmọ bá dé ní àlàáfíà. Ìkìlọ̀ SMS wíwá sí ilé-ìwé ti dín àkókò tí wọ́n ń pẹ́ gbà ọmọ kù sí 60%.",
+      "emeka": "Gẹ́gẹ́ bí ilé-ẹ̀kọ́ tí kì í ṣe K-12, a nílò ìṣàkóso tó rọ̀. Ètò Non-K12 ti Schooldom ní ₦200/osù jẹ́ iye owó tó dára jùlọ. A ń ṣàkóso akẹ́kọ̀ọ́ diploma 600 pẹ̀lú àwọn àkọsílẹ̀ ẹ̀kọ́ pípé.",
+      "ngozi": "Ìṣàkóso campus márùn-ún máa ń nílò òṣìṣẹ́ owó mẹ́ta tẹ́lẹ̀. Nísisìyí, bursar kan ṣoṣo ni ó ń ṣàkóso gbogbo owó gbígbà ní àárín gbùngbùn. Ìwé owó oṣooṣù ti dín kù láti ọjọ́ mẹ́ta sí wákàtí méjì.",
+      "tunde": "Ṣíṣe ìwé ìròyìn máa ń gba ọ̀sẹ̀ méjì ní ìgbà kọ̀ọ̀kan tẹ́lẹ̀. Pẹ̀lú Schooldom, ó ń gba ìṣẹ́jú 30. Ó ń ṣirò ipò, ó ń kún àlàyé, ó sì ń yọ PDF jáde láìfọwọ́kàn.",
+      "halima": "Ẹnu-ọ̀nà àwọn òbí ti yí àwùjọ ilé-ìwé wa padà. Àwọn òbí á rí àmì ìdánwò, wíwá sí ilé-ìwé, àti receipt owó lórí fóònù wọn láìní láti pè wá. Ìwádìí ìtẹ́lọ́rùn àwọn òbí wa wà ní ipò gíga jùlọ rí."
+    },
+    "schoolTypes": {
+      "k12": "Ilé-Ìwé K-12",
+      "groupOf4": "Àjọ Ilé-Ìwé Mẹ́rin",
+      "islamicSecondary": "Ilé-Ìwé Gíga Mùsùlùmí",
+      "vocationalCollege": "Kọ́lẹ́jì Ìmọ̀ Iṣẹ́",
+      "groupOf5": "Àjọ Ilé-Ìwé Márùn-ún",
+      "secondarySchool": "Ilé-Ìwé Gíga"
+    }
+  },
+  "pricing": {
+    "badge": "Owó Iye Tó Rọrùn",
+    "title": "Owó iye tó dára,",
+    "titleHighlight": "agbára pípé",
+    "subtitle": "Kò sí owó ìgbékalẹ̀. Kò sí owó fún akẹ́kọ̀ọ́ kọ̀ọ̀kan. Kò sí ìyàlẹ́nu. Owó kan ṣoṣo tí ó máa bo gbogbo ilé-ìwé náà.",
+    "mostPopular": "Èyí Tí Ó Gbajúmọ̀ Jùlọ",
+    "new": "Tuntun",
+    "k12": {
+      "name": "Àwọn Ilé-Ìwé K-12",
+      "tagline": "Ilé-Ẹ̀kọ́ Àgọ́ · Alákọ̀ọ́bẹ̀rẹ̀ · Gíga",
+      "perTerm": "/ ìgbà",
+      "termLength": "(oṣù mẹ́ta àti ọjọ́ 15)",
+      "flatRate": "Owó kan ṣoṣo — akẹ́kọ̀ọ́ àti òṣìṣẹ́ láìlópin",
+      "cta": "Bẹ̀rẹ̀ pẹ̀lú K-12",
+      "features": ["Ìṣàkóso pípé àwọn akẹ́kọ̀ọ́ àti ìgbàsílẹ̀", "Ẹ̀rọ ìdánwò CBT hybrid (lórí ayélujára + láìsí)", "Gbígba owó ilé-ìwé pẹ̀lú ẹ̀rọ ìsanwó tó ní ààbò", "Ìtẹ̀lé wíwá sí ilé-ìwé pẹ̀lú QR", "Àwọn ìwé ìròyìn àti transcript láìfọwọ́kàn", "Ẹnu-ọ̀nà àwọn òbí (tó bá fóònù mu)", "Ìṣàkóso HR àti owó oṣù òṣìṣẹ́", "Ẹ̀rọ tó ń ṣe káàdì ID / PVC lọ́pọ̀lọpọ̀", "Dasibodu àárín gbùngbùn fún campus púpọ̀", "Ìmújẹ dátà tó bá NDPA mu", "Ìrànlọ́wọ́ àkọ́kọ́ àti ìdápọ̀mọ́ra"]
+    },
+    "childMonitor": {
+      "title": "Child Monitor",
+      "desc": "Ìtẹ̀lé ibùdó àti iṣẹ́ lẹ́sẹ̀kẹsẹ̀",
+      "price": "+₦1,000/ìgbà",
+      "totalPerTerm": "Àpapọ̀ fún ìgbà kan"
+    },
+    "nonK12": {
+      "name": "Non-K12",
+      "tagline": "Ìmọ̀ Iṣẹ́ · Gíga · Àkádẹ́mì",
+      "perMonth": "/ oṣù",
+      "billedMonthly": "a óò san ní oṣooṣù",
+      "flatRate": "Owó kan ṣoṣo — akẹ́kọ̀ọ́ àti òṣìṣẹ́ láìlópin",
+      "fullAccess": "Ìwọlé Pípé Sí Platform",
+      "fullAccessDesc": "Gbogbo ẹ̀yà ti wà pẹ̀lú, kò sí àfikún tó yẹ kí a rà",
+      "cta": "Bẹ̀rẹ̀ pẹ̀lú Non-K12",
+      "features": ["Ìṣàkóso ìforúkọsílẹ̀ akẹ́kọ̀ọ́", "Ẹ̀rọ ìdánwò CBT hybrid", "Gbígba owó ilé-ìwé àti receipt dígítà", "Ìtẹ̀lé wíwá sí ilé-ìwé", "Àbájáde ìdánwò àti transcript", "Ìṣàkóso òṣìṣẹ́", "Dasibodu ìtúpalẹ̀", "Ìkójọpamọ́ tó bá NDPA mu"]
+    },
+    "schoolgate": {
+      "name": "SchoolGate",
+      "tagline": "Ẹ̀rọ wíwá sí ẹnu-ọ̀nà nìkan",
+      "basic": "Ìpele Dídé",
+      "premium": "Ìpele Gíga",
+      "perStudentTerm": "/ akẹ́kọ̀ọ́ / ìgbà",
+      "deviceFee": "+ owó ẹ̀rọ kan ṣoṣo ti ₦50,000",
+      "cta": "Bẹ̀rẹ̀ pẹ̀lú SchoolGate",
+      "featuresBasic": ["Wíwá sí ilé-ìwé, Òṣìṣẹ́, Owó àti Akẹ́kọ̀ọ́ nìkan", "Ìròyìn wíwá sí ilé-ìwé lọ́sọ̀ọ̀sẹ̀ nípasẹ̀ SMS sí àwọn òbí", "Owó ẹ̀rọ kan ṣoṣo ti ₦50,000"],
+      "featuresPremium": ["Wíwá sí ilé-ìwé, Òṣìṣẹ́, Owó àti Akẹ́kọ̀ọ́ nìkan", "SMS ìwọlé/ìjáde lójoojúmọ́ + ìròyìn lọ́sọ̀ọ̀sẹ̀", "Child Monitor ti wà pẹ̀lú láìní owó síwájú sí i", "Owó ẹ̀rọ kan ṣoṣo ti ₦50,000"]
+    },
+    "guarantees": {
+      "noSetupFee": "Kò sí owó ìgbékalẹ̀",
+      "startIn4Min": "Bẹ̀rẹ̀ ní ìṣẹ́jú 4",
+      "unlimitedUsers": "Àwọn olùmúlò láìlópin",
+      "cancelAnytime": "Fagilé nígbàkigbà"
+    }
+  },
+  "footer": {
+    "tagline": "Platform ìṣàkóso ilé-ìwé pípé tí a ṣe fún àwọn ilé-ẹ̀kọ́ Áfíríkà. Láti ìgbàsílẹ̀ títí di ìkẹ́kọ̀ọ́parí, láti owó ilé-ìwé títí di CBT.",
+    "location": "Èkó, Nàìjíríà",
+    "columns": {
+      "product": { "heading": "Ọjà", "items": ["Àwọn Ẹ̀yà", "Ẹ̀rọ CBT", "Ìwé Owó", "Ẹnu-ọ̀nà Àwọn Òbí", "Child Monitor"] },
+      "company": { "heading": "Ilé-Iṣẹ́", "items": ["Nípa Wa", "Blog", "Iṣẹ́ Tó Wà", "Ìlànà Àṣírí", "Àwọn Òfin Iṣẹ́"] },
+      "support": { "heading": "Ìrànlọ́wọ́", "items": ["Ìwé Àlàyé", "Ibùdó Ìrànlọ́wọ́", "Ojú Ewé Ipò", "Kàn Sí Wa", "Ìtọ́ka API"] }
+    },
+    "ctaTitle": "Ṣé o ti ṣetán láti sọ ilé-ìwé rẹ di dígítà?",
+    "ctaSubtitle": "Darapọ̀ mọ́ ilé-ìwé tó ju 300 ní Nàìjíríà tó ń lo Schooldom. Ṣe ìgbékalẹ̀ ní abẹ́ ìṣẹ́jú 4.",
+    "ctaButton": "Dá Ilé-Ìwé Rẹ Sílẹ̀",
+    "copyright": "© {{year}} Schooldom Academy. Gbogbo ẹ̀tọ́ ni a dáàbò bò. A fi ìfẹ́ ṣe é, Xcel Technologies Limited ni ó ń gbé e lárugẹ.",
+    "systemsOperational": "Gbogbo ẹ̀rọ ń ṣiṣẹ́ dáadáa"
+  },
+  "faq": {
+    "badge": "FAQ",
+    "title": "Àwọn Ìbéèrè Tí A",
+    "titleHighlight": "Sábà Ń Béèrè",
+    "intro": "Gbogbo ohun tí o nílò láti mọ̀ nípa Schooldom. Ṣé o kò rí ìdáhùn?",
+    "contactUs": "Kàn sí wa.",
+    "searchPlaceholder": "Wá àwọn ìbéèrè...",
+    "all": "Gbogbo Rẹ̀",
+    "noResults": "Kò sí ìbéèrè tó bá ohun tí o ń wá mu.",
+    "askDirectly": "Béèrè lọ́wọ́ wa tààràtà.",
+    "stillQuestionsTitle": "Ṣé o ní ìbéèrè síwájú sí i?",
+    "stillQuestionsSubtitle": "Àwùjọ wa á dáhùn ní abẹ́ wákàtí méjì ní àkókò iṣẹ́.",
+    "contactSupport": "Kàn Sí Ìrànlọ́wọ́",
+    "categories": {
+      "pricing": "Owó Iye",
+      "cbt": "CBT àti Ìdánwò",
+      "finance": "Owó àti Owó Ilé-Ìwé",
+      "setup": "Ìgbékalẹ̀ àti Ìrànlọ́wọ́",
+      "security": "Ààbò àti Ìmújẹ Òfin"
+    },
+    "items": {
+      "pricing": [
+        { "q": "Iye owó wo ni Schooldom ná?", "a": "Àwọn ilé-ìwé K-12 á san ₦500 fún ìgbà kan (oṣù mẹ́ta àti ọjọ́ 15). Àwọn ilé-ẹ̀kọ́ tí kì í ṣe K-12 á san ₦200 lóṣooṣù. Ètò méjèèjì jẹ́ owó kan ṣoṣo — kò sí owó fún akẹ́kọ̀ọ́ kọ̀ọ̀kan, kò sí owó tó fara sin." },
+        { "q": "Kí ni àfikún Child Monitor?", "a": "Child Monitor jẹ́ àfikún tí kì í ṣe dandan fún àwọn ilé-ìwé K-12 ní ₦1,000 fún ìgbà kan. Ó ń pèsè ìtẹ̀lé ibùdó lẹ́sẹ̀kẹsẹ̀, àbójútó iṣẹ́ sí sìrìn, àti ìkìlọ̀ ààbò fún àwọn akẹ́kọ̀ọ́." },
+        { "q": "Ṣé owó ìgbékalẹ̀ tàbí owó fún akẹ́kọ̀ọ́ kọ̀ọ̀kan wà?", "a": "Rárá. Owó iye wa jẹ́ owó kan ṣoṣo pátápátá. Ìwọ á san owó kan fún gbogbo ilé-ìwé náà láìka iye akẹ́kọ̀ọ́ tàbí òṣìṣẹ́ tí o fi kún un." },
+        { "q": "Kí ni SchoolGate, báwo ni a sì ṣe ń san owó rẹ̀?", "a": "SchoolGate jẹ́ ètò tó fúyẹ́, tí ó dúró fúnra rẹ̀ fún àwọn ilé-ìwé tí wọ́n fẹ́ ẹ̀rọ wíwá sí ẹnu-ọ̀nà nìkan - ó ní Wíwá sí ilé-ìwé, Òṣìṣẹ́, Owó àti Akẹ́kọ̀ọ́, kì í ṣe gbogbo platform náà. A óò san án fún akẹ́kọ̀ọ́ kọ̀ọ̀kan fún ìgbà kọ̀ọ̀kan: ₦700 ní ìpele Dídé (ìròyìn SMS lọ́sọ̀ọ̀sẹ̀) tàbí ₦1,500 ní ìpele Gíga (SMS ìwọlé/ìjáde lójoojúmọ́ pẹ̀lú ìròyìn lọ́sọ̀ọ̀sẹ̀, pẹ̀lú Child Monitor tí a fi kún un láìní owó). Ètò méjèèjì tún ní owó ẹ̀rọ kan ṣoṣo ti ₦50,000. O lè mú gbogbo Schooldom ṣiṣẹ́ nígbàkigbà lẹ́yìn náà." }
+      ],
+      "cbt": [
+        { "q": "Ṣé àwọn akẹ́kọ̀ọ́ lè ṣe ìdánwò láìsí ayélujára?", "a": "Bẹ́ẹ̀ni. App CBT kọ̀mpútà wa lè ṣiṣẹ́ 100% láìsí ayélujára. Àwọn akẹ́kọ̀ọ́ á ṣe ìdánwò lórí kọ̀mpútà tí ó wà níbẹ̀; àwọn àbájáde á sì dọ́gba fúnra wọn pẹ̀lú cloud tí ayélujára bá padà." },
+        { "q": "Àwọn ẹ̀yà Windows wo ni app CBT kọ̀mpútà ṣe atilẹ́yìn fún?", "a": "App CBT kọ̀mpútà Schooldom ń ṣiṣẹ́ lórí Windows 7, 8, 10, àti 11. Kò sí ìyípadà tó yẹ kí a ṣe — a ṣe é pàápàá fún àwọn ilé-ìwé tí ẹ̀rọ wọn ti dàgbà." },
+        { "q": "Báwo ni ìdènà jìbìtì ṣe ń ṣiṣẹ́?", "a": "App CBT náà á dí kọ̀mpútà náà sí ipò ìdánwò — yóò dènà ìyípadà tab, copy-paste, àwòrán ojú ìwé, àti àwọn app mìíràn. Gbogbo iṣẹ́ tó ṣẹlẹ̀ ní ìgbà náà ni a óò kọ sílẹ̀." },
+        { "q": "Ṣé mo lè gbé àwọn ìbéèrè àtijọ́ wọlé gẹ́gẹ́ bí báńkì ìbéèrè?", "a": "Bẹ́ẹ̀ni. O lè gbé àwọn ìbéèrè wọlé nípasẹ̀ Excel/CSV tàbí kí o kọ ọ́ tààràtà. Àwọn ìbéèrè lè ní àwòrán, ìṣirò, àti ọ̀nà choice púpọ̀ tàbí theory." }
+      ],
+      "finance": [
+        { "q": "Báwo ni àwọn òbí ṣe ń san owó ilé-ìwé?", "a": "Àwọn òbí lè san owó nípasẹ̀ káàdì, ìfilọ́lẹ̀ báńkì, tàbí USSD nípasẹ̀ àwọn ẹ̀rọ ìsanwó wa tó ní ààbò, ìfilọ́lẹ̀ báńkì tààràtà pẹ̀lú ìfiwéra láìfọwọ́kàn, tàbí owó lọ́wọ́ (tí bursar yóò kọ sílẹ̀). Gbogbo ìsanwó á pèsè receipt dígítà lẹ́sẹ̀kẹsẹ̀ tí a óò fi ránṣẹ́ nípasẹ̀ SMS." },
+        { "q": "Ṣé Schooldom lè fi SMS invoice ránṣẹ́ sí àwọn òbí?", "a": "Bẹ́ẹ̀ni. Nígbà tí ìgbà tuntun bá bẹ̀rẹ̀ tàbí tí ìsanwó bá fẹ́ dé, Schooldom á fi SMS invoice ránṣẹ́ sí àwọn òbí láìfọwọ́kàn pẹ̀lú ìjápọ̀ ìsanwó." },
+        { "q": "Kí ni ó máa ń ṣẹlẹ̀ sí owó tí a kò tí ì san?", "a": "Ẹ̀rọ náà á tẹ̀lé owó tí ó kù fún akẹ́kọ̀ọ́ kọ̀ọ̀kan, á ṣe ìròyìn ọjọ́ orí, ó sì lè dí ìwọlé sí portal fún àwọn akẹ́kọ̀ọ́ tí wọn kò tí ì san owó — ilé-ìwé náà ni ó lè ṣàtúnṣe èyí." },
+        { "q": "Ṣé Schooldom ṣe atilẹ́yìn fún invoice ọ̀pọ̀ ìgbà tàbí gbogbo ọdún?", "a": "Bẹ́ẹ̀ni. O lè ṣe invoice fún ìgbà kọ̀ọ̀kan, gbogbo ọdún ẹ̀kọ́, tàbí àkókò mìíràn tí o bá fẹ́. Ìsanwó tí a pín sí ọ̀pọ̀ apá pẹ̀lú ni a ṣe atilẹ́yìn fún." }
+      ],
+      "setup": [
+        { "q": "Báwo ni àkókò ìgbékalẹ̀ ṣe pẹ́ tó?", "a": "Ọ̀pọ̀lọpọ̀ ilé-ìwé máa ń ṣiṣẹ́ pátápátá ní abẹ́ ìṣẹ́jú 4 lẹ́yìn tí wọ́n bá ti forúkọsílẹ̀. Ẹ̀rọ ìdápọ̀mọ́ra wa á tọ́ ọ sọ́nà nínú ìgbékalẹ̀ ilé-ìwé, dasibodu rẹ á sì bẹ̀rẹ̀ sí ṣiṣẹ́ lẹ́sẹ̀kẹsẹ̀." },
+        { "q": "Ṣé ẹ ń kọ́ àwọn òṣìṣẹ́ níṣẹ́?", "a": "Bẹ́ẹ̀ni. Ilé-ìwé tuntun kọ̀ọ̀kan á gba ìgbà ìdápọ̀mọ́ra lọ́fẹ̀ẹ́. A tún ń pèsè fídíò ìtọ́ni, ìwé àlàyé, àti ọ̀nà ìrànlọ́wọ́ pàtàkì." },
+        { "q": "Ṣé mo lè gbé dátà wọlé láti ẹ̀rọ ìṣàkóso ilé-ìwé mìíràn?", "a": "Bẹ́ẹ̀ni. A ní irinṣẹ́ láti gbé àkọsílẹ̀ akẹ́kọ̀ọ́, ìtàn owó, àti dátà ìdánwò wọlé láti Excel, CSV, àti ọ̀nà tó wọ́pọ̀ míì. Àwùjọ wa tún lè ràn ọ́ lọ́wọ́ pẹ̀lú ìṣípò àdáni." },
+        { "q": "Àwọn ọ̀nà ìrànlọ́wọ́ wo ni ó wà?", "a": "Ìrànlọ́wọ́ nípasẹ̀ ímeèlì, WhatsApp, àti fóònù ní àkókò iṣẹ́. Àwọn ètò K-12 ní ìrànlọ́wọ́ àkọ́kọ́ pẹ̀lú àkókò ìdáhùn tó yára jùlọ." }
+      ],
+      "security": [
+        { "q": "Ṣé Schooldom bá NDPA mu?", "a": "Bẹ́ẹ̀ni. Gbogbo dátà akẹ́kọ̀ọ́ ni a ń ṣe ní ìbámu pẹ̀lú Òfin Ìdáàbòbò Dátà Nàìjíríà (NDPA). A ní àdéhùn ìṣe dátà pẹ̀lú gbogbo ilé-ìwé, a sì ń ṣe àyẹ̀wò déédé." },
+        { "q": "Níbo ni dátà ilé-ìwé mi ti wà?", "a": "A fi dátà rẹ pamọ́ sórí ẹ̀rọ AWS ní agbègbè Ìwọ̀ Oòrùn Áfíríkà, èyí tí ó ń rí dájú pé àkókò kékeré àti ìbámu pẹ̀lú ohun tí Nàìjíríà fẹ́ fún ibi tí dátà wà." },
+        { "q": "Ṣé mo lè yọ dátà mi jáde tàbí kí n paá rẹ́?", "a": "Bẹ́ẹ̀ni. O lè yọ gbogbo dátà ilé-ìwé jáde nígbàkigbà ní ọ̀nà tó wọ́pọ̀ (CSV, PDF, JSON). A óò ṣe ìbéèrè fún pípa dátà rẹ́ ní abẹ́ ọjọ́ 30 lẹ́yìn tí ilé-ìwé náà bá dópin." }
+      ]
+    }
+  },
+  "contact": {
+    "badge": "Kàn Sí Wa",
+    "title": "Ẹ jẹ́ ká",
+    "titleHighlight": "sọ̀rọ̀",
+    "subtitle": "Ṣé o ní ìbéèrè? Ṣé o fẹ́ àfihàn? Ṣé o ti ṣetán láti darapọ̀? A á fẹ́ràn láti gbọ́ láti ọ̀dọ̀ rẹ.",
+    "info": {
+      "email": "Ímeèlì",
+      "phone": "Fóònù",
+      "location": "Ibùdó",
+      "locationValue": "Èkó, Nàìjíríà",
+      "supportHours": "Àkókò Ìrànlọ́wọ́",
+      "supportHoursValue": "Mọ́n–Fírí, 8am–6pm WAT",
+      "whatsapp": "WhatsApp"
+    },
+    "avgResponseTitle": "Àkókò ìdáhùn àpapọ̀",
+    "avgResponseDesc": "A máa ń dáhùn gbogbo ìbéèrè ní abẹ́ wákàtí méjì ní àkókò iṣẹ́ (Mọ́n–Fírí, 8am–6pm WAT).",
+    "supportOnline": "Ìrànlọ́wọ́ wà lórí ayélujára nísinsìnyí",
+    "form": {
+      "fullName": "Orúkọ Pípé *",
+      "fullNamePlaceholder": "Ìyáàfin Adunọla Okafor",
+      "email": "Àdírẹ́sì Ímeèlì *",
+      "emailPlaceholder": "principal@school.com",
+      "phone": "Nọ́mbà Fóònù",
+      "phonePlaceholder": "+234 80x xxx xxxx",
+      "school": "Orúkọ Ilé-Ìwé",
+      "schoolPlaceholder": "Royal Heights Academy",
+      "message": "Báwo ni a ṣe lè ràn ọ́ lọ́wọ́? *",
+      "messagePlaceholder": "Sọ fún wa nípa ilé-ìwé rẹ àti ohun tí o ń wá...",
+      "sending": "Ń fi ránṣẹ́...",
+      "send": "Fi Ìránṣẹ́ Ránṣẹ́",
+      "notProvided": "a kò fi fún un",
+      "genericError": "A kò lè fi ìránṣẹ́ rẹ ránṣẹ́ nísinsìnyí.",
+      "genericErrorFallback": "A kò lè fi ìránṣẹ́ rẹ ránṣẹ́. Jọ̀wọ́ fi ímeèlì ránṣẹ́ sí support@schooldom.academy tààràtà."
+    },
+    "success": {
+      "title": "Ìránṣẹ́ ti jáde!",
+      "desc": "A dúpẹ́, {{name}}. A óò dá ọ lóhùn ní {{email}} ní abẹ́ wákàtí méjì.",
+      "another": "Fi ìránṣẹ́ mìíràn ránṣẹ́"
+    }
+  },
+  "privacy": {
+    "badge": "Òfin",
+    "title": "Ìlànà",
+    "titleHighlight": "Àṣírí",
+    "lastUpdated": "Ìgbà Ìkẹyìn Tí A Ṣàtúnṣe: July 2026",
+    "intro": "Ìlànà Àṣírí yìí (\"Ìlànà\") ṣàlàyé bí a ṣe ń kó, lò, fihàn, àti dáàbòbò ìròyìn tó ní àsopọ̀ pẹ̀lú platform SchoolDom (\"Platform\"), tó fi mọ́ ojú ewé ayélujára, app ayélujára, àti àwọn app fóònù fún àwọn alákòóso ilé-ìwé, olùkọ́, akẹ́kọ̀ọ́, àti àwọn òbí (gbogbo wọn papọ̀, \"Àwọn App\"). Nípa wíwọlé tàbí lílo Platform náà, o ti gbà pẹ̀lú Ìlànà yìí.",
+    "questionsTitle": "Ṣé o ní ìbéèrè nípa dátà rẹ?",
+    "questionsSubtitle": "Kàn sí Ọ̀gá Ìdáàbòbò Dátà wa ní enquiry@schooldom.academy.",
+    "contactUs": "Kàn Sí Wa",
+    "sections": [
+      {
+        "title": "Ẹni Tí À Ń Jẹ́ àti Bí A Ṣe Lè Kàn Sí Wa",
+        "paragraphs": [
+          "**Olùdarí Dátà:** Xcel Technologies Ltd",
+          "**Àdírẹ́sì:** 256, Ikotun road, Èkó.",
+          "**Ọ̀gá Ìdáàbòbò Dátà/Kàn Sí:** enquiry@schooldom.academy",
+          "Fún ìbéèrè àṣírí, ìbéèrè, tàbí ẹ̀dùn ọkàn èyíkéyìí, kàn sí wa ní enquiry@schooldom.academy."
+        ]
+      },
+      {
+        "title": "Ìròyìn Tí À Ń Kó",
+        "paragraphs": ["A ń kó dátà tí a nílò nìkan láti pèsè iṣẹ́ SchoolDom. Àwọn Onílé-Ìwé/Alákòóso, Olùmúlò ni ó ń pèsè dátà, tàbí a ń kó o láìfọwọ́kàn:"],
+        "list": [
+          "**Ìròyìn Ilé-Ìwé:** Orúkọ ilé-ìwé, àdírẹ́sì, nọ́mbà RC, ìròyìn ìkàn sí, àti ìròyìn ìforúkọsílẹ̀ tí Onílé-Ìwé pèsè nígbà ìdápọ̀mọ́ra.",
+          "**Ìròyìn Account Olùmúlò:** Orúkọ, àdírẹ́sì ímeèlì, nọ́mbà fóònù, ipò, ọ̀rọ̀ aṣínà, àti ìròyìn profaili tí a pèsè nígbà ìṣẹ̀dá account tàbí látọ̀dọ̀ Alákòóso Ilé-Ìwé.",
+          "**Ìròyìn Akẹ́kọ̀ọ́:** Orúkọ, ìdámọ̀ ìgbàsílẹ̀, ọjọ́ ìbí, kíláàsì, ìbálòpọ̀, ìròyìn òbí/alábòójútó, dátà iṣẹ́ ẹ̀kọ́, àkọsílẹ̀ wíwá sí ilé-ìwé, àti ìròyìn ìbáwí. Alákòóso Ilé-Ìwé ni ó ń pèsè wọ́n, a sì ń ṣe wọ́n ní orúkọ wọn.",
+          "**Dátà Lílo àti Ẹ̀rọ:** Àdírẹ́sì IP, irú ẹ̀rọ, browser/OS, dátà log, àwọn ojú ewé tí a wò, àwọn ẹ̀yà tí a lò, àti àkókò ìwọlé. A ń kó wọn láìfọwọ́kàn láti mú iṣẹ́ àti ààbò dára sí i.",
+          "**Ìbánisọ̀rọ̀:** Ìránṣẹ́, tiket ìrànlọ́wọ́, àti àbá tí o fi ránṣẹ́ sí wa.",
+          "**Cookies àti Ẹ̀rọ Tó Jọ Ọ́:** A ń lo cookies fún ìmúdájú, ìfẹ́, àti ìtúpalẹ̀."
+        ]
+      },
+      {
+        "title": "Ìdí Òfin àti Bí A Ṣe Ń Lo Ìròyìn Rẹ",
+        "paragraphs": ["Lábẹ́ GDPR/NDPR, a ń ṣe dátà lórí ìdí wọ̀nyí: àdéhùn, ànfàní tó bófin mu, ìyọ̀ǹda, àti ojúṣe òfin. A ń lo ìròyìn rẹ láti:"],
+        "list": [
+          "**Pèsè Platform Náà:** Ṣẹ̀dá account, mú ẹ̀yà bí CBT, owó ilé-ìwé, wíwá sí ilé-ìwé, àti ìwé ìròyìn ṣiṣẹ́.",
+          "**Bá Ọ Sọ̀rọ̀:** Fi ìgbà tuntun account, ìkìlọ̀ ààbò, àti ìkéde platform ránṣẹ́. Ìpolówó ọjà nìkan pẹ̀lú ìyọ̀ǹda.",
+          "**Ṣe Ìrírí Rẹ Ní Àdáni:** Fihàn dasibodu, àkóónú, àti àbá tó bá ipò àti iṣẹ́ rẹ mu.",
+          "**Ràn Àwọn Ilé-Ìwé Lọ́wọ́:** Ṣe ìwé ìròyìn, mú ìbánisọ̀rọ̀ òbí-olùkọ́ ṣiṣẹ́, kí a sì mú ìbéèrè Alákòóso Ilé-Ìwé ṣẹ.",
+          "**Mú Dára Sí I àti Dáàbòbò:** Ṣàyẹ̀wò lílo, tún àṣìṣe ṣe, dí jìbìtì, kí a sì ṣe àwọn ẹ̀yà tuntun.",
+          "**Bá Òfin Mu:** Dá ìbéèrè òfin lóhùn, kí a sì mú ojúṣe NDPR/GDPR ṣẹ."
+        ],
+        "paragraphsAfter": ["Alákòóso Ilé-Ìwé ni ó jẹ́ \"Olùdarí Dátà\" fún dátà akẹ́kọ̀ọ́/òbí. Xcel Technologies ń ṣiṣẹ́ gẹ́gẹ́ bí \"Olùṣe Dátà\" fún dátà yẹn."]
+      },
+      {
+        "title": "Pínpín àti Fífihàn",
+        "paragraphs": ["A kò ta dátà ẹnikẹ́ni. A ń pín dátà bí wọ̀nyí nìkan:"],
+        "list": [
+          "**Alákòóso Ilé-Ìwé:** Onílé-Ìwé/Alákòóso lè wọlé sí dátà Olùmúlò àti Akẹ́kọ̀ọ́ fún ilé-ìwé wọn nìkan, bí wọ́n ṣe yọ̀ǹda rẹ̀.",
+          "**Olùpèsè Iṣẹ́:** Àwọn ẹgbẹ́ kẹta tí à gbẹ́kẹ̀lé tí ó ń tọ́jú dátà, fi ímeèlì/SMS ránṣẹ́, ṣe ìsanwó, tàbí pèsè ìtúpalẹ̀. Gbogbo wọn ni àdéhùn Ìṣe Dátà dè láti dáàbòbò dátà, kí wọ́n sì lò ó fún ète wa nìkan.",
+          "**Ìmújẹ Òfin:** Bí òfin Nàìjíríà, àṣẹ ilé-ẹjọ́, tàbí àjọ olùdarí bá fẹ́ ẹ.",
+          "**Ìpalẹ̀mọ́ Iṣẹ́:** Bí Xcel Technologies bá dàpọ̀ tàbí tí a rà á, dátà lè kọjá lábẹ́ Ìlànà yìí."
+        ]
+      },
+      {
+        "title": "Ìdádúró Dátà",
+        "paragraphs": ["A ń fi dátà pamọ́ níwọ̀n bí ó ti yẹ fún àwọn ète tí a dárúkọ lókè, tàbí bí òfin ṣe fẹ́ ẹ."],
+        "list": [
+          "Dátà account ilé-ìwé: A óò fi í pamọ́ níwọ̀n bí account náà ṣe ń ṣiṣẹ́ + ọdún méjì lẹ́yìn tí a bá ti pa á láti lè bá òfin/àyẹ̀wò mu.",
+          "Àkọsílẹ̀ ẹ̀kọ́ akẹ́kọ̀ọ́: A óò fi í pamọ́ gẹ́gẹ́ bí Alákòóso Ilé-Ìwé ṣe fẹ́ ẹ, tó bá ìlànà ilé-ìwé àti òfin ẹ̀kọ́ mu.",
+          "Log àti ìtúpalẹ̀: A óò fi í pamọ́ fún oṣù méjìlá, lẹ́yìn náà a óò yọ orúkọ kúrò."
+        ],
+        "paragraphsAfter": ["O lè béèrè pé kí a pa dátà rẹ́ nígbàkigbà. A óò pa á tàbí yọ orúkọ kúrò lẹ́yìn rẹ̀ àyàfi bí òfin bá fẹ́ kí a tọ́jú rẹ̀."]
+      },
+      {
+        "title": "Ẹ̀tọ́ àti Àṣàyàn Rẹ",
+        "paragraphs": ["Lábẹ́ NDPR àti GDPR, o ní ẹ̀tọ́ láti:"],
+        "list": [
+          "**Wọlé:** Béèrè fún ẹ̀dà dátà rẹ.",
+          "**Ṣàtúnṣe:** Béèrè kí a ṣàtúnṣe dátà tí kò tọ́ tàbí tí kò pé.",
+          "**Pípa Rẹ́:** Béèrè kí a pa dátà rẹ rẹ́, bí kò bá tako òfin.",
+          "**Takò/Dí:** Takò bí a ṣe ń ṣe dátà rẹ tàbí béèrè fún ààlà sí bí a ṣe ń lò ó.",
+          "**Gbígbé Lọ:** Gba dátà rẹ ní ọ̀nà tí a ṣe tó sì lè kà.",
+          "**Yíyọ Ìyọ̀ǹda Kúrò:** Níbi tí à bá ti gbẹ́kẹ̀lé ìyọ̀ǹda rẹ, o lè yọ ọ́ kúrò nígbàkigbà."
+        ],
+        "paragraphsAfter": [
+          "Láti lo ẹ̀tọ́ rẹ, fi ímeèlì ránṣẹ́ sí enquiry@schooldom.academy. A óò dáhùn ní abẹ́ ọjọ́ 30 gẹ́gẹ́ bí NDPR ṣe fẹ́ ẹ.",
+          "Alákòóso Ilé-Ìwé yẹ kí ó kàn sí ilé-ìwé wọn láti wọlé sí dátà akẹ́kọ̀ọ́ tàbí láti pa á rẹ́, nítorí ilé-ìwé ni ó darí dátà yẹn."
+        ]
+      },
+      {
+        "title": "Ààbò",
+        "paragraphs": [
+          "A ń lo ìdènà, àbójútó ìwọlé, firewall, àti àyẹ̀wò déédé láti dáàbòbò dátà. Gbogbo dátà ni a fi pamọ́ sórí server tí ó bá SOC 2 mu.",
+          "Kò sí ẹ̀rọ tí ó ní ààbò 100%. Ìwọ pẹ̀lú ní ojúṣe láti pa ọ̀rọ̀ aṣínà rẹ mọ́ kí o má sì fi ìròyìn ìwọlé rẹ fún ẹlòmíràn."
+        ]
+      },
+      {
+        "title": "Àṣírí Àwọn Ọmọdé",
+        "paragraphs": ["A ṣe SchoolDom fún àwọn ilé-ìwé, yóò sì ṣe dátà ẹni àwọn ọmọdé tí kò tí ì pé ọdún 13 gẹ́gẹ́ bí Ilé-Ìwé ṣe pèsè é. A ń ṣe dátà yìí lórí àṣẹ Ilé-Ìwé nìkan, tí ó jẹ́ Olùdarí Dátà. Ilé-Ìwé gbọ́dọ̀ rí i dájú pé wọ́n ní ìyọ̀ǹda òbí gẹ́gẹ́ bí òfin ṣe fẹ́ ẹ. A kì í kó dátà tààràtà lọ́wọ́ ọmọdé mọ̀ọ́mọ̀."]
+      },
+      {
+        "title": "Cookies àti Ìtẹ̀lé",
+        "paragraphs": ["A ń lo cookies pàtàkì fún ìwọlé/ààbò àti cookies tí kì í ṣe dandan fún ìtúpalẹ̀/iṣẹ́. O lè ṣàkóso àṣàyàn cookies nínú browser rẹ. Dídí cookies pàtàkì lè dí ìwọlé."]
+      },
+      {
+        "title": "Gbígbé Dátà Lọ Sí Orílẹ̀-Èdè Mìíràn",
+        "paragraphs": ["Bí a bá gbé dátà jáde kúrò ní Nàìjíríà/EU, a óò rí i dájú pé ààbò tó yẹ wà nípasẹ̀ Standard Contractual Clauses tàbí ọ̀nà mìíràn tí NDPR/GDPR fọwọ́ sí."]
+      },
+      {
+        "title": "Àyípadà Sí Ìlànà Yìí",
+        "paragraphs": ["A lè ṣàtúnṣe Ìlànà yìí láti bá àyípadà òfin tàbí ẹ̀yà mu. A óò fi ìtẹ̀jáde tuntun síbí pẹ̀lú ọjọ́ \"Ìgbà Ìkẹyìn Tí A Ṣàtúnṣe\", a óò sì fi ímeèlì ránṣẹ́ sí Alákòóso Ilé-Ìwé fún àyípadà pàtàkì. Lílo tẹ̀síwájú túmọ̀ sí ìfọwọ́sí."]
+      },
+      {
+        "title": "Ẹ̀dùn Ọkàn",
+        "paragraphs": ["Bí ìdáhùn wa kò bá tẹ́ ọ lọ́rùn, o lè fi ẹ̀dùn ọkàn rẹ sí Nigeria Data Protection Commission ní ndpc.gov.ng tàbí sí àjọ dátà ní orílẹ̀-èdè EU rẹ."]
+      }
+    ]
+  },
+  "signup": {
+    "backToHome": "Pada sí ilé",
+    "stepLabels": ["Account àti Ipò Ìdápọ̀mọ́ra", "Ṣe Ìgbékalẹ̀ Profaili Ilé-Ẹ̀kọ́", "Ṣe Ìmúdájú àti Ṣiṣẹ́"],
+    "onboardingProgress": "Ìtẹ̀síwájú Ìdápọ̀mọ́ra",
+    "roles": {
+      "schoolAdmin": { "title": "Alákòóso Ilé-Ìwé", "desc": "Ìṣàkóso tààràtà fún iṣẹ́, òṣìṣẹ́, àti ìgbékalẹ̀ ilé-ìwé kan ṣoṣo." },
+      "proprietor": { "title": "Onílé-Ìwé", "desc": "Ìṣàkóso àjọ tó ń bójútó campus púpọ̀ àti kọ́kọ́rọ́ ìṣàkóso." }
+    },
+    "step1": {
+      "title": "Dá Platform Ilé-Ìwé Rẹ Sílẹ̀",
+      "subtitle": "Bẹ̀rẹ̀ nípa yíyàn ipò rẹ àti fífi ìròyìn ìkàn sí aṣojú rẹ kún un.",
+      "chooseRole": "Yan ipò àkọ́kọ́ rẹ",
+      "contactDetails": "Ìròyìn Ìkàn Sí Aṣojú",
+      "fullName": "Orúkọ Pípé",
+      "fullNamePlaceholder": "Dr. Eleanor Vance",
+      "middleName": "Orúkọ Àárín (kì í ṣe dandan)",
+      "middleNamePlaceholder": "Kì í ṣe dandan",
+      "email": "Àdírẹ́sì Ímeèlì Iṣẹ́",
+      "emailPlaceholder": "vance.e@academy.edu",
+      "phone": "Fóònù Tààràtà",
+      "phonePlaceholder": "+234 80x xxx xxxx",
+      "password": "Ọ̀rọ̀ Aṣínà",
+      "passwordPlaceholder": "Ìwọ̀nba kékeré jẹ́ ààmì 8",
+      "confirmPassword": "Jẹ́rìí Ọ̀rọ̀ Aṣínà",
+      "confirmPasswordPlaceholder": "Tún ọ̀rọ̀ aṣínà kọ",
+      "passwordMismatch": "Ọ̀rọ̀ aṣínà méjèèjì kò bára wọn mu.",
+      "showPassword": "Fihàn ọ̀rọ̀ aṣínà",
+      "hidePassword": "Fi ọ̀rọ̀ aṣínà pamọ́",
+      "continue": "Tẹ̀síwájú Sí Profaili Ilé-Ìwé"
+    },
+    "step2": {
+      "titleProprietor": "Ṣe Ìgbékalẹ̀ Profaili Àjọ",
+      "titleSchool": "Ṣe Ìgbékalẹ̀ Àlàyé Ilé-Ẹ̀kọ́",
+      "subtitleProprietor": "Ṣe ìgbékalẹ̀ orúkọ àjọ rẹ. Ìwọ yóò dá àwọn ilé-ìwé lọ́tọ̀ọ̀tọ̀ sílẹ̀, kí o sì ṣàkóso wọn láti orí dasibodu rẹ.",
+      "subtitleSchool": "Pèsè ìròyìn nípa ilé-ìwé rẹ, tó fi mọ́ ìpele Schooldom.",
+      "groupName": "Orúkọ Àjọ/Ilé-Iṣẹ́ Tó Bófin Mu",
+      "groupNamePlaceholder": "Pinecrest Education Group",
+      "schoolName": "Orúkọ Ilé-Ìwé Tó Bófin Mu",
+      "schoolNamePlaceholder": "Pinecrest Academy High",
+      "tier": "Ìpele Schooldom",
+      "tierK12": "Ẹ̀kọ́ K-12",
+      "tierNonK12": "Non-K12 (Ìmọ̀ Iṣẹ́, Gíga, Àkádẹ́mì)",
+      "tierHelp": "Yan 'K-12' fún ilé-ìwé àbẹ̀rẹ̀, tàbí 'Non-K12' fún ẹ̀kọ́ gíga/ìmọ̀ iṣẹ́.",
+      "whatDoYouNeed": "Kí ni o nílò?",
+      "productFull": "Gbogbo SchoolDom",
+      "productSchoolgate": "SchoolGate Nìkan",
+      "productHelp": "SchoolGate á fún ọ ní Wíwá sí ilé-ìwé, Òṣìṣẹ́, Owó, àti Akẹ́kọ̀ọ́ nìkan - a óò san án fún akẹ́kọ̀ọ́ kọ̀ọ̀kan ní ìgbà kọ̀ọ̀kan. O lè mú gbogbo Ìṣàkóso Ilé-Ìwé ṣiṣẹ́ nígbàkigbà lẹ́yìn náà.",
+      "schoolgatePlan": "Ètò SchoolGate",
+      "schoolgateBasic": "Dídé - ₦700 / akẹ́kọ̀ọ́ / ìgbà",
+      "schoolgatePremium": "Gíga - ₦1,500 / akẹ́kọ̀ọ́ / ìgbà",
+      "address": "Àdírẹ́sì Gidi Ilé-Ẹ̀kọ́ (Kì Í Ṣe Dandan)",
+      "addressPlaceholder": "402 Academic Circle, Suite 100",
+      "certifyOrg": "Mo jẹ́rìí pé a fún mi láṣẹ láti dá àjọ yìí sílẹ̀, mo sì gbà pẹ̀lú Institutional Onboarding Charter àti Data Protection Agreement.",
+      "certifySchool": "Mo jẹ́rìí pé a fún mi láṣẹ láti dá ilé-ìwé yìí sílẹ̀, mo sì gbà pẹ̀lú Institutional Onboarding Charter àti Data Protection Agreement.",
+      "back": "Padà",
+      "generating": "Ń ṣe é...",
+      "generateCode": "Dá Koodu Ìmúdájú"
+    },
+    "step3": {
+      "title": "Ṣe Ìmúdájú Account Rẹ",
+      "subtitle": "A ti fi koodu ìmúdájú oní-nọ́mbà mẹ́fà ránṣẹ́ sí <bold>{{email}}</bold>.",
+      "schoolCodeLabel": "Koodu Pàtàkì Ilé-Ìwé Rẹ",
+      "copied": "Ó Ti Dà Kọ́",
+      "copy": "Dà Kọ́",
+      "verificationCode": "Koodu Ìmúdájú",
+      "codeExpires": "Koodu náà yóò parí ní àyíká ìṣẹ́jú {{minutes}}.",
+      "verifying": "Ń ṣe ìmúdájú...",
+      "activate": "Mú Account Ṣiṣẹ́",
+      "sending": "Ń fi ránṣẹ́...",
+      "resend": "Tún Koodu Ránṣẹ́"
+    },
+    "activated": {
+      "title": "Ilé-Ìwé Rẹ Ti Ṣiṣẹ́ Nísinsìnyí!",
+      "withCode": "Koodu pàtàkì ilé-ìwé rẹ ni <bold>{{code}}</bold> — pa á mọ́ dáadáa, ìwọ yóò nílò rẹ̀ láti wọlé.",
+      "withoutCode": "O lè dá ilé-ìwé àkọ́kọ́ rẹ sílẹ̀ láti orí dasibodu.",
+      "goToDashboard": "Lọ Sí Dasibodu"
+    },
+    "errors": {
+      "connection": "A kò lè dé server náà. Ṣàyẹ̀wò ìsopọ̀ rẹ kí o sì tún gbìyànjú.",
+      "requestFailed": "Ìbéèrè náà kùnà. Jọ̀wọ́ tún gbìyànjú.",
+      "somethingWrong": "Àṣìṣe kan ṣẹlẹ̀. Jọ̀wọ́ tún gbìyànjú.",
+      "verificationFailed": "Ìmúdájú kùnà.",
+      "resendFailed": "A kò lè tún koodu náà ránṣẹ́."
+    }
+  },
+  "language": {
+    "label": "Èdè",
+    "en": "English",
+    "fr": "Français",
+    "ar": "العربية",
+    "yo": "Yorùbá",
+    "pt": "Português"
+  }
+}

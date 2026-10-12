@@ -1,13 +1,16 @@
+import { useTranslation } from 'react-i18next';
 import { Mail, MapPin, Twitter, Youtube, Facebook, ArrowRight, Phone } from 'lucide-react';
 
-const LINKS = {
-  Product: ['Features', 'CBT Engine', 'Finance Ledger', 'Parent Portal', 'Child Monitor'],
-  Company: ['About Us', 'Blog', 'Careers', 'Privacy Policy', 'Terms of Service'],
-  Support: ['Documentation', 'Help Center', 'Status Page', 'Contact Us', 'API Reference'],
-};
+const LINK_GROUPS = ['product', 'company', 'support'] as const;
 
 export default function Footer() {
+  const { t } = useTranslation();
   const year = new Date().getFullYear();
+  const LINKS: Record<(typeof LINK_GROUPS)[number], { heading: string; items: string[] }> = {
+    product: t('footer.columns.product', { returnObjects: true }) as { heading: string; items: string[] },
+    company: t('footer.columns.company', { returnObjects: true }) as { heading: string; items: string[] },
+    support: t('footer.columns.support', { returnObjects: true }) as { heading: string; items: string[] },
+  };
 
   return (
     <footer className="relative border-t border-white/5 pt-20 pb-8 px-4 overflow-hidden">
@@ -32,7 +35,7 @@ export default function Footer() {
               </div>
             </div>
             <p className="text-slate-500 text-sm leading-relaxed max-w-xs mb-6">
-              The complete school management platform built for African educational institutions. From admission to graduation, fees to CBT.
+              {t('footer.tagline')}
             </p>
 
             <div className="space-y-2.5 mb-6">
@@ -46,7 +49,7 @@ export default function Footer() {
               </a>
               <div className="flex items-center gap-2.5 text-slate-500 text-sm">
                 <MapPin className="h-4 w-4 shrink-0" style={{ color: '#8b5cf6' }} />
-                Lagos, Nigeria
+                {t('footer.location')}
               </div>
             </div>
 
@@ -61,23 +64,26 @@ export default function Footer() {
           </div>
 
           {/* Link cols */}
-          {Object.entries(LINKS).map(([heading, items]) => (
-            <div key={heading}>
-              <h4 className="text-white font-bold text-sm mb-4">{heading}</h4>
-              <ul className="space-y-2.5">
-                {items.map(item => {
-                  const href = item === 'Contact Us' ? '/#/contact' : item === 'Privacy Policy' ? '/#/privacy' : '#';
-                  return (
-                    <li key={item}>
-                      <a href={href} className="text-slate-500 hover:text-slate-300 text-sm transition-colors">
-                        {item}
-                      </a>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+          {LINK_GROUPS.map(group => {
+            const { heading, items } = LINKS[group];
+            return (
+              <div key={group}>
+                <h4 className="text-white font-bold text-sm mb-4">{heading}</h4>
+                <ul className="space-y-2.5">
+                  {items.map((item, i) => {
+                    const href = group === 'support' && i === 3 ? '/#/contact' : group === 'company' && i === 3 ? '/#/privacy' : '#';
+                    return (
+                      <li key={item}>
+                        <a href={href} className="text-slate-500 hover:text-slate-300 text-sm transition-colors">
+                          {item}
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </div>
 
         {/* CTA block */}
@@ -87,11 +93,11 @@ export default function Footer() {
             style={{ background: 'radial-gradient(ellipse at 50% 100%, rgba(34,197,94,0.06) 0%, transparent 60%)' }} />
           <div className="relative">
             <h3 className="font-display font-black text-white text-2xl sm:text-3xl mb-3">
-              Ready to digitize your school?
+              {t('footer.ctaTitle')}
             </h3>
-            <p className="text-slate-400 text-sm mb-6">Join 300+ Nigerian schools running on Schooldom. Set up in under 4 minutes.</p>
+            <p className="text-slate-400 text-sm mb-6">{t('footer.ctaSubtitle')}</p>
             <a href="/#/signup" className="btn-primary text-base px-8 py-4">
-              Onboard Your School <ArrowRight className="h-4 w-4" />
+              {t('footer.ctaButton')} <ArrowRight className="h-4 w-4" />
             </a>
           </div>
         </div>
@@ -99,11 +105,11 @@ export default function Footer() {
         {/* Bottom bar */}
         <div className="border-t border-white/5 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-slate-600 text-xs">
-            © {year} Schooldom Academy. All rights reserved. Built with love, Powered by Xcel Technologies Limited.
+            {t('footer.copyright', { year })}
           </p>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-slate-600 text-xs">All systems operational</span>
+            <span className="text-slate-600 text-xs">{t('footer.systemsOperational')}</span>
           </div>
         </div>
       </div>

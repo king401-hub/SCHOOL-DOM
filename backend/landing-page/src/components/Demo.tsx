@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { TrendingUp, Users, DollarSign, BookOpen, Zap, Shield, Globe, Award } from 'lucide-react';
 
 function useVisible(threshold = 0.15) {
@@ -35,14 +36,16 @@ function AnimatedCounter({ target, prefix = '', suffix = '' }: { target: number;
   return <span ref={ref}>{prefix}{count.toLocaleString()}{suffix}</span>;
 }
 
-const STATS = [
-  { icon: Users, value: 300, suffix: '+', label: 'Schools Onboarded', desc: 'Across 26 Nigerian states', color: '#22c55e' },
-  { icon: BookOpen, value: 95000, suffix: '+', label: 'Active Students', desc: 'Managed on the platform', color: '#0ea5e9' },
-  { icon: DollarSign, value: 450, prefix: '₦', suffix: 'M+', label: 'Fees Processed', desc: 'Through secure payment processors', color: '#8b5cf6' },
-  { icon: TrendingUp, value: 15000, suffix: '+', label: 'Exams Conducted', desc: 'Online and offline CBT', color: '#f59e0b' },
-  { icon: Award, value: 98, suffix: '%', label: 'School Retention', desc: 'Schools that renewed', color: '#10b981' },
-  { icon: Zap, value: 4, suffix: 'min', label: 'Setup Time', desc: 'Average onboarding time', color: '#ec4899' },
-];
+function buildStats(t: (key: string) => string) {
+  return [
+    { icon: Users, value: 300, suffix: '+', label: t('demo.stats.schools.label'), desc: t('demo.stats.schools.desc'), color: '#22c55e' },
+    { icon: BookOpen, value: 95000, suffix: '+', label: t('demo.stats.students.label'), desc: t('demo.stats.students.desc'), color: '#0ea5e9' },
+    { icon: DollarSign, value: 450, prefix: '₦', suffix: 'M+', label: t('demo.stats.fees.label'), desc: t('demo.stats.fees.desc'), color: '#8b5cf6' },
+    { icon: TrendingUp, value: 15000, suffix: '+', label: t('demo.stats.exams.label'), desc: t('demo.stats.exams.desc'), color: '#f59e0b' },
+    { icon: Award, value: 98, suffix: '%', label: t('demo.stats.retention.label'), desc: t('demo.stats.retention.desc'), color: '#10b981' },
+    { icon: Zap, value: 4, suffix: 'min', label: t('demo.stats.setup.label'), desc: t('demo.stats.setup.desc'), color: '#ec4899' },
+  ];
+}
 
 const LOGOS = [
   'Royal Heights Schools', 'Greenfield Academy', 'Stars of Tomorrow', 'Excel Secondary',
@@ -51,7 +54,9 @@ const LOGOS = [
 ];
 
 export default function Demo() {
+  const { t } = useTranslation();
   const { ref, visible } = useVisible(0.1);
+  const STATS = buildStats(t);
 
   return (
     <section id="demo" ref={ref} className="py-28 px-4 relative overflow-hidden">
@@ -63,13 +68,13 @@ export default function Demo() {
         <div className="text-center mb-16"
           style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(24px)', transition: 'all 0.7s ease' }}>
           <span className="badge badge-green mb-4">
-            <Globe className="h-3 w-3" /> Platform Impact
+            <Globe className="h-3 w-3" /> {t('demo.badge')}
           </span>
           <h2 className="font-display font-black text-4xl sm:text-5xl text-white mb-4">
-            Numbers that speak{' '}
-            <span className="gradient-text">for themselves</span>
+            {t('demo.title')}{' '}
+            <span className="gradient-text">{t('demo.titleHighlight')}</span>
           </h2>
-          <p className="text-slate-400 max-w-xl mx-auto">Real schools, real results. Here's the impact Schooldom is making across Nigeria.</p>
+          <p className="text-slate-400 max-w-xl mx-auto">{t('demo.subtitle')}</p>
         </div>
 
         {/* Stats grid */}
@@ -100,7 +105,7 @@ export default function Demo() {
 
         {/* Logo marquee */}
         <div style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.5s' }}>
-          <p className="text-center text-slate-600 text-xs uppercase tracking-widest mb-6 font-semibold">Trusted by institutions like</p>
+          <p className="text-center text-slate-600 text-xs uppercase tracking-widest mb-6 font-semibold">{t('demo.trustedByInstitutions')}</p>
           <div className="overflow-hidden" style={{ maskImage: 'linear-gradient(90deg, transparent, black 10%, black 90%, transparent)' }}>
             <div className="flex gap-6 animate-marquee-left" style={{ width: 'max-content' }}>
               {[...LOGOS, ...LOGOS].map((logo, i) => (
@@ -117,16 +122,16 @@ export default function Demo() {
         <div className="mt-16 rounded-2xl p-6 flex flex-wrap items-center justify-center gap-8 sd-card"
           style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.7s' }}>
           {[
-            { icon: Shield, label: 'NDPA Compliant', color: '#22c55e' },
-            { icon: Globe, label: 'AWS West Africa', color: '#0ea5e9' },
-            { icon: Zap, label: '99.9% Uptime SLA', color: '#8b5cf6' },
-            { icon: Award, label: 'ISO 27001 Aligned', color: '#f59e0b' },
-          ].map(t => {
-            const Icon = t.icon;
+            { icon: Shield, label: t('demo.trust.ndpa'), color: '#22c55e' },
+            { icon: Globe, label: t('demo.trust.aws'), color: '#0ea5e9' },
+            { icon: Zap, label: t('demo.trust.uptime'), color: '#8b5cf6' },
+            { icon: Award, label: t('demo.trust.iso'), color: '#f59e0b' },
+          ].map(item => {
+            const Icon = item.icon;
             return (
-              <div key={t.label} className="flex items-center gap-2">
-                <Icon className="h-4 w-4" style={{ color: t.color }} />
-                <span className="text-slate-400 text-sm">{t.label}</span>
+              <div key={item.label} className="flex items-center gap-2">
+                <Icon className="h-4 w-4" style={{ color: item.color }} />
+                <span className="text-slate-400 text-sm">{item.label}</span>
               </div>
             );
           })}

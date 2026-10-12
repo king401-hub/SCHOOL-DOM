@@ -1,5 +1,6 @@
 import { Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { AuroraBackground, ParticleField, CursorSpotlight, ScrollProgress, IconConstellation } from './components/Background';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
@@ -20,12 +21,13 @@ const ADMIN_APP_URL =
   (import.meta.env.DEV ? 'http://localhost:5173/app/' : '/app/');
 
 function WhatsAppButton() {
+  const { t } = useTranslation();
   return (
     <a
       href="https://wa.me/2349076821365"
       target="_blank"
       rel="noopener noreferrer"
-      aria-label="Chat with us on WhatsApp"
+      aria-label={t('nav.whatsapp')}
       className="fixed bottom-6 right-6 z-[150] h-14 w-14 rounded-full flex items-center justify-center hover:scale-110 transition-transform"
       style={{ background: '#25D366', boxShadow: '0 8px 24px rgba(37,211,102,0.45)' }}
     >

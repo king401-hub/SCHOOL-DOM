@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CheckCircle, ArrowRight, Star, Zap, Shield, Users, Eye, ScanLine } from 'lucide-react';
 
 function useVisible(threshold = 0.15) {
@@ -12,49 +13,18 @@ function useVisible(threshold = 0.15) {
   return { ref, visible };
 }
 
-const K12_FEATURES = [
-  'Full student management & admissions',
-  'Hybrid CBT exam engine (online + offline)',
-  'Fee collection with secure payment processors',
-  'QR attendance tracking',
-  'Auto-generated report cards & transcripts',
-  'Parent portal (mobile-friendly)',
-  'HR & staff payroll management',
-  'Bulk ID / PVC card generator',
-  'Multi-campus central dashboard',
-  'NDPA compliant data handling',
-  'Priority support & onboarding',
-];
-
-const NON_K12_FEATURES = [
-  'Student enrollment management',
-  'Hybrid CBT exam engine',
-  'Fee collection & digital receipts',
-  'Attendance tracking',
-  'Course results & transcripts',
-  'Staff management',
-  'Analytics dashboard',
-  'NDPA compliant storage',
-];
-
-const SCHOOLGATE_FEATURES: Record<'basic' | 'premium', string[]> = {
-  basic: [
-    'Attendance, Staff, Finance & Students only',
-    'Weekly SMS attendance report to parents',
-    'One-time ₦50,000 gate device fee',
-  ],
-  premium: [
-    'Attendance, Staff, Finance & Students only',
-    'Daily clock-in/clock-out SMS + weekly report',
-    'Child Monitor included at no extra cost',
-    'One-time ₦50,000 gate device fee',
-  ],
-};
-
 export default function Pricing() {
+  const { t } = useTranslation();
   const { ref, visible } = useVisible(0.1);
   const [kidMonitor, setKidMonitor] = useState(false);
   const [gatePlan, setGatePlan] = useState<'basic' | 'premium'>('basic');
+
+  const K12_FEATURES = t('pricing.k12.features', { returnObjects: true }) as string[];
+  const NON_K12_FEATURES = t('pricing.nonK12.features', { returnObjects: true }) as string[];
+  const SCHOOLGATE_FEATURES: Record<'basic' | 'premium', string[]> = {
+    basic: t('pricing.schoolgate.featuresBasic', { returnObjects: true }) as string[],
+    premium: t('pricing.schoolgate.featuresPremium', { returnObjects: true }) as string[],
+  };
 
   return (
     <section id="pricing" ref={ref} className="py-28 px-4 relative overflow-hidden">
@@ -64,11 +34,11 @@ export default function Pricing() {
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-14"
           style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(24px)', transition: 'all 0.7s ease' }}>
-          <span className="badge badge-green mb-4">Simple Pricing</span>
+          <span className="badge badge-green mb-4">{t('pricing.badge')}</span>
           <h2 className="font-display font-black text-4xl sm:text-5xl text-white mb-4">
-            Fair pricing, <span className="gradient-text">full power</span>
+            {t('pricing.title')} <span className="gradient-text">{t('pricing.titleHighlight')}</span>
           </h2>
-          <p className="text-slate-400 max-w-lg mx-auto">No setup fees. No per-student charges. No surprises. Just a flat rate that keeps every school covered.</p>
+          <p className="text-slate-400 max-w-lg mx-auto">{t('pricing.subtitle')}</p>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
@@ -83,7 +53,7 @@ export default function Pricing() {
             }}>
             <div className="absolute top-4 right-4">
               <span className="flex items-center gap-1 badge badge-green text-[9px]">
-                <Star className="h-2.5 w-2.5 fill-current" /> Most Popular
+                <Star className="h-2.5 w-2.5 fill-current" /> {t('pricing.mostPopular')}
               </span>
             </div>
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 pointer-events-none"
@@ -96,8 +66,8 @@ export default function Pricing() {
                   <Users className="h-5 w-5" style={{ color: '#22c55e' }} />
                 </div>
                 <div>
-                  <h3 className="font-display font-black text-white text-xl">K-12 Schools</h3>
-                  <p className="text-slate-500 text-xs">Nursery · Primary · Secondary</p>
+                  <h3 className="font-display font-black text-white text-xl">{t('pricing.k12.name')}</h3>
+                  <p className="text-slate-500 text-xs">{t('pricing.k12.tagline')}</p>
                 </div>
               </div>
 
@@ -105,11 +75,11 @@ export default function Pricing() {
                 <div className="flex items-end gap-2">
                   <span className="font-display font-black text-5xl" style={{ color: '#22c55e' }}>₦500</span>
                   <div className="mb-2">
-                    <p className="text-white text-sm font-semibold">/ term</p>
-                    <p className="text-slate-500 text-xs">(3 months 15 days)</p>
+                    <p className="text-white text-sm font-semibold">{t('pricing.k12.perTerm')}</p>
+                    <p className="text-slate-500 text-xs">{t('pricing.k12.termLength')}</p>
                   </div>
                 </div>
-                <p className="text-slate-500 text-xs mt-2">Flat rate — unlimited students & staff</p>
+                <p className="text-slate-500 text-xs mt-2">{t('pricing.k12.flatRate')}</p>
               </div>
 
               {/* Child Monitor Toggle */}
@@ -122,12 +92,12 @@ export default function Pricing() {
                   <div className="flex items-center gap-3">
                     <Eye className="h-4 w-4 shrink-0" style={{ color: kidMonitor ? '#22c55e' : '#475569' }} />
                     <div>
-                      <p className="text-white text-sm font-semibold">Child Monitor</p>
-                      <p className="text-slate-500 text-[10px]">Real-time location + activity tracking</p>
+                      <p className="text-white text-sm font-semibold">{t('pricing.childMonitor.title')}</p>
+                      <p className="text-slate-500 text-[10px]">{t('pricing.childMonitor.desc')}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-mono font-bold" style={{ color: '#22c55e' }}>+₦1,000/term</span>
+                    <span className="text-xs font-mono font-bold" style={{ color: '#22c55e' }}>{t('pricing.childMonitor.price')}</span>
                     <button onClick={() => setKidMonitor(k => !k)}
                       className="relative h-6 w-11 rounded-full transition-all cursor-pointer shrink-0"
                       style={{ background: kidMonitor ? '#22c55e' : 'rgba(255,255,255,0.1)' }}>
@@ -138,7 +108,7 @@ export default function Pricing() {
                 </div>
                 {kidMonitor && (
                   <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
-                    <span className="text-slate-400 text-xs">Total per term</span>
+                    <span className="text-slate-400 text-xs">{t('pricing.childMonitor.totalPerTerm')}</span>
                     <span className="font-display font-black text-lg" style={{ color: '#22c55e' }}>₦1,500</span>
                   </div>
                 )}
@@ -154,7 +124,7 @@ export default function Pricing() {
               </ul>
 
               <a href="/#/signup?tier=k12" className="w-full btn-primary justify-center py-4 text-base">
-                Start with K-12 <ArrowRight className="h-4 w-4" />
+                {t('pricing.k12.cta')} <ArrowRight className="h-4 w-4" />
               </a>
             </div>
           </div>
@@ -178,8 +148,8 @@ export default function Pricing() {
                   <Zap className="h-5 w-5" style={{ color: '#0ea5e9' }} />
                 </div>
                 <div>
-                  <h3 className="font-display font-black text-white text-xl">Non-K12</h3>
-                  <p className="text-slate-500 text-xs">Vocational · Tertiary · Academies</p>
+                  <h3 className="font-display font-black text-white text-xl">{t('pricing.nonK12.name')}</h3>
+                  <p className="text-slate-500 text-xs">{t('pricing.nonK12.tagline')}</p>
                 </div>
               </div>
 
@@ -187,19 +157,19 @@ export default function Pricing() {
                 <div className="flex items-end gap-2">
                   <span className="font-display font-black text-5xl" style={{ color: '#0ea5e9' }}>₦200</span>
                   <div className="mb-2">
-                    <p className="text-white text-sm font-semibold">/ month</p>
-                    <p className="text-slate-500 text-xs">billed monthly</p>
+                    <p className="text-white text-sm font-semibold">{t('pricing.nonK12.perMonth')}</p>
+                    <p className="text-slate-500 text-xs">{t('pricing.nonK12.billedMonthly')}</p>
                   </div>
                 </div>
-                <p className="text-slate-500 text-xs mt-2">Flat rate — unlimited students & staff</p>
+                <p className="text-slate-500 text-xs mt-2">{t('pricing.nonK12.flatRate')}</p>
               </div>
 
               <div className="h-[120px] mb-6 rounded-2xl flex items-center px-4 sd-card">
                 <div className="flex items-center gap-3">
                   <Shield className="h-5 w-5 text-slate-500" />
                   <div>
-                    <p className="text-white text-sm font-semibold">Full Platform Access</p>
-                    <p className="text-slate-500 text-xs mt-1">All modules included, no add-ons required</p>
+                    <p className="text-white text-sm font-semibold">{t('pricing.nonK12.fullAccess')}</p>
+                    <p className="text-slate-500 text-xs mt-1">{t('pricing.nonK12.fullAccessDesc')}</p>
                   </div>
                 </div>
               </div>
@@ -216,7 +186,7 @@ export default function Pricing() {
               <a href="/#/signup?tier=non_k12"
                 className="w-full py-4 rounded-2xl font-bold text-base text-white cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
                 style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.3)' }}>
-                Start with Non-K12 <ArrowRight className="h-4 w-4 inline ml-2" />
+                {t('pricing.nonK12.cta')} <ArrowRight className="h-4 w-4 inline ml-2" />
               </a>
             </div>
           </div>
@@ -232,7 +202,7 @@ export default function Pricing() {
             }}>
             <div className="absolute top-4 right-4">
               <span className="badge text-[9px]" style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)', color: '#c4b5fd' }}>
-                New
+                {t('pricing.new')}
               </span>
             </div>
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 pointer-events-none"
@@ -245,8 +215,8 @@ export default function Pricing() {
                   <ScanLine className="h-5 w-5" style={{ color: '#8b5cf6' }} />
                 </div>
                 <div>
-                  <h3 className="font-display font-black text-white text-xl">SchoolGate</h3>
-                  <p className="text-slate-500 text-xs">Attendance gate terminal only</p>
+                  <h3 className="font-display font-black text-white text-xl">{t('pricing.schoolgate.name')}</h3>
+                  <p className="text-slate-500 text-xs">{t('pricing.schoolgate.tagline')}</p>
                 </div>
               </div>
 
@@ -259,7 +229,7 @@ export default function Pricing() {
                       background: gatePlan === plan ? 'rgba(139,92,246,0.18)' : 'transparent',
                       color: gatePlan === plan ? '#c4b5fd' : '#64748b',
                     }}>
-                    {plan}
+                    {plan === 'basic' ? t('pricing.schoolgate.basic') : t('pricing.schoolgate.premium')}
                   </button>
                 ))}
               </div>
@@ -270,10 +240,10 @@ export default function Pricing() {
                     ₦{gatePlan === 'premium' ? '1,500' : '700'}
                   </span>
                   <div className="mb-2">
-                    <p className="text-white text-sm font-semibold">/ student / term</p>
+                    <p className="text-white text-sm font-semibold">{t('pricing.schoolgate.perStudentTerm')}</p>
                   </div>
                 </div>
-                <p className="text-slate-500 text-xs mt-2">+ ₦50,000 one-time device fee</p>
+                <p className="text-slate-500 text-xs mt-2">{t('pricing.schoolgate.deviceFee')}</p>
               </div>
 
               <ul className="space-y-2.5 mb-8">
@@ -288,7 +258,7 @@ export default function Pricing() {
               <a href={`/#/signup?product=schoolgate&plan=${gatePlan}`}
                 className="w-full py-4 rounded-2xl font-bold text-base text-white cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
                 style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.35)' }}>
-                Start with SchoolGate <ArrowRight className="h-4 w-4 inline ml-2" />
+                {t('pricing.schoolgate.cta')} <ArrowRight className="h-4 w-4 inline ml-2" />
               </a>
             </div>
           </div>
@@ -298,10 +268,10 @@ export default function Pricing() {
         <div className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-4"
           style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.5s' }}>
           {[
-            { icon: Shield, label: 'No setup fee', color: '#22c55e' },
-            { icon: Zap, label: 'Start in 4 minutes', color: '#0ea5e9' },
-            { icon: Users, label: 'Unlimited users', color: '#8b5cf6' },
-            { icon: Star, label: 'Cancel anytime', color: '#f59e0b' },
+            { icon: Shield, label: t('pricing.guarantees.noSetupFee'), color: '#22c55e' },
+            { icon: Zap, label: t('pricing.guarantees.startIn4Min'), color: '#0ea5e9' },
+            { icon: Users, label: t('pricing.guarantees.unlimitedUsers'), color: '#8b5cf6' },
+            { icon: Star, label: t('pricing.guarantees.cancelAnytime'), color: '#f59e0b' },
           ].map(g => {
             const Icon = g.icon;
             return (

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowRight, Play, TrendingUp, Users, DollarSign, BookOpen, CheckCircle, Bell, Star, BarChart3 } from 'lucide-react';
 
 interface HeroProps {
@@ -6,26 +7,31 @@ interface HeroProps {
   onDemo: () => void;
 }
 
-const PHRASES = ['K-12 Schools', 'Universities', 'Vocational Centers', 'Groups of Schools'];
-
 function TypewriterCycle() {
+  const { t } = useTranslation();
+  const phrases = t('hero.phrases', { returnObjects: true }) as string[];
   const [idx, setIdx] = useState(0);
   const [chars, setChars] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  // Language can change mid-cycle (new phrase list, different lengths) -
+  // clamp back into range rather than reading past the end of a shorter list.
   useEffect(() => {
-    const phrase = PHRASES[idx];
+    if (idx >= phrases.length) { setIdx(0); setChars(0); setDeleting(false); }
+  }, [phrases, idx]);
+  useEffect(() => {
+    const phrase = phrases[idx] || '';
     const delay = deleting ? 35 : chars < phrase.length ? 75 : 1600;
     const t = setTimeout(() => {
       if (!deleting && chars < phrase.length) setChars(c => c + 1);
       else if (!deleting && chars === phrase.length) setDeleting(true);
       else if (deleting && chars > 0) setChars(c => c - 1);
-      else { setDeleting(false); setIdx(i => (i + 1) % PHRASES.length); }
+      else { setDeleting(false); setIdx(i => (i + 1) % phrases.length); }
     }, delay);
     return () => clearTimeout(t);
-  }, [idx, chars, deleting]);
+  }, [idx, chars, deleting, phrases]);
   return (
     <span className="gradient-text font-display">
-      {PHRASES[idx].slice(0, chars)}<span className="opacity-60">|</span>
+      {(phrases[idx] || '').slice(0, chars)}<span className="opacity-60">|</span>
     </span>
   );
 }
@@ -217,6 +223,7 @@ function DashboardFrame() {
 }
 
 export default function Hero({ onDemo }: HeroProps) {
+  const { t } = useTranslation();
   const [in_, setIn] = useState(false);
   useEffect(() => { setTimeout(() => setIn(true), 80); }, []);
 
@@ -238,7 +245,7 @@ export default function Hero({ onDemo }: HeroProps) {
         <div style={anim(0)}>
           <span className="inline-flex items-center gap-2 badge badge-green mb-7">
             <Star className="h-3 w-3 fill-current" />
-            Africa's #1 School Management Platform
+            {t('hero.badge')}
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
           </span>
         </div>
@@ -247,8 +254,8 @@ export default function Hero({ onDemo }: HeroProps) {
         <div style={anim(100)}>
           <h1 className="font-display font-black leading-[1.08] tracking-tight mb-6"
             style={{ fontSize: 'clamp(30px, 6vw, 80px)' }}>
-            <span className="text-white block">The Complete</span>
-            <span className="text-white block">School Platform for</span>
+            <span className="text-white block">{t('hero.titleLine1')}</span>
+            <span className="text-white block">{t('hero.titleLine2')}</span>
             <span className="block whitespace-nowrap" style={{ fontSize: 'clamp(22px, 5vw, 72px)', minHeight: '1.25em' }}>
               <TypewriterCycle />
             </span>
@@ -258,17 +265,17 @@ export default function Hero({ onDemo }: HeroProps) {
         {/* Sub */}
         <div style={anim(200)}>
           <p className="text-slate-400 text-lg sm:text-xl leading-relaxed max-w-2xl mx-auto mb-10">
-            Fees, CBT exams, attendance, report cards, payroll, and parent communication — all in one platform built for African schools.
+            {t('hero.subtitle')}
           </p>
         </div>
 
         {/* CTAs */}
         <div style={anim(300)} className="flex flex-wrap gap-4 justify-center mb-12">
           <a href="/#/signup" className="btn-primary text-base px-8 py-4">
-            Get Started Free <ArrowRight className="h-4 w-4" />
+            {t('hero.ctaPrimary')} <ArrowRight className="h-4 w-4" />
           </a>
           <button onClick={onDemo} className="btn-ghost text-base px-8 py-4">
-            <Play className="h-4 w-4" /> See Live Demo
+            <Play className="h-4 w-4" /> {t('hero.ctaSecondary')}
           </button>
         </div>
 
@@ -287,14 +294,14 @@ export default function Hero({ onDemo }: HeroProps) {
               <div className="flex items-center gap-0.5 mb-0.5">
                 {[...Array(5)].map((_, i) => <Star key={i} className="h-3 w-3 fill-yellow-400 text-yellow-400" />)}
               </div>
-              <p className="text-slate-500 text-xs">Trusted by 300+ Nigerian schools</p>
+              <p className="text-slate-500 text-xs">{t('hero.trustedBy')}</p>
             </div>
           </div>
           <div className="w-px h-8 bg-white/8 hidden sm:block" />
           {[
-            { v: 300, s: '+', l: 'Schools', c: '#22c55e' },
-            { v: 95000, s: '+', l: 'Students', c: '#0ea5e9' },
-            { v: 450, p: '₦', s: 'M+', l: 'Processed', c: '#8b5cf6' },
+            { v: 300, s: '+', l: t('hero.statSchools'), c: '#22c55e' },
+            { v: 95000, s: '+', l: t('hero.statStudents'), c: '#0ea5e9' },
+            { v: 450, p: '₦', s: 'M+', l: t('hero.statProcessed'), c: '#8b5cf6' },
           ].map(stat => (
             <div key={stat.l} className="text-center">
               <p className="font-display font-black text-xl" style={{ color: stat.c }}>
@@ -313,9 +320,9 @@ export default function Hero({ onDemo }: HeroProps) {
         {/* Floating stat chips above dashboard */}
         <div className="flex flex-wrap justify-between items-end mb-3 px-2 gap-3">
           {[
-            { icon: DollarSign, label: '₦2.4M collected today', color: '#22c55e' },
-            { icon: CheckCircle, label: '127 exams running now', color: '#0ea5e9' },
-            { icon: Users, label: '94.2% attendance rate', color: '#8b5cf6' },
+            { icon: DollarSign, label: t('hero.chipCollected'), color: '#22c55e' },
+            { icon: CheckCircle, label: t('hero.chipExams'), color: '#0ea5e9' },
+            { icon: Users, label: t('hero.chipAttendance'), color: '#8b5cf6' },
           ].map((chip, i) => {
             const Icon = chip.icon;
             return (

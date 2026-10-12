@@ -1,0 +1,497 @@
+{
+  "common": {
+    "backToHome": "Back to home",
+    "learnMore": "Learn more"
+  },
+  "nav": {
+    "features": "Features",
+    "cbt": "CBT App",
+    "pricing": "Pricing",
+    "testimonials": "Testimonials",
+    "more": "More",
+    "faq": "FAQ",
+    "contact": "Contact",
+    "about": "About",
+    "signIn": "Sign In",
+    "getStarted": "Get Started Free",
+    "toggleTheme": "Toggle theme",
+    "whatsapp": "Chat with us on WhatsApp"
+  },
+  "hero": {
+    "badge": "Africa's #1 School Management Platform",
+    "titleLine1": "The Complete",
+    "titleLine2": "School Platform for",
+    "phrases": ["K-12 Schools", "Universities", "Vocational Centers", "Groups of Schools"],
+    "subtitle": "Fees, CBT exams, attendance, report cards, payroll, and parent communication — all in one platform built for African schools.",
+    "ctaPrimary": "Get Started Free",
+    "ctaSecondary": "See Live Demo",
+    "trustedBy": "Trusted by 300+ Nigerian schools",
+    "statSchools": "Schools",
+    "statStudents": "Students",
+    "statProcessed": "Processed",
+    "chipCollected": "₦2.4M collected today",
+    "chipExams": "127 exams running now",
+    "chipAttendance": "94.2% attendance rate"
+  },
+  "features": {
+    "badge": "Full Platform",
+    "title": "Every tool your school needs",
+    "titleHighlight": "in one place",
+    "subtitle": "From a single dashboard, manage every dimension of your institution — academic, financial, and operational.",
+    "showcase": {
+      "finance": {
+        "badge": "Finance Module",
+        "title": "Collect fees, track every naira",
+        "desc": "Complete bursary management — generate invoices via SMS, collect payments through secure payment processors, issue receipts instantly, and track outstanding balances across every student.",
+        "points": ["Card & bank transfer payments", "SMS invoice delivery", "Automatic receipt generation", "Outstanding balance alerts", "Multi-term ledger history"]
+      },
+      "cbt": {
+        "badge": "CBT Module",
+        "title": "Run exams anywhere, online or offline",
+        "desc": "Our hybrid CBT engine lets students take exams without internet. Results auto-sync when connectivity is restored. Built for Nigerian school realities.",
+        "points": ["100% offline-capable exam engine", "Auto-sync on reconnect", "Anti-cheat & proctoring", "Custom question banks", "Instant result computation"]
+      },
+      "attendance": {
+        "badge": "Attendance Module",
+        "title": "QR attendance in seconds",
+        "desc": "Students scan QR codes at the gate or in class. Parents receive instant SMS when children arrive late or are absent. Real-time dashboard tracks every class.",
+        "points": ["QR code scanning", "Class-by-class dashboards", "Instant parent SMS alerts", "Late arrival tracking", "Monthly attendance analytics"]
+      }
+    },
+    "grid": {
+      "cbtEngine": { "title": "Hybrid CBT Engine", "desc": "Offline-first exam system. Students sit exams without internet. Auto-syncs when online." },
+      "finance": { "title": "Fee & Finance Ledger", "desc": "Complete bursary suite — collect fees, generate receipts, track balances, secure payment processing." },
+      "students": { "title": "Student Management", "desc": "Full student lifecycle from admission to graduation. Profiles, enrollments, transcripts." },
+      "attendance": { "title": "QR Attendance", "desc": "QR code scanning. Real-time attendance dashboards. Parent SMS alerts." },
+      "reportCards": { "title": "Auto Report Cards", "desc": "Generate professional report cards in seconds. Custom grading scales, remarks, PDFs." },
+      "parentPortal": { "title": "Parent Portal", "desc": "Parents track fees, results, attendance and communicate with teachers from mobile." },
+      "hr": { "title": "HR & Payroll", "desc": "Staff management, leave tracking, payroll computation, performance reviews." },
+      "desktopCbt": { "title": "Desktop CBT App", "desc": "Win7-compatible offline CBT app for schools with no internet infrastructure." }
+    }
+  },
+  "cbt": {
+    "badge": "Desktop CBT App",
+    "title": "Exams that work even",
+    "titleHighlight": "without internet",
+    "subtitle": "Our desktop CBT application is built for the Nigerian reality — schools with patchy internet, shared computers, and high-stakes exams. Students take exams offline; results sync automatically.",
+    "includedBadge": "Included with your Schooldom subscription",
+    "mobileSoon": "Mobile app coming soon",
+    "features": {
+      "offline": { "title": "Fully Offline", "desc": "Exams run completely without internet. Zero dependency on connectivity." },
+      "antiCheat": { "title": "Anti-Cheat Built In", "desc": "Tab lock, copy-paste disable, and session monitoring baked in." },
+      "sync": { "title": "Instant Sync", "desc": "Auto-uploads results and logs the moment internet is restored." },
+      "windows": { "title": "Windows 7+", "desc": "Compatible from Windows 7 to Windows 11. No upgrade required." },
+      "marking": { "title": "Auto Marking", "desc": "Objective and theory sections graded instantly after submission." },
+      "deploy": { "title": "Easy Deploy", "desc": "One-click school setup. Download, install, configure — done." }
+    },
+    "statLiveSessions": "Live sessions",
+    "statUptime": "Uptime",
+    "statSubmitSpeed": "Submit speed"
+  },
+  "demo": {
+    "badge": "Platform Impact",
+    "title": "Numbers that speak",
+    "titleHighlight": "for themselves",
+    "subtitle": "Real schools, real results. Here's the impact Schooldom is making across Nigeria.",
+    "stats": {
+      "schools": { "label": "Schools Onboarded", "desc": "Across 26 Nigerian states" },
+      "students": { "label": "Active Students", "desc": "Managed on the platform" },
+      "fees": { "label": "Fees Processed", "desc": "Through secure payment processors" },
+      "exams": { "label": "Exams Conducted", "desc": "Online and offline CBT" },
+      "retention": { "label": "School Retention", "desc": "Schools that renewed" },
+      "setup": { "label": "Setup Time", "desc": "Average onboarding time" }
+    },
+    "trustedByInstitutions": "Trusted by institutions like",
+    "trust": {
+      "ndpa": "NDPA Compliant",
+      "aws": "AWS West Africa",
+      "uptime": "99.9% Uptime SLA",
+      "iso": "ISO 27001 Aligned"
+    }
+  },
+  "testimonials": {
+    "badge": "Testimonials",
+    "title": "Schools love",
+    "titleHighlight": "what we've built",
+    "subtitle": "Real stories from real school administrators across Nigeria.",
+    "ratingSummary": "from 300+ school reviews",
+    "studentsLabel": "students",
+    "quotes": {
+      "adewale": "Schooldom transformed how we run exams. Our CBT pass rate jumped from 71% to 89% in one term because we eliminated paper leakages. The offline mode is a lifesaver during NEPA outages.",
+      "chidinma": "Before Schooldom, collecting fees was a nightmare — parents came with handwritten receipts and we could never reconcile. Now we track every kobo, and parents pay via bank transfer directly.",
+      "ibrahim": "The offline CBT app is exactly what we needed. We have 12 Windows 7 machines and Schooldom works perfectly. Students get results instantly after submission.",
+      "funmilayo": "The Child Monitor feature gives our parents peace of mind. They see when children arrive safely. Attendance SMS alerts have reduced late pickups by 60%.",
+      "emeka": "As a non-K12 institution, we needed flexible management. Schooldom's Non-K12 plan at ₦200/month is extraordinary value. We manage 600 diploma students with full academic records.",
+      "ngozi": "Managing 5 campuses used to require 3 finance officers. Now one bursar handles all collections centrally. Monthly reconciliation dropped from 3 days to 2 hours.",
+      "tunde": "Report card generation used to take 2 weeks every term. With Schooldom, it takes 30 minutes. It computes positions, fills remarks, and exports PDFs automatically.",
+      "halima": "The parent portal changed our school community. Parents see exam scores, attendance, and fee receipts on their phones without calling. Our parent satisfaction surveys are at an all-time high."
+    },
+    "schoolTypes": {
+      "k12": "K-12 School",
+      "groupOf4": "Group of 4 Schools",
+      "islamicSecondary": "Islamic Secondary",
+      "vocationalCollege": "Vocational College",
+      "groupOf5": "Group of 5 Schools",
+      "secondarySchool": "Secondary School"
+    }
+  },
+  "pricing": {
+    "badge": "Simple Pricing",
+    "title": "Fair pricing,",
+    "titleHighlight": "full power",
+    "subtitle": "No setup fees. No per-student charges. No surprises. Just a flat rate that keeps every school covered.",
+    "mostPopular": "Most Popular",
+    "new": "New",
+    "k12": {
+      "name": "K-12 Schools",
+      "tagline": "Nursery · Primary · Secondary",
+      "perTerm": "/ term",
+      "termLength": "(3 months 15 days)",
+      "flatRate": "Flat rate — unlimited students & staff",
+      "cta": "Start with K-12",
+      "features": ["Full student management & admissions", "Hybrid CBT exam engine (online + offline)", "Fee collection with secure payment processors", "QR attendance tracking", "Auto-generated report cards & transcripts", "Parent portal (mobile-friendly)", "HR & staff payroll management", "Bulk ID / PVC card generator", "Multi-campus central dashboard", "NDPA compliant data handling", "Priority support & onboarding"]
+    },
+    "childMonitor": {
+      "title": "Child Monitor",
+      "desc": "Real-time location + activity tracking",
+      "price": "+₦1,000/term",
+      "totalPerTerm": "Total per term"
+    },
+    "nonK12": {
+      "name": "Non-K12",
+      "tagline": "Vocational · Tertiary · Academies",
+      "perMonth": "/ month",
+      "billedMonthly": "billed monthly",
+      "flatRate": "Flat rate — unlimited students & staff",
+      "fullAccess": "Full Platform Access",
+      "fullAccessDesc": "All modules included, no add-ons required",
+      "cta": "Start with Non-K12",
+      "features": ["Student enrollment management", "Hybrid CBT exam engine", "Fee collection & digital receipts", "Attendance tracking", "Course results & transcripts", "Staff management", "Analytics dashboard", "NDPA compliant storage"]
+    },
+    "schoolgate": {
+      "name": "SchoolGate",
+      "tagline": "Attendance gate terminal only",
+      "basic": "Basic",
+      "premium": "Premium",
+      "perStudentTerm": "/ student / term",
+      "deviceFee": "+ ₦50,000 one-time device fee",
+      "cta": "Start with SchoolGate",
+      "featuresBasic": ["Attendance, Staff, Finance & Students only", "Weekly SMS attendance report to parents", "One-time ₦50,000 gate device fee"],
+      "featuresPremium": ["Attendance, Staff, Finance & Students only", "Daily clock-in/clock-out SMS + weekly report", "Child Monitor included at no extra cost", "One-time ₦50,000 gate device fee"]
+    },
+    "guarantees": {
+      "noSetupFee": "No setup fee",
+      "startIn4Min": "Start in 4 minutes",
+      "unlimitedUsers": "Unlimited users",
+      "cancelAnytime": "Cancel anytime"
+    }
+  },
+  "footer": {
+    "tagline": "The complete school management platform built for African educational institutions. From admission to graduation, fees to CBT.",
+    "location": "Lagos, Nigeria",
+    "columns": {
+      "product": { "heading": "Product", "items": ["Features", "CBT Engine", "Finance Ledger", "Parent Portal", "Child Monitor"] },
+      "company": { "heading": "Company", "items": ["About Us", "Blog", "Careers", "Privacy Policy", "Terms of Service"] },
+      "support": { "heading": "Support", "items": ["Documentation", "Help Center", "Status Page", "Contact Us", "API Reference"] }
+    },
+    "ctaTitle": "Ready to digitize your school?",
+    "ctaSubtitle": "Join 300+ Nigerian schools running on Schooldom. Set up in under 4 minutes.",
+    "ctaButton": "Onboard Your School",
+    "copyright": "© {{year}} Schooldom Academy. All rights reserved. Built with love, Powered by Xcel Technologies Limited.",
+    "systemsOperational": "All systems operational"
+  },
+  "faq": {
+    "badge": "FAQ",
+    "title": "Frequently asked",
+    "titleHighlight": "questions",
+    "intro": "Everything you need to know about Schooldom. Can't find an answer?",
+    "contactUs": "Contact us.",
+    "searchPlaceholder": "Search questions...",
+    "all": "All",
+    "noResults": "No questions match your search.",
+    "askDirectly": "Ask us directly.",
+    "stillQuestionsTitle": "Still have questions?",
+    "stillQuestionsSubtitle": "Our team responds within 2 hours during business hours.",
+    "contactSupport": "Contact Support",
+    "categories": {
+      "pricing": "Pricing",
+      "cbt": "CBT & Exams",
+      "finance": "Finance & Fees",
+      "setup": "Setup & Support",
+      "security": "Security & Compliance"
+    },
+    "items": {
+      "pricing": [
+        { "q": "How much does Schooldom cost?", "a": "K-12 schools pay ₦500 per term (3 months 15 days). Non-K12 institutions pay ₦200 per month. Both plans are flat rates — no per-student charges, no hidden fees." },
+        { "q": "What is the Child Monitor add-on?", "a": "Child Monitor is an optional add-on for K-12 schools at ₦1,000 per term. It provides real-time location tracking, screen activity monitoring, and safety alerts for students." },
+        { "q": "Are there setup fees or per-student charges?", "a": "No. Our pricing is completely flat. You pay one rate for the entire school regardless of how many students or staff members you add." },
+        { "q": "What is SchoolGate, and how is it priced?", "a": "SchoolGate is a lighter, standalone plan for schools that only want the attendance gate terminal - covering Attendance, Staff, Finance, and Students, not the full platform. It's billed per student per term: ₦700 on Basic (weekly SMS attendance report) or ₦1,500 on Premium (daily clock-in/out SMS plus the weekly report, with Child Monitor included free). Both plans also have a one-time ₦50,000 device fee. You can activate full Schooldom later at any time." }
+      ],
+      "cbt": [
+        { "q": "Can students take exams without internet?", "a": "Yes. Our Desktop CBT app is 100% offline-capable. Students take exams on local machines; results automatically sync to the cloud when internet is restored." },
+        { "q": "What Windows versions does the desktop CBT app support?", "a": "The Schooldom Desktop CBT app works on Windows 7, 8, 10, and 11. No upgrade required — we designed it specifically for schools with older hardware." },
+        { "q": "How does anti-cheat work?", "a": "The CBT app locks the computer into exam mode — preventing tab switching, copy-paste, screenshots, and external applications. All session activity is logged." },
+        { "q": "Can I upload past questions as a question bank?", "a": "Yes. You can import questions via Excel/CSV or type them directly. Questions support images, equations, and multiple choice or theory formats." }
+      ],
+      "finance": [
+        { "q": "How do parents pay school fees?", "a": "Parents can pay via card, bank transfer, or USSD through our secure payment processors, direct bank transfer with automated reconciliation, or in-person cash (recorded by the bursary). All payments generate instant digital receipts sent via SMS." },
+        { "q": "Can Schooldom send invoice SMS to parents?", "a": "Yes. When a new term begins or a payment is due, Schooldom automatically sends invoice SMS messages to parents with payment links." },
+        { "q": "What happens to unpaid fees?", "a": "The system tracks outstanding balances per student, generates aging reports, and can automatically restrict portal access for students with unpaid fees — configurable by the school." },
+        { "q": "Does Schooldom support multi-term or full-year invoicing?", "a": "Yes. You can create invoices for individual terms, the full academic year, or any custom period. Split-payment installments are also supported." }
+      ],
+      "setup": [
+        { "q": "How long does it take to set up?", "a": "Most schools are fully operational within 4 minutes of registering. Our onboarding wizard guides you through school setup, and your dashboard is live immediately." },
+        { "q": "Do you offer training for staff?", "a": "Yes. Every new school gets a complimentary onboarding session. We also provide video tutorials, documentation, and a dedicated support channel." },
+        { "q": "Can I migrate data from another school management system?", "a": "Yes. We have import tools for student records, fee history, and exam data from Excel, CSV, and common formats. Our team can also assist with custom migrations." },
+        { "q": "What support channels are available?", "a": "Email, WhatsApp, and phone support during business hours. K-12 plans include priority support with faster response times." }
+      ],
+      "security": [
+        { "q": "Is Schooldom NDPA compliant?", "a": "Yes. All student data is processed in compliance with the Nigeria Data Protection Act (NDPA). We maintain data processing agreements with all schools and conduct regular audits." },
+        { "q": "Where is my school data stored?", "a": "Your data is stored on AWS infrastructure in the West Africa region, ensuring low latency and compliance with Nigerian data residency requirements." },
+        { "q": "Can I export or delete my data?", "a": "Yes. You can export all school data at any time in standard formats (CSV, PDF, JSON). Data deletion requests are processed within 30 days of school termination." }
+      ]
+    }
+  },
+  "contact": {
+    "badge": "Contact Us",
+    "title": "Let's",
+    "titleHighlight": "talk",
+    "subtitle": "Have questions? Want a demo? Ready to onboard? We'd love to hear from you.",
+    "info": {
+      "email": "Email",
+      "phone": "Phone",
+      "location": "Location",
+      "locationValue": "Lagos, Nigeria",
+      "supportHours": "Support Hours",
+      "supportHoursValue": "Mon–Fri, 8am–6pm WAT",
+      "whatsapp": "WhatsApp"
+    },
+    "avgResponseTitle": "Average response time",
+    "avgResponseDesc": "We respond to all inquiries within 2 hours during business hours (Mon–Fri, 8am–6pm WAT).",
+    "supportOnline": "Support is online now",
+    "form": {
+      "fullName": "Full Name *",
+      "fullNamePlaceholder": "Mrs. Adunola Okafor",
+      "email": "Email Address *",
+      "emailPlaceholder": "principal@school.com",
+      "phone": "Phone Number",
+      "phonePlaceholder": "+234 80x xxx xxxx",
+      "school": "School Name",
+      "schoolPlaceholder": "Royal Heights Academy",
+      "message": "How can we help? *",
+      "messagePlaceholder": "Tell us about your school and what you're looking for...",
+      "sending": "Sending...",
+      "send": "Send Message",
+      "notProvided": "not provided",
+      "genericError": "Could not send your message right now.",
+      "genericErrorFallback": "Could not send your message. Please email support@schooldom.academy directly."
+    },
+    "success": {
+      "title": "Message sent!",
+      "desc": "Thank you, {{name}}. We'll get back to you at {{email}} within 2 hours.",
+      "another": "Send another message"
+    }
+  },
+  "privacy": {
+    "badge": "Legal",
+    "title": "Privacy",
+    "titleHighlight": "Policy",
+    "lastUpdated": "Last Updated: July 2026",
+    "intro": "This Privacy Policy (\"Policy\") explains how we collect, use, disclose, and protect information in connection with the SchoolDom platform (\"Platform\"), including the website, web application, and mobile applications for school administrators, teachers, students, and parents (collectively, \"Applications\"). By accessing or using the Platform, you agree to this Policy.",
+    "questionsTitle": "Questions about your data?",
+    "questionsSubtitle": "Reach our Data Protection Officer at enquiry@schooldom.academy.",
+    "contactUs": "Contact Us",
+    "sections": [
+      {
+        "title": "Who We Are & Contact",
+        "paragraphs": [
+          "**Data Controller:** Xcel Technologies Ltd",
+          "**Address:** 256, Ikotun road, Lagos.",
+          "**Data Protection Officer/Contact:** enquiry@schooldom.academy",
+          "For any privacy questions, requests, or complaints, contact us at enquiry@schooldom.academy."
+        ]
+      },
+      {
+        "title": "Information We Collect",
+        "paragraphs": ["We collect only data necessary to provide SchoolDom services. Data is provided by School Owners/Administrators, Users, or collected automatically:"],
+        "list": [
+          "**School Information:** School name, address, RC number, contact details, and subscription details provided by the School Owner during onboarding.",
+          "**User Account Information:** Name, email address, phone number, role, password, and profile details provided during account creation or by the School Administrator.",
+          "**Student Information:** Name, admission ID, date of birth, grade/class, gender, parent/guardian details, academic performance data, attendance records, and disciplinary reports. Provided by the School Administrator and processed on their behalf.",
+          "**Usage & Device Data:** IP address, device type, browser/OS, log data, pages viewed, features used, and access times. Collected automatically to improve performance and security.",
+          "**Communications:** Messages, support tickets, and feedback you send us.",
+          "**Cookies & Similar Tech:** We use cookies for authentication, preferences, and analytics."
+        ]
+      },
+      {
+        "title": "Lawful Basis & How We Use Your Information",
+        "paragraphs": ["Under GDPR/NDPR, we process data based on: contract, legitimate interest, consent, and legal obligation. We use your information to:"],
+        "list": [
+          "**Provide the Platform:** Create accounts, enable features like CBT, fees, attendance, and reporting.",
+          "**Communicate:** Send account updates, security alerts, and platform announcements. Marketing only with consent.",
+          "**Personalize Experience:** Show relevant dashboards, content, and recommendations based on role and activity.",
+          "**Support Schools:** Generate reports, enable parent-teacher communication, and fulfill requests from School Administrators.",
+          "**Improve & Secure:** Analyze usage, fix bugs, prevent fraud, and develop new features.",
+          "**Comply with Law:** Respond to legal requests and meet NDPR/GDPR obligations."
+        ],
+        "paragraphsAfter": ["School Administrators are the \"Data Controllers\" for student/parent data. Xcel Technologies acts as \"Data Processor\" for that data."]
+      },
+      {
+        "title": "Sharing & Disclosure",
+        "paragraphs": ["We do not sell personal data. We share data only as follows:"],
+        "list": [
+          "**School Administrators:** School Owners/Admins can access User and Student data for their school only, as authorized by them.",
+          "**Service Providers:** Trusted third parties who host data, send emails/SMS, process payments, or provide analytics. All are bound by Data Processing Agreements to protect data and only use it for our purposes.",
+          "**Legal Compliance:** If required by Nigerian law, court order, or regulatory authority.",
+          "**Business Transfer:** If Xcel Technologies is merged or acquired, data may transfer subject to this Policy."
+        ]
+      },
+      {
+        "title": "Data Retention",
+        "paragraphs": ["We keep data only as long as needed for the purposes above, or as required by law."],
+        "list": [
+          "School account data: Retained while account is active + 2 years after closure for legal/audit needs.",
+          "Student academic records: Retained per instructions from the School Administrator, in line with school policy and education laws.",
+          "Logs & analytics: Retained for 12 months, then anonymized."
+        ],
+        "paragraphsAfter": ["You can request deletion anytime. We will delete or anonymize data unless law requires retention."]
+      },
+      {
+        "title": "Your Rights & Choices",
+        "paragraphs": ["Under NDPR and GDPR, you have the right to:"],
+        "list": [
+          "**Access:** Request a copy of your personal data.",
+          "**Correction:** Ask us to correct inaccurate or incomplete data.",
+          "**Deletion:** Ask us to delete your data, subject to legal exceptions.",
+          "**Object/Restrict:** Object to processing or request limits on how we use data.",
+          "**Portability:** Receive your data in a structured, machine-readable format.",
+          "**Withdraw Consent:** Where we rely on consent, you can withdraw it anytime."
+        ],
+        "paragraphsAfter": [
+          "To exercise rights, email enquiry@schooldom.academy. We will respond within 30 days as required by NDPR.",
+          "School Administrators should contact their school to access or delete student data, since schools control that data."
+        ]
+      },
+      {
+        "title": "Security",
+        "paragraphs": [
+          "We use encryption, access controls, firewalls, and regular audits to protect data. All data is stored on servers with SOC 2 compliant providers.",
+          "No system is 100% secure. You're also responsible for keeping your password safe and not sharing login details."
+        ]
+      },
+      {
+        "title": "Children's Privacy",
+        "paragraphs": ["SchoolDom is designed for schools and will process personal data of children under 13 as provided by Schools. We process this data only on instruction from the School, which acts as Data Controller. Schools must ensure they have parental consent as required by law. We do not knowingly collect data directly from children."]
+      },
+      {
+        "title": "Cookies & Tracking",
+        "paragraphs": ["We use essential cookies for login/security and optional cookies for analytics/performance. You can manage cookie preferences in your browser. Blocking essential cookies may break login."]
+      },
+      {
+        "title": "International Data Transfers",
+        "paragraphs": ["If data is transferred outside Nigeria/EU, we ensure adequate protection via Standard Contractual Clauses or other NDPR/GDPR-approved mechanisms."]
+      },
+      {
+        "title": "Changes to This Policy",
+        "paragraphs": ["We may update this Policy to reflect changes in law or features. We'll post the new version here with a \"Last Updated\" date and notify School Administrators by email for material changes. Continued use means acceptance."]
+      },
+      {
+        "title": "Complaints",
+        "paragraphs": ["If you're unsatisfied with our response, you can lodge a complaint with the Nigeria Data Protection Commission at ndpc.gov.ng or your local EU data authority."]
+      }
+    ]
+  },
+  "signup": {
+    "backToHome": "Back to home",
+    "stepLabels": ["Account & Onboarding Role", "Configure Institutional Profile", "Verify & Activate"],
+    "onboardingProgress": "Onboarding Progress",
+    "roles": {
+      "schoolAdmin": { "title": "School Admin", "desc": "Direct management of single school operations, staff, and configurations." },
+      "proprietor": { "title": "Proprietor", "desc": "Group management overseeing multiple campuses and administrative keys." }
+    },
+    "step1": {
+      "title": "Onboard your School Platform",
+      "subtitle": "Begin by choosing your structural role and entering your representative contact details.",
+      "chooseRole": "Choose your primary role",
+      "contactDetails": "Representative contact details",
+      "fullName": "Full Name",
+      "fullNamePlaceholder": "Dr. Eleanor Vance",
+      "middleName": "Middle Name (optional)",
+      "middleNamePlaceholder": "Optional",
+      "email": "Professional Email Address",
+      "emailPlaceholder": "vance.e@academy.edu",
+      "phone": "Direct Contact Phone",
+      "phonePlaceholder": "+234 80x xxx xxxx",
+      "password": "Password",
+      "passwordPlaceholder": "Minimum 8 characters",
+      "confirmPassword": "Confirm Password",
+      "confirmPasswordPlaceholder": "Re-enter password",
+      "passwordMismatch": "Passwords do not match.",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "continue": "Continue to School Profile"
+    },
+    "step2": {
+      "titleProprietor": "Configure Group Profile",
+      "titleSchool": "Configure Institutional Details",
+      "subtitleProprietor": "Set up your organization name. You will create and manage individual schools from your dashboard.",
+      "subtitleSchool": "Provide information regarding your school, including the Schooldom tier.",
+      "groupName": "Official Group / Organization Name",
+      "groupNamePlaceholder": "Pinecrest Education Group",
+      "schoolName": "Official School Name",
+      "schoolNamePlaceholder": "Pinecrest Academy High",
+      "tier": "Schooldom Tier",
+      "tierK12": "K-12 Education",
+      "tierNonK12": "Non-K12 (Vocational, Tertiary, Academies)",
+      "tierHelp": "Select 'K-12' for foundational schools, or 'Non-K12' for higher/vocational education.",
+      "whatDoYouNeed": "What do you need?",
+      "productFull": "Full SchoolDom",
+      "productSchoolgate": "SchoolGate only",
+      "productHelp": "SchoolGate gives you Attendance, Staff, Finance, and Students only - billed per student each term. You can activate full School Management later at any time.",
+      "schoolgatePlan": "SchoolGate plan",
+      "schoolgateBasic": "Basic - ₦700 / student / term",
+      "schoolgatePremium": "Premium - ₦1,500 / student / term",
+      "address": "Institutional Physical Address (Optional)",
+      "addressPlaceholder": "402 Academic Circle, Suite 100",
+      "certifyOrg": "I certify that I am authorized to onboard this organization and I agree to the Institutional Onboarding Charter and Data Protection Agreement.",
+      "certifySchool": "I certify that I am authorized to onboard this school and I agree to the Institutional Onboarding Charter and Data Protection Agreement.",
+      "back": "Back",
+      "generating": "Generating...",
+      "generateCode": "Generate Verification Code"
+    },
+    "step3": {
+      "title": "Verify Your Account",
+      "subtitle": "We sent a 6-digit verification code to <bold>{{email}}</bold>.",
+      "schoolCodeLabel": "Your unique school code",
+      "copied": "Copied",
+      "copy": "Copy",
+      "verificationCode": "Verification Code",
+      "codeExpires": "Code expires in about {{minutes}} minutes.",
+      "verifying": "Verifying...",
+      "activate": "Activate Account",
+      "sending": "Sending...",
+      "resend": "Resend code"
+    },
+    "activated": {
+      "title": "Your school is live!",
+      "withCode": "Your unique school code is <bold>{{code}}</bold> — keep it safe, you'll need it to sign in.",
+      "withoutCode": "You can create your first school from the dashboard.",
+      "goToDashboard": "Go to Dashboard"
+    },
+    "errors": {
+      "connection": "Unable to reach the server. Check your connection and try again.",
+      "requestFailed": "Request failed. Please try again.",
+      "somethingWrong": "Something went wrong. Please try again.",
+      "verificationFailed": "Verification failed.",
+      "resendFailed": "Could not resend code."
+    }
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "fr": "Français",
+    "ar": "العربية",
+    "yo": "Yorùbá",
+    "pt": "Português"
+  }
+}
