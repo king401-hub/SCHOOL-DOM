@@ -8271,8 +8271,13 @@ export function IdCardPreview({ person, school, qrDataUrl, theme }) {
                 <strong>{person.unique_id || "No ID assigned"}</strong>
                 {/* Class dropped from the student card per school policy - staff
                     still show their role/specialization here, which is what
-                    primary_label actually means for that person_type. */}
-                <span>{person.person_type === "student" ? (person.secondary_label || "Learner") : (person.primary_label || "-")}</span>
+                    primary_label actually means for that person_type. A
+                    student with no secondary_label shows nothing rather than
+                    a generic "Learner" filler - the Student ribbon above
+                    already says what they are. */}
+                {person.person_type === "student"
+                  ? (person.secondary_label ? <span>{person.secondary_label}</span> : null)
+                  : <span>{person.primary_label || "-"}</span>}
               </div>
             </section>
 
@@ -8319,7 +8324,7 @@ export function IdCardPreview({ person, school, qrDataUrl, theme }) {
           ) : null}
 
           <footer className="id-card-footer id-card-front-footer">
-            <strong><span>Flip card to verify {person.email || person.secondary_label || "SchoolDom profile verification"}
+            <strong><span>Flip card to verify {brand.email || "SchoolDom profile verification"}
 </span></strong>
           </footer>
           <p className="id-card-powered-by">Powered by Schooldom</p>
