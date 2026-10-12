@@ -6,7 +6,7 @@ from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from .models import User, StudentProfile, TeacherProfile, ParentProfile, LoginHistory, generate_short_student_id, generate_short_teacher_id
 from core.models import SchoolGroup, SchoolTenant
-from finance.services import student_has_login_credit, update_student_activation_alerts, get_or_create_activation_credit_pool
+from finance.services import student_has_login_credit, update_student_activation_alerts, get_or_create_activation_credit_pool, normalize_phone_number
 import re
 
 SCHOOL_SCOPED_ROLES = {"student", "teacher", "staff", "accountant", "parent", "school_admin", "principal"}
@@ -46,7 +46,7 @@ class RegisterSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=150)
     middle_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=150)
-    phone = serializers.CharField(max_length=17, required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=17, required=True)
     role = serializers.ChoiceField(choices=User.ROLE_CHOICES)
     admin_title = serializers.CharField(max_length=80, required=False, allow_blank=True)
     school_code = serializers.CharField(max_length=50, required=False, allow_blank=True)
@@ -68,6 +68,13 @@ class RegisterSerializer(serializers.Serializer):
             raise serializers.ValidationError("A user with this email already exists.")
         return value.lower()
     
+    def validate_phone(self, value):
+        """Must be a real, SMS-reachable Nigerian number - it's about to be
+        sent an OTP it has to receive to finish signing up."""
+        if not normalize_phone_number(value).startswith("234"):
+            raise serializers.ValidationError("Enter a valid Nigerian phone number.")
+        return value
+
     def validate_password(self, value):
         """Validate password strength"""
         if len(value) < 8:

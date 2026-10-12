@@ -8902,3 +8902,195 @@ class GraduatedStudentsExcludedFromActiveFinanceReportingTests(TestCase):
 
         after = self.client.get("/api/finance/admin/overview/").data
         self.assertEqual(after["expected_fee_amount"], Decimal("0.00"))
+
+
+KUDISMS_SENT = {"status": "success", "error_code": "000", "route": "corporate"}
+KUDISMS_FAILED = {"status": "error", "reason": "KudiSMS credentials not configured."}
+
+
+@override_settings(ADMIN_OTP_ENABLED=True, ADMIN_OTP_DEBUG_CODE_ENABLED=True)
+class SignupPhoneVerificationTests(TestCase):
+    """Admin signup/login must confirm both email and phone before the
+    account is usable - the phone side mirrors the existing email-OTP
+    mechanism (see users.views.send_admin_otp) but over SMS via
+    send_kudisms. New signups block on a failed SMS the same way they
+    already block on a failed signup email; an *existing* account's one-time
+    backfill prompt does not, so a low SMS balance can never lock an admin
+    out of a working account."""
+
+    def setUp(self):
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Phone Verify School", schema_name="phoneverifyschool", is_active=True,
+        )
+
+    def _register_payload(self, **overrides):
+        payload = {
+            "email": f"admin.{self._testMethodName}@school.edu",
+            "password": "AdminPass123",
+            "confirm_password": "AdminPass123",
+            "first_name": "New",
+            "last_name": "Admin",
+            "phone": "08031234567",
+            "role": "school_admin",
+            "school_code": self.school.schema_name,
+            "terms_accepted": True,
+        }
+        payload.update(overrides)
+        return payload
+
+    @patch("users.views.send_kudisms", return_value=KUDISMS_SENT)
+    @patch("users.views.send_mail", return_value=1)
+    @patch("users.views.render_to_string", return_value="<p>code</p>")
+    def test_signup_without_phone_is_rejected(self, _render, _mail, _sms):
+        response = self.client.post(
+            "/api/auth/register/", self._register_payload(phone=""), format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("phone", response.data.get("errors", {}))
+
+    @patch("users.views.send_kudisms", return_value=KUDISMS_SENT)
+    @patch("users.views.send_mail", return_value=1)
+    @patch("users.views.render_to_string", return_value="<p>code</p>")
+    def test_signup_with_invalid_phone_is_rejected(self, _render, _mail, _sms):
+        response = self.client.post(
+            "/api/auth/register/", self._register_payload(phone="123"), format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("phone", response.data.get("errors", {}))
+
+    @patch("users.views.send_kudisms", return_value=KUDISMS_SENT)
+    @patch("users.views.send_mail", return_value=1)
+    @patch("users.views.render_to_string", return_value="<p>code</p>")
+    def test_signup_sends_both_email_and_phone_codes(self, _render, _mail, _sms):
+        response = self.client.post(
+            "/api/auth/register/", self._register_payload(), format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertTrue(response.data["requires_otp"])
+        self.assertTrue(response.data["requires_phone_otp"])
+        self.assertTrue(response.data["otp_challenge"])
+        self.assertTrue(response.data["phone_otp_challenge"])
+        self.assertIn("debug_otp", response.data)
+        self.assertIn("debug_phone_otp", response.data)
+
+    @patch("users.views.send_kudisms", return_value=KUDISMS_SENT)
+    @patch("users.views.send_mail", return_value=1)
+    @patch("users.views.render_to_string", return_value="<p>code</p>")
+    def test_full_signup_needs_both_codes_before_tokens_issue(self, _render, _mail, _sms):
+        signup = self.client.post(
+            "/api/auth/register/", self._register_payload(), format="json",
+        ).data
+        email = self._register_payload()["email"]
+
+        email_step = self.client.post("/api/auth/admin/verify-otp/", {
+            "email": email, "code": signup["debug_otp"], "challenge": signup["otp_challenge"],
+        }, format="json")
+        self.assertEqual(email_step.status_code, 200, email_step.data)
+        # Email alone must not issue tokens - phone is still unverified.
+        self.assertTrue(email_step.data.get("requires_phone_otp"))
+        self.assertNotIn("access", email_step.data)
+        user = User.objects.get(email__iexact=email)
+        self.assertIsNone(user.phone_verified_at)
+
+        phone_step = self.client.post("/api/auth/admin/verify-phone-otp/", {
+            "email": email,
+            "code": signup["debug_phone_otp"],
+            "challenge": email_step.data["phone_otp_challenge"],
+        }, format="json")
+        self.assertEqual(phone_step.status_code, 200, phone_step.data)
+        self.assertIn("access", phone_step.data)
+        user.refresh_from_db()
+        self.assertIsNotNone(user.phone_verified_at)
+
+    @patch("users.views.send_kudisms", return_value=KUDISMS_FAILED)
+    @patch("users.views.send_mail", return_value=1)
+    @patch("users.views.render_to_string", return_value="<p>code</p>")
+    def test_signup_blocks_when_sms_fails(self, _render, _mail, _sms):
+        response = self.client.post(
+            "/api/auth/register/", self._register_payload(), format="json",
+        )
+        self.assertEqual(response.status_code, 500, response.data)
+        self.assertFalse(response.data["success"])
+
+    def _existing_admin(self, **overrides):
+        defaults = {
+            "email": f"existing.{self._testMethodName}@school.edu",
+            "password": "AdminPass123",
+            "first_name": "Existing",
+            "last_name": "Admin",
+            "role": "school_admin",
+            "tenant": self.school,
+            "is_active": True,
+            "is_verified": True,
+        }
+        defaults.update(overrides)
+        return User.objects.create_user(**defaults)
+
+    def _login_to_email_otp(self, user, password="AdminPass123"):
+        with patch("users.views.send_mail", return_value=1), \
+             patch("users.views.render_to_string", return_value="<p>code</p>"):
+            return self.client.post(
+                "/api/auth/login/", {"email": user.email, "password": password}, format="json",
+            )
+
+    @patch("users.views.send_kudisms", return_value=KUDISMS_SENT)
+    def test_existing_admin_without_phone_is_prompted_then_can_complete_login(self, _sms):
+        user = self._existing_admin(phone="")
+        login = self._login_to_email_otp(user)
+        self.assertEqual(login.status_code, 200, login.data)
+
+        email_step = self.client.post("/api/auth/admin/verify-otp/", {
+            "email": user.email, "code": login.data["debug_otp"], "challenge": login.data["otp_challenge"],
+        }, format="json")
+        self.assertEqual(email_step.status_code, 200, email_step.data)
+        self.assertTrue(email_step.data.get("requires_phone_number"))
+        self.assertNotIn("access", email_step.data)
+
+        set_phone = self.client.post("/api/auth/admin/set-phone/", {
+            "email": user.email, "password": "AdminPass123", "phone": "08031234567",
+        }, format="json")
+        self.assertEqual(set_phone.status_code, 200, set_phone.data)
+        self.assertTrue(set_phone.data["requires_phone_otp"])
+
+        phone_step = self.client.post("/api/auth/admin/verify-phone-otp/", {
+            "email": user.email, "code": set_phone.data["debug_phone_otp"], "challenge": set_phone.data["phone_otp_challenge"],
+        }, format="json")
+        self.assertEqual(phone_step.status_code, 200, phone_step.data)
+        self.assertIn("access", phone_step.data)
+        user.refresh_from_db()
+        self.assertEqual(user.phone, "08031234567")
+        self.assertIsNotNone(user.phone_verified_at)
+
+    @patch("users.views.send_kudisms", return_value=KUDISMS_FAILED)
+    def test_existing_admin_is_not_locked_out_when_sms_fails(self, _sms):
+        """fail-open: a working account must never be blocked by a dead SMS
+        provider, unlike a fresh signup (see test_signup_blocks_when_sms_fails)."""
+        user = self._existing_admin(phone="08031234567")
+        login = self._login_to_email_otp(user)
+        self.assertEqual(login.status_code, 200, login.data)
+
+        email_step = self.client.post("/api/auth/admin/verify-otp/", {
+            "email": user.email, "code": login.data["debug_otp"], "challenge": login.data["otp_challenge"],
+        }, format="json")
+        self.assertEqual(email_step.status_code, 200, email_step.data)
+        # SMS send failed, but this is an existing, already-working account -
+        # it must be let through rather than locked out.
+        self.assertIn("access", email_step.data)
+        self.assertFalse(email_step.data.get("requires_phone_otp"))
+
+    @patch("users.views.send_kudisms", return_value=KUDISMS_SENT)
+    def test_already_verified_phone_is_never_asked_again(self, _sms):
+        user = self._existing_admin(phone="08031234567", phone_verified_at=timezone.now())
+        login = self._login_to_email_otp(user)
+        self.assertEqual(login.status_code, 200, login.data)
+
+        email_step = self.client.post("/api/auth/admin/verify-otp/", {
+            "email": user.email, "code": login.data["debug_otp"], "challenge": login.data["otp_challenge"],
+        }, format="json")
+        self.assertEqual(email_step.status_code, 200, email_step.data)
+        self.assertIn("access", email_step.data)
+        self.assertFalse(email_step.data.get("requires_phone_otp"))
+        _sms.assert_not_called()

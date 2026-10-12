@@ -32,7 +32,7 @@ from .serializers import (
     CheckEmailSerializer, CreateSchoolSerializer
 )
 from .serializers import ResendVerificationSerializer
-from finance.services import get_or_create_activation_credit_pool, grant_school_registration_credits, student_has_login_credit, update_student_activation_alerts
+from finance.services import get_or_create_activation_credit_pool, grant_school_registration_credits, student_has_login_credit, update_student_activation_alerts, send_kudisms, _kudisms_accepted, normalize_phone_number
 
 ADMIN_OTP_ROLES = {"school_admin", "principal", "school_superadmin"}
 ADMIN_OTP_ENABLED = getattr(settings, "ADMIN_OTP_ENABLED", False)
@@ -40,6 +40,8 @@ ADMIN_OTP_EXPIRY_MINUTES = 10
 ADMIN_OTP_MAX_ATTEMPTS = 5  # wrong guesses allowed per emailed code
 PASSWORD_RESET_OTP_EXPIRY_MINUTES = 10
 PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5
+PHONE_OTP_EXPIRY_MINUTES = 10
+PHONE_OTP_MAX_ATTEMPTS = 5  # wrong guesses allowed per texted code
 # Accounts that never require login/signup OTP, regardless of role.
 ADMIN_OTP_EXEMPT_EMAILS = {"ayobamisolomon004@gmail.com", "autovendor1@gmail.com", "icon01@gmail.com"}
 logger = logging.getLogger(__name__)
@@ -415,6 +417,136 @@ def clear_admin_otp(user):
     ])
 
 
+def send_phone_otp(user, purpose="signup"):
+    """SMS counterpart to send_admin_otp - same shape (hashed code, signed
+    challenge, timed expiry), sent via send_kudisms instead of email. Raises
+    on send failure; callers decide what that means (a fresh signup blocks on
+    it like a failed email OTP already does, but the one-time backfill
+    prompt for an existing account does not - see needs_phone_verification /
+    _require_phone_otp_response, since a low SMS balance must never lock an
+    admin out of an account that already worked)."""
+    code = "".join(secrets.choice(string.digits) for _ in range(6))
+    challenge = secrets.token_urlsafe(32)
+    user._phone_otp_debug_code = code
+    user.phone_otp_hash = make_password(code)
+    user.phone_otp_sent_at = timezone.now()
+    user.phone_otp_purpose = purpose
+    user.phone_otp_attempts = 0
+    user.phone_otp_challenge = challenge
+    user.save(update_fields=[
+        "phone_otp_hash",
+        "phone_otp_sent_at",
+        "phone_otp_purpose",
+        "phone_otp_attempts",
+        "phone_otp_challenge",
+    ])
+
+    result = send_kudisms(
+        user.phone,
+        f"Your SchoolDom phone verification code is {code}. It expires in {PHONE_OTP_EXPIRY_MINUTES} minutes.",
+    )
+    accepted, reason = _kudisms_accepted(result)
+    if not accepted:
+        raise RuntimeError(reason)
+    return challenge
+
+
+def get_phone_otp_device(user, challenge=None):
+    if not challenge or user.phone_otp_challenge != challenge:
+        return None
+    if not user.phone_otp_sent_at:
+        return None
+    expires_at = user.phone_otp_sent_at + timedelta(minutes=PHONE_OTP_EXPIRY_MINUTES)
+    if timezone.now() > expires_at:
+        return None
+    return user
+
+
+def clear_phone_otp(user):
+    user.phone_otp_hash = None
+    user.phone_otp_sent_at = None
+    user.phone_otp_purpose = ''
+    user.phone_otp_attempts = 0
+    user.phone_otp_challenge = None
+    user.phone_verified_at = timezone.now()
+    user.save(update_fields=[
+        "phone_otp_hash",
+        "phone_otp_sent_at",
+        "phone_otp_purpose",
+        "phone_otp_attempts",
+        "phone_otp_challenge",
+        "phone_verified_at",
+    ])
+
+
+def phone_otp_debug_payload(user):
+    if not getattr(settings, "ADMIN_OTP_DEBUG_CODE_ENABLED", False):
+        return {}
+    code = getattr(user, "_phone_otp_debug_code", "")
+    return {"debug_phone_otp": code} if code else {}
+
+
+def needs_phone_verification(user):
+    """True when this admin-ish account (see ADMIN_OTP_ROLES/is_admin_otp_user
+    - same roles and exemptions as the email OTP gate) must confirm a phone
+    number before finishing login/signup. Covers both accounts that never set
+    a phone (predate phone being required at signup) and ones with an
+    unverified phone already on file."""
+    return is_admin_otp_user(user) and not user.phone_verified_at
+
+
+def require_phone_otp_response(user, request, *, fail_open, otp_purpose):
+    """Shared tail for both login_view's skip-email-OTP branch and
+    admin_verify_otp's post-email-success branch: returns a Response to send
+    back if phone verification still needs to happen, or None to let the
+    caller proceed to issuing tokens.
+
+    fail_open=True (an existing account - see needs_phone_verification) lets
+    login through if the SMS can't be sent rather than ever locking a working
+    account out. fail_open=False (a signup still being completed, not yet a
+    working account) blocks the same way a failed email OTP already does.
+    """
+    if not needs_phone_verification(user):
+        return None
+
+    if not user.phone:
+        return Response({
+            'success': True,
+            'requires_phone_number': True,
+            'otp_purpose': otp_purpose,
+            'message': 'Add a phone number to your account - we will text you a verification code.',
+            'user': UserSerializer(user).data,
+        })
+
+    reusable = get_phone_otp_device(user, user.phone_otp_challenge)
+    challenge = user.phone_otp_challenge if reusable else None
+    if not challenge:
+        try:
+            challenge = send_phone_otp(user, purpose=otp_purpose)
+        except Exception:
+            logger.warning("Phone OTP send failed for %s.", user.email, exc_info=True)
+            if fail_open:
+                return None
+            return Response({
+                'success': False,
+                'message': 'Could not send the phone verification code. Please try again shortly.',
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return Response({
+        'success': True,
+        'requires_phone_otp': True,
+        'otp_purpose': otp_purpose,
+        'phone_otp_challenge': challenge,
+        'phone_otp_expires_in': PHONE_OTP_EXPIRY_MINUTES * 60,
+        'message': 'Enter the 6-digit code sent to your phone to continue.',
+        'user': UserSerializer(user).data,
+        'school_code': user.tenant.schema_name if user.tenant else '',
+        'school': auth_school_payload(user),
+        'school_group': auth_school_group_payload(user),
+        **phone_otp_debug_payload(user),
+    })
+
+
 def admin_redirect_url(user):
     return {
         'super_admin': '/admin/dashboard/',
@@ -522,15 +654,34 @@ def register(request):
                     'success': False,
                     'message': 'Account created but the verification email could not be sent. Please configure the school email SMTP settings and try resend OTP.'
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # Both codes go out together so the frontend has them both ready
+            # without a second round trip - the admin enters the email code
+            # first (existing flow via admin_verify_otp), then the phone code
+            # (phone_verify_otp), which is what actually issues tokens. A
+            # fresh signup blocks on a failed phone send the same way it
+            # already blocks on a failed email send above - there's no
+            # working account yet to protect from lockout.
+            try:
+                phone_challenge = send_phone_otp(user, purpose="signup")
+            except Exception:
+                logger.warning("Admin signup OTP SMS delivery failed for %s.", user.email, exc_info=True)
+                return Response({
+                    'success': False,
+                    'message': 'Account created but the verification text could not be sent. Please check the phone number and try resend OTP.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             return Response({
                 'success': True,
                 'requires_otp': True,
                 'otp_purpose': 'signup',
                 'otp_challenge': challenge,
                 'otp_expires_in': ADMIN_OTP_EXPIRY_MINUTES * 60,
-                'message': 'Account created. Enter the 6-digit OTP sent to your email to activate admin access.',
+                'requires_phone_otp': True,
+                'phone_otp_challenge': phone_challenge,
+                'phone_otp_expires_in': PHONE_OTP_EXPIRY_MINUTES * 60,
+                'message': 'Account created. Enter the 6-digit code sent to your email, then the one sent to your phone, to activate admin access.',
                 'user': UserSerializer(user).data,
                 **admin_otp_debug_payload(user),
+                **phone_otp_debug_payload(user),
             }, status=status.HTTP_201_CREATED)
         
         # Return response
@@ -784,6 +935,11 @@ def login_view(request):
                 **admin_otp_debug_payload(user),
             })
 
+        phone_response = require_phone_otp_response(user, request, fail_open=True, otp_purpose="login")
+        if phone_response:
+            create_login_history(user, request, status='success')
+            return phone_response
+
         tokens = get_tokens_for_user(user)
         create_login_history(user, request, status='success')
         if not user.is_verified:
@@ -998,6 +1154,7 @@ def admin_verify_otp(request):
             'message': f'Invalid OTP code. {remaining} attempt{"s" if remaining != 1 else ""} remaining.'
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    otp_purpose = user.admin_otp_purpose or 'login'
     if not user.is_verified:
         user.is_verified = True
         user.email_verified_at = timezone.now()
@@ -1009,6 +1166,16 @@ def admin_verify_otp(request):
     user.reset_login_attempts()
     clear_admin_otp(user)
     create_login_history(user, request, status='success')
+
+    # A fresh signup (purpose="signup") isn't a working account yet, so it
+    # blocks on the phone step the same way a failed email OTP already does
+    # (fail_open=False). An existing account completing its regular login
+    # email OTP (purpose="login") must never be locked out by a low SMS
+    # balance (fail_open=True) - see require_phone_otp_response.
+    phone_response = require_phone_otp_response(user, request, fail_open=(otp_purpose != 'signup'), otp_purpose=otp_purpose)
+    if phone_response:
+        return phone_response
+
     tokens = get_tokens_for_user(user)
     return Response({
         'success': True,
@@ -1053,6 +1220,142 @@ def admin_resend_otp(request):
         'otp_challenge': next_challenge,
         'otp_expires_in': ADMIN_OTP_EXPIRY_MINUTES * 60,
         **admin_otp_debug_payload(user),
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
+def set_phone_and_send_otp(request):
+    """For an admin account that has no phone on file yet (the
+    requires_phone_number response from login/signup/admin_verify_otp) -
+    there's no session at this point to authenticate the request any other
+    way, so this re-checks the password, then saves the phone and sends its
+    OTP in one step."""
+    email = str(request.data.get('email') or '').strip().lower()
+    password = str(request.data.get('password') or '')
+    phone = str(request.data.get('phone') or '').strip()
+    if not (email and password and phone):
+        return Response({'success': False, 'message': 'Email, password, and phone are required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not normalize_phone_number(phone).startswith('234'):
+        return Response({'success': False, 'message': 'Enter a valid Nigerian phone number.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        return Response({'success': False, 'message': 'Invalid credentials.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not user.check_password(password):
+        return Response({'success': False, 'message': 'Invalid credentials.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not needs_phone_verification(user):
+        return Response({'success': False, 'message': 'Phone verification is not required for this account.'}, status=status.HTTP_400_BAD_REQUEST)
+    user.phone = phone
+    user.save(update_fields=['phone'])
+    try:
+        challenge = send_phone_otp(user, purpose='login')
+    except Exception:
+        logger.warning("Phone OTP send failed for %s after setting phone.", user.email, exc_info=True)
+        return Response({'success': False, 'message': 'Could not send the verification code. Please try again shortly.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return Response({
+        'success': True,
+        'requires_phone_otp': True,
+        'otp_purpose': 'login',
+        'phone_otp_challenge': challenge,
+        'phone_otp_expires_in': PHONE_OTP_EXPIRY_MINUTES * 60,
+        'message': 'Enter the 6-digit code sent to your phone to continue.',
+        **phone_otp_debug_payload(user),
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def phone_verify_otp(request):
+    email = str(request.data.get('email') or '').strip().lower()
+    code = str(request.data.get('code') or request.data.get('otp') or '').strip()
+    challenge = str(request.data.get('challenge') or request.data.get('phone_otp_challenge') or '').strip()
+    if not email or not code or not challenge:
+        return Response({'success': False, 'message': 'Email, code, and challenge are required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not re.fullmatch(r"\d{6}", code):
+        return Response({'success': False, 'message': 'Code must be 6 digits.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        return Response({'success': False, 'message': 'Invalid verification challenge.'}, status=status.HTTP_404_NOT_FOUND)
+    if not is_admin_otp_user(user):
+        return Response({'success': False, 'message': 'Phone verification is only required for admin accounts.'}, status=status.HTTP_400_BAD_REQUEST)
+    otp_user = get_phone_otp_device(user, challenge=challenge)
+    if not otp_user:
+        return Response({'success': False, 'message': 'Verification code expired or invalid - request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    too_many_response = Response(
+        {'success': False, 'message': 'Too many incorrect codes. Please sign in again to get a new code.'},
+        status=status.HTTP_429_TOO_MANY_REQUESTS,
+    )
+    if user.phone_otp_attempts >= PHONE_OTP_MAX_ATTEMPTS:
+        return too_many_response
+    if not user.phone_otp_hash or not check_password(code, user.phone_otp_hash):
+        user.phone_otp_attempts += 1
+        user.save(update_fields=['phone_otp_attempts'])
+        remaining = max(PHONE_OTP_MAX_ATTEMPTS - user.phone_otp_attempts, 0)
+        if remaining == 0:
+            return too_many_response
+        return Response({
+            'success': False,
+            'message': f'Invalid code. {remaining} attempt{"s" if remaining != 1 else ""} remaining.'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    clear_phone_otp(user)  # sets phone_verified_at
+    user.last_login = timezone.now()
+    user.update_last_login_ip(get_client_ip(request))
+    user.reset_login_attempts()
+    create_login_history(user, request, status='success')
+    tokens = get_tokens_for_user(user)
+    return Response({
+        'success': True,
+        'message': 'Phone verified.',
+        'user': UserSerializer(user).data,
+        'school_code': user.tenant.schema_name if user.tenant else '',
+        'school': auth_school_payload(user),
+        'school_group': auth_school_group_payload(user),
+        'redirect_url': admin_redirect_url(user),
+        'device_trust_token': issue_device_trust_token(user),
+        **tokens
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
+def phone_resend_otp(request):
+    email = str(request.data.get('email') or '').strip().lower()
+    challenge = str(request.data.get('challenge') or request.data.get('phone_otp_challenge') or '').strip()
+    if not email:
+        return Response({'success': False, 'message': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        return Response({'success': False, 'message': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if not is_admin_otp_user(user):
+        return Response({'success': False, 'message': 'Phone OTP resend is only available for admin accounts.'}, status=status.HTTP_400_BAD_REQUEST)
+    if challenge and user.phone_otp_challenge != challenge:
+        return Response({'success': False, 'message': 'Invalid verification challenge.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not user.phone:
+        return Response({'success': False, 'message': 'No phone number on file yet.'}, status=status.HTTP_400_BAD_REQUEST)
+    purpose = user.phone_otp_purpose or 'login'
+    try:
+        next_challenge = send_phone_otp(user, purpose=purpose)
+    except Exception:
+        logger.warning("Phone OTP resend failed for %s.", user.email, exc_info=True)
+        return Response({'success': False, 'message': 'Could not send the code. Please try again shortly.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return Response({
+        'success': True,
+        'message': 'A new code has been sent to your phone.',
+        'requires_phone_otp': True,
+        'otp_purpose': purpose,
+        'phone_otp_challenge': next_challenge,
+        'phone_otp_expires_in': PHONE_OTP_EXPIRY_MINUTES * 60,
+        **phone_otp_debug_payload(user),
     })
 
 @api_view(['POST'])

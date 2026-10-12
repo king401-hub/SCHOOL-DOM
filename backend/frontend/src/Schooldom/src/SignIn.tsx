@@ -32,7 +32,17 @@ interface OtpResponse {
   user: any;
 }
 
-type LoginResponse = SessionData | OtpResponse;
+interface PhoneStepResponse {
+  requiresPhoneOtp: boolean;
+  requiresPhoneNumber: boolean;
+  email: string;
+  challenge: string;
+  expiresIn: number;
+  debugCode: string;
+  message: string;
+}
+
+type LoginResponse = SessionData | OtpResponse | PhoneStepResponse;
 
 // ============================================
 // CONSTANTS
@@ -167,6 +177,13 @@ function isOtpResponse(response: LoginResponse): response is OtpResponse {
   return (response as OtpResponse).requiresOtp === true;
 }
 
+// Type guard to check if response is a PhoneStepResponse (the one-time
+// backfill prompt for an existing account with no verified phone yet).
+function isPhoneStepResponse(response: LoginResponse): response is PhoneStepResponse {
+  const candidate = response as PhoneStepResponse;
+  return candidate.requiresPhoneOtp === true || candidate.requiresPhoneNumber === true;
+}
+
 // ============================================
 // MAIN SIGNIN COMPONENT
 // ============================================
@@ -208,6 +225,18 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   const [otpExpiresIn, setOtpExpiresIn] = useState(0);
   const [otpDebugCode, setOtpDebugCode] = useState("");
   const [isResendingOtp, setIsResendingOtp] = useState(false);
+  // Phone OTP: the second verification step after email, for both a fresh
+  // signup and an existing admin account whose phone was never confirmed
+  // (or never set at all - see phoneNumberInput below). Mirrors the email
+  // OTP state above one-for-one.
+  const [phoneOtpCode, setPhoneOtpCode] = useState("");
+  const [phoneOtpChallenge, setPhoneOtpChallenge] = useState("");
+  const [phoneOtpExpiresIn, setPhoneOtpExpiresIn] = useState(0);
+  const [phoneOtpDebugCode, setPhoneOtpDebugCode] = useState("");
+  const [isResendingPhoneOtp, setIsResendingPhoneOtp] = useState(false);
+  // Only used for an existing account signing in with no phone on file yet -
+  // a fresh signup always collects phone upfront (see the signup form).
+  const [phoneNumberInput, setPhoneNumberInput] = useState("");
   const [forgotEmail, setForgotEmail] = useState("");
   const [resetOtpCode, setResetOtpCode] = useState("");
   const [resetPassword, setResetPassword] = useState("");
@@ -239,6 +268,10 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   const titleText =
     mode === "otp"
       ? "Verify admin access."
+      : mode === "phone-number"
+      ? "Add your phone number."
+      : mode === "phone-otp"
+      ? "Verify your phone."
       : mode === "forgot"
       ? "Reset your password."
       : mode === "reset"
@@ -301,6 +334,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
       signupEmail.trim().length === 0 ||
       signupPassword.length === 0 ||
       confirmPassword.length === 0 ||
+      phone.trim().length === 0 ||
       !termsAccepted
     ) {
       return false;
@@ -330,6 +364,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
     isSchoolSuperadminSignup,
     isStudentSignup,
     lastName,
+    phone,
     schoolCode,
     schoolGroupName,
     signupEmail,
@@ -455,6 +490,20 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
       };
     }
 
+    // A device-trusted or email-OTP-exempt login still needs the one-time
+    // phone backfill - see require_phone_otp_response on the backend.
+    if (data.requires_phone_otp || data.requires_phone_number) {
+      return {
+        requiresPhoneOtp: Boolean(data.requires_phone_otp),
+        requiresPhoneNumber: Boolean(data.requires_phone_number),
+        email: payload.email,
+        challenge: data.phone_otp_challenge || "",
+        expiresIn: data.phone_otp_expires_in || 600,
+        debugCode: data.debug_phone_otp || "",
+        message: data.message || "Confirm your phone number to continue.",
+      };
+    }
+
     const session: SessionData = {
       user: data.user,
       access: data.access,
@@ -492,6 +541,22 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
         setOtpDebugCode(response.debugCode || "");
         setOtpCode("");
         setMode("otp");
+        setSuccessMessage(response.message);
+        return;
+      }
+
+      if (isPhoneStepResponse(response)) {
+        setOtpEmail(response.email);
+        if (response.requiresPhoneOtp) {
+          setPhoneOtpChallenge(response.challenge);
+          setPhoneOtpExpiresIn(response.expiresIn);
+          setPhoneOtpDebugCode(response.debugCode || "");
+          setPhoneOtpCode("");
+          setMode("phone-otp");
+        } else {
+          setPhoneNumberInput("");
+          setMode("phone-number");
+        }
         setSuccessMessage(response.message);
         return;
       }
@@ -621,16 +686,112 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
         code: otpCode.trim(),
         challenge: otpChallenge,
       });
-      if (!data.success || !data.access) {
+      if (!data.success) {
         throw new Error(parseErrorMessage(data, "OTP verification failed."));
       }
       setOtpCode("");
-      setSuccessMessage(data.message || "Admin verification successful.");
-      completeSession(data);
+      if (data.access) {
+        setSuccessMessage(data.message || "Admin verification successful.");
+        completeSession(data);
+        return;
+      }
+      // Email confirmed, but this account still needs to confirm a phone
+      // number before it's fully activated - see users.views.register /
+      // require_phone_otp_response on the backend.
+      if (data.requires_phone_otp) {
+        setPhoneOtpChallenge(data.phone_otp_challenge);
+        setPhoneOtpExpiresIn(data.phone_otp_expires_in || 600);
+        setPhoneOtpDebugCode(data.debug_phone_otp || "");
+        setPhoneOtpCode("");
+        setMode("phone-otp");
+        setSuccessMessage(data.message || "Enter the code sent to your phone.");
+        return;
+      }
+      if (data.requires_phone_number) {
+        setPhoneNumberInput("");
+        setMode("phone-number");
+        setSuccessMessage(data.message || "Add a phone number to continue.");
+        return;
+      }
+      throw new Error("OTP verification failed.");
     } catch (requestError: any) {
       setError(requestError.message || "OTP verification failed.");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSetPhoneNumber = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    setSuccessMessage("");
+    setIsSubmitting(true);
+    try {
+      const data = await postAuth("/api/auth/admin/set-phone/", {
+        email: otpEmail,
+        password,
+        phone: phoneNumberInput.trim(),
+      });
+      if (!data.success || !data.requires_phone_otp) {
+        throw new Error(parseErrorMessage(data, "Could not send a verification code to that number."));
+      }
+      setPhoneOtpChallenge(data.phone_otp_challenge);
+      setPhoneOtpExpiresIn(data.phone_otp_expires_in || 600);
+      setPhoneOtpDebugCode(data.debug_phone_otp || "");
+      setPhoneOtpCode("");
+      setMode("phone-otp");
+      setSuccessMessage(data.message || "Enter the code sent to your phone.");
+    } catch (requestError: any) {
+      setError(requestError.message || "Could not send a verification code to that number.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleVerifyPhoneOtp = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    setSuccessMessage("");
+    setIsSubmitting(true);
+    try {
+      const data = await postAuth("/api/auth/admin/verify-phone-otp/", {
+        email: otpEmail,
+        code: phoneOtpCode.trim(),
+        challenge: phoneOtpChallenge,
+      });
+      if (!data.success || !data.access) {
+        throw new Error(parseErrorMessage(data, "Verification failed."));
+      }
+      setPhoneOtpCode("");
+      setPassword("");
+      setSuccessMessage(data.message || "Phone verified.");
+      completeSession(data);
+    } catch (requestError: any) {
+      setError(requestError.message || "Verification failed.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResendPhoneOtp = async () => {
+    if (!otpEmail || isResendingPhoneOtp) return;
+    setError("");
+    setSuccessMessage("");
+    setIsResendingPhoneOtp(true);
+    try {
+      const data = await postAuth("/api/auth/admin/resend-phone-otp/", {
+        email: otpEmail,
+        challenge: phoneOtpChallenge,
+      });
+      setPhoneOtpChallenge(data.phone_otp_challenge || phoneOtpChallenge);
+      setPhoneOtpExpiresIn(data.phone_otp_expires_in || 600);
+      setPhoneOtpDebugCode(data.debug_phone_otp || "");
+      setPhoneOtpCode("");
+      setSuccessMessage(data.message || "A new code has been sent to your phone.");
+    } catch (requestError: any) {
+      setError(requestError.message || "Could not resend the code.");
+    } finally {
+      setIsResendingPhoneOtp(false);
     }
   };
 
@@ -1062,6 +1223,89 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                       Back to sign in
                     </button>
                   </form>
+                ) : mode === "phone-number" ? (
+                  <form className="signup-form otp-form" onSubmit={handleSetPhoneNumber} noValidate>
+                    <p className="success-text">
+                      Add a phone number for <strong>{otpEmail}</strong> - we'll text a code to confirm it.
+                    </p>
+                    <label htmlFor="admin-phone-number">Phone</label>
+                    <div className="input-wrap">
+                      <span className="input-icon">P</span>
+                      <input
+                        id="admin-phone-number"
+                        type="tel"
+                        value={phoneNumberInput}
+                        onChange={(event) => setPhoneNumberInput(event.target.value)}
+                        placeholder="08012345678"
+                        autoComplete="tel"
+                        required
+                      />
+                    </div>
+                    {error ? <p className="error-text">{error}</p> : null}
+                    {successMessage ? <p className="success-text">{successMessage}</p> : null}
+                    <button type="submit" className="signup-button" disabled={phoneNumberInput.trim().length === 0 || isSubmitting}>
+                      {isSubmitting ? "Sending..." : "Send code"}
+                    </button>
+                    <button
+                      type="button"
+                      className="create-school-trigger"
+                      onClick={() => {
+                        switchMode("signin");
+                        setPhoneNumberInput("");
+                      }}
+                    >
+                      Back to sign in
+                    </button>
+                  </form>
+                ) : mode === "phone-otp" ? (
+                  <form className="signup-form otp-form" onSubmit={handleVerifyPhoneOtp} noValidate>
+                    <p className="success-text">
+                      We texted a 6-digit code to confirm the phone number on <strong>{otpEmail}</strong>.
+                    </p>
+                    <label htmlFor="admin-phone-otp">Verification code</label>
+                    <div className="input-wrap">
+                      <span className="input-icon">#</span>
+                      <input
+                        id="admin-phone-otp"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]{6}"
+                        maxLength={6}
+                        value={phoneOtpCode}
+                        onChange={(event) => setPhoneOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                        placeholder="000000"
+                        autoComplete="one-time-code"
+                        required
+                      />
+                    </div>
+                    <p className="help-text">
+                      Code expires in about {Math.max(Math.ceil(Number(phoneOtpExpiresIn || 0) / 60), 1)} minutes. After too many wrong attempts, the account will lock.
+                    </p>
+                    {phoneOtpDebugCode ? (
+                      <p className="success-text">
+                        Local development OTP: <strong>{phoneOtpDebugCode}</strong>
+                      </p>
+                    ) : null}
+                    {error ? <p className="error-text">{error}</p> : null}
+                    {successMessage ? <p className="success-text">{successMessage}</p> : null}
+                    <button type="submit" className="signup-button" disabled={phoneOtpCode.length !== 6 || isSubmitting}>
+                      {isSubmitting ? "Verifying..." : "Verify and continue"}
+                    </button>
+                    <button type="button" className="create-school-trigger" disabled={isResendingPhoneOtp} onClick={handleResendPhoneOtp}>
+                      {isResendingPhoneOtp ? "Sending..." : "Resend code"}
+                    </button>
+                    <button
+                      type="button"
+                      className="create-school-trigger"
+                      onClick={() => {
+                        switchMode("signin");
+                        setPhoneOtpCode("");
+                        setPhoneOtpDebugCode("");
+                      }}
+                    >
+                      Back to sign in
+                    </button>
+                  </form>
                 ) : mode === "signin" ? (
                   <form className="signup-form" onSubmit={handleSignIn} noValidate>
                     <label htmlFor="signin-email">Email address</label>
@@ -1246,12 +1490,14 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                       <span className="input-icon">P</span>
                       <input
                         id="signup-phone"
-                        type="text"
+                        type="tel"
                         value={phone}
                         onChange={(event) => setPhone(event.target.value)}
-                        placeholder="+1234567890"
+                        placeholder="08012345678"
+                        required
                       />
                     </div>
+                    <p className="field-hint">We'll text a verification code to this number - it must be reachable.</p>
 
                     <label htmlFor="admin-role-title">Role</label>
                     {isStudentSignup ? (

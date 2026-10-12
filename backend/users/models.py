@@ -144,6 +144,18 @@ class User(AbstractBaseUser, PermissionsMixin):
     admin_otp_challenge = models.CharField(max_length=64, blank=True, null=True)
     admin_otp_verified_at = models.DateTimeField(null=True, blank=True)
 
+    # Phone OTP (SMS) - same shape as Admin OTP above, sent via send_kudisms
+    # instead of email. Required at signup for admin-ish roles (see
+    # ADMIN_OTP_ROLES) alongside the email OTP; for accounts that existed
+    # before this field did, phone_verified_at is null and a one-time
+    # verification prompt appears on next login instead.
+    phone_verified_at = models.DateTimeField(null=True, blank=True)
+    phone_otp_hash = models.CharField(max_length=128, blank=True, null=True)
+    phone_otp_sent_at = models.DateTimeField(null=True, blank=True)
+    phone_otp_purpose = models.CharField(max_length=32, default='')
+    phone_otp_attempts = models.PositiveIntegerField(default=0)
+    phone_otp_challenge = models.CharField(max_length=64, blank=True, null=True)
+
     # Account deletion grace period
     account_deletion_requested_at = models.DateTimeField(null=True, blank=True)
     account_deletion_scheduled_for = models.DateTimeField(null=True, blank=True)
