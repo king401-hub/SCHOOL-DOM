@@ -7868,6 +7868,51 @@ class TermTransitionAutoCheckTests(TestCase):
         self.assertIsNone(second_response.data["term_transition"])
         self.assertEqual(TermTransitionState.objects.count(), 1)
 
+    def test_a_stale_next_term_missing_state_self_heals_once_an_active_term_exists(self):
+        """Regression: an admin who fixed "no next term configured" by going
+        straight to Settings (not the popup's own button) used to keep seeing
+        the popup forever, since nothing told the old TermTransitionState a
+        new term now exists."""
+        ended_term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", academic_year=self.year, is_active=False,
+            start_date=timezone.localdate() - timedelta(days=100), end_date=timezone.localdate() - timedelta(days=1),
+        )
+        TermTransitionState.objects.create(tenant=self.legacy_tenant, ended_term=ended_term, next_term_missing=True, is_resolved=False)
+        # Simulates an admin manually configuring the next term in Settings,
+        # independent of the popup/this test's dashboard-load path.
+        Term.objects.create(
+            tenant=self.legacy_tenant, name="Second Term", academic_year=self.year, is_active=True,
+            start_date=timezone.localdate(), end_date=timezone.localdate() + timedelta(days=89),
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get("/api/app/dashboard/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsNone(response.data["term_transition"])
+        state = TermTransitionState.objects.get(tenant=self.legacy_tenant)
+        self.assertTrue(state.is_resolved)
+
+    def test_saving_a_term_in_settings_clears_a_pending_transition(self):
+        """End-to-end via the real settings-save endpoint, not just the
+        model-level self-heal above."""
+        ended_term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", academic_year=self.year, is_active=False,
+            start_date=timezone.localdate() - timedelta(days=100), end_date=timezone.localdate() - timedelta(days=1),
+        )
+        TermTransitionState.objects.create(tenant=self.legacy_tenant, ended_term=ended_term, next_term_missing=True, is_resolved=False)
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.patch("/api/app/school/settings/", {
+            "term_name": "Second Term",
+            "term_start_date": timezone.localdate().isoformat(),
+            "term_end_date": (timezone.localdate() + timedelta(days=89)).isoformat(),
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+
+        dashboard_response = self.client.get("/api/app/dashboard/")
+        self.assertIsNone(dashboard_response.data["term_transition"])
+
 
 class StudentDirectoryPagingTests(TestCase):
     """The admin Student Directory loads students a page at a time. Choosing a

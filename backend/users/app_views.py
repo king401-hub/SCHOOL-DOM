@@ -584,12 +584,28 @@ def _pending_term_transition(user):
     """The tenant's unresolved TermTransitionState, if any - school-wide,
     not per-admin, so whichever admin loads /dashboard first sees it and
     resolving it (via term_transition_resolve below) clears it for every
-    other admin at that school too."""
-    return (
+    other admin at that school too.
+
+    Self-heals a next_term_missing state here: an admin can fix "no next
+    term configured" either via the popup's own "Open Term Settings" button
+    or by just going to Settings on their own without ever seeing the
+    popup's wording - either way, the school-settings endpoint (school_
+    settings) doesn't know or care about this state when it saves a term.
+    A currently active Term existing means the thing this state was nagging
+    about is already done, so it's treated as stale the moment it's read
+    rather than staying stuck referencing a term that ended terms ago."""
+    state = (
         _scope_to_user_tenant(TermTransitionState.objects.select_related("ended_term", "ended_term__academic_year"), user)
         .filter(is_resolved=False)
         .first()
     )
+    if state and state.next_term_missing and state.tenant_id:
+        if Term.objects.filter(tenant_id=state.tenant_id, is_active=True).exists():
+            state.is_resolved = True
+            state.resolved_at = timezone.now()
+            state.save(update_fields=["is_resolved", "resolved_at", "updated_at"])
+            return None
+    return state
 
 
 def _term_transition_payload(state):
@@ -8393,6 +8409,9 @@ def school_settings(request):
                     {"success": False, "message": f"Could not save the term: {exc}"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            # Any pending "no next term configured" TermTransitionState is
+            # now stale - a new active term exists - and self-heals the next
+            # time anything reads it (see _pending_term_transition).
 
         return Response(
             {
