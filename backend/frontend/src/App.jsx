@@ -9133,14 +9133,18 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       if (classId) params.set("class_id", classId);
       const searchAtRequestTime = studentSearchRef.current;
       if (searchAtRequestTime) params.set("q", searchAtRequestTime);
-      const requestId = studentsRequestRef.current;
       studentsLoadingMoreRef.current = true;
       try {
         const result = await requestJson(session, "GET", `/api/app/students/?${params.toString()}`);
-        // The list was reloaded, switched to another class, or re-searched while
-        // this page was on its way - appending it would mix results, so drop it.
+        // Only drop this page if the admin actually switched class/search while
+        // it was on its way - appending it now would mix results. An unrelated
+        // background refresh of the same view (the active-screen poll, or the
+        // data-mutation sweep after some other save finishing anywhere in the
+        // app) also reloads "/students" and bumps the shared request counter,
+        // but that alone isn't a reason to discard this page - it used to be
+        // checked here too, which silently dropped "View more" any time a save
+        // elsewhere landed while this fetch was in flight.
         if (
-          requestId !== studentsRequestRef.current ||
           String(classId || "") !== studentClassFilterRef.current ||
           searchAtRequestTime !== studentSearchRef.current
         ) {
