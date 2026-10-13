@@ -8266,22 +8266,15 @@ function blobToDataUrl(blob) {
   });
 }
 
-export function IdCardPreview({ person, school, qrDataUrl, theme }) {
+/** The front+back card markup, shared between the single interactive
+ * preview (IdCardPreview, below) and the bulk print area (used when
+ * exporting many cards into one combined PDF) - so both surfaces stay
+ * pixel-identical by construction instead of by copy-paste discipline. */
+function IdCardFaces({ person, school, qrDataUrl, theme, flipped }) {
   const brand = resolveSchoolBrand(school);
   const docTheme = theme || resolveDocumentTheme(school);
-  const [isFlipped, setIsFlipped] = useState(false);
-  if (!person) {
-    return (
-      <article className="app-panel id-card-empty">
-        <h3>ID Card Preview</h3>
-        <p className="panel-empty">Select a student or staff member to preview an ID card.</p>
-      </article>
-    );
-  }
-
   return (
-    <div id="schooldom-id-card-document" className="id-card-print-area id-card-flip-stage" style={themeToCssVars(docTheme)}>
-      <div className={`id-card-flip-inner ${isFlipped ? "flipped" : ""}`}>
+    <div className={`id-card-flip-inner ${flipped ? "flipped" : ""}`} style={themeToCssVars(docTheme)}>
         <article className="id-card-preview-card id-card-face id-card-front">
           <div className="id-card-ribbon">{person.display_type}</div>
           <header className="id-card-top">
@@ -8393,10 +8386,46 @@ export function IdCardPreview({ person, school, qrDataUrl, theme }) {
           </section>
           <p className="id-card-powered-by">Powered by Schooldom</p>
         </article>
-      </div>
+    </div>
+  );
+}
+
+export function IdCardPreview({ person, school, qrDataUrl, theme }) {
+  const [isFlipped, setIsFlipped] = useState(false);
+  if (!person) {
+    return (
+      <article className="app-panel id-card-empty">
+        <h3>ID Card Preview</h3>
+        <p className="panel-empty">Select a student or staff member to preview an ID card.</p>
+      </article>
+    );
+  }
+
+  return (
+    <div id="schooldom-id-card-document" className="id-card-print-area id-card-flip-stage">
+      <IdCardFaces person={person} school={school} qrDataUrl={qrDataUrl} theme={theme} flipped={isFlipped} />
       <button type="button" className="id-card-flip-button" onClick={() => setIsFlipped((value) => !value)}>
         {isFlipped ? "Show Front" : "Show QR Back"}
       </button>
+    </div>
+  );
+}
+
+/** One page per person (front+back side by side, matching the single-card
+ * print layout) inside one shared print job - window.print()'s "Save as
+ * PDF" destination is what turns this into one combined PDF file. See
+ * AdminIdCardsScreen's handleBulkExport. */
+function IdCardBulkPrintArea({ people, school, qrByKey, theme }) {
+  return (
+    <div className="id-card-bulk-print-area">
+      {people.map((person) => {
+        const key = `${person.person_type}:${person.id}`;
+        return (
+          <div key={key} className="id-card-bulk-print-item">
+            <IdCardFaces person={person} school={school} qrDataUrl={qrByKey[key] || ""} theme={theme} flipped={false} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -8583,26 +8612,42 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
   const summary = data?.summary || {};
   const [selectedId, setSelectedId] = useState("");
   const [filterType, setFilterType] = useState("all");
+  const [classFilter, setClassFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [qrLoading, setQrLoading] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionSuccess, setActionSuccess] = useState("");
+  const [bulkSelected, setBulkSelected] = useState(() => new Set());
+  const [bulkExporting, setBulkExporting] = useState(false);
+  const [bulkExportPeople, setBulkExportPeople] = useState(null);
+  const [bulkQrByKey, setBulkQrByKey] = useState({});
 
   const cardSchool = data?.school || school;
   const documentTheme = resolveDocumentTheme(cardSchool);
+  const classOptions = useMemo(() => {
+    const names = new Set();
+    people.forEach((person) => {
+      if (person.person_type === "student" && person.primary_label) names.add(person.primary_label);
+    });
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [people]);
   const filteredPeople = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     return people.filter((person) => {
       const typeMatch = filterType === "all" || person.person_type === filterType;
+      const classMatch =
+        classFilter === "all" || (person.person_type === "student" ? person.primary_label === classFilter : filterType !== "student");
       const haystack = [person.name, person.unique_id, person.primary_label, person.secondary_label, person.email, person.phone]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
-      return typeMatch && (!query || haystack.includes(query));
+      return typeMatch && classMatch && (!query || haystack.includes(query));
     });
-  }, [filterType, people, searchTerm]);
+  }, [classFilter, filterType, people, searchTerm]);
   const selectedPerson = people.find((person) => `${person.person_type}:${person.id}` === selectedId) || filteredPeople[0] || null;
+  const filteredKeys = useMemo(() => filteredPeople.map((person) => `${person.person_type}:${person.id}`), [filteredPeople]);
+  const allFilteredSelected = filteredKeys.length > 0 && filteredKeys.every((key) => bulkSelected.has(key));
 
   const fetchQrDataUrl = useCallback(
     async (person, isDownload = false) => {
@@ -8689,6 +8734,81 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
     }
   };
 
+  const toggleBulkSelected = (key) => {
+    setBulkSelected((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const handleBulkSelectAll = () => {
+    setBulkSelected((previous) => {
+      if (allFilteredSelected) {
+        const next = new Set(previous);
+        filteredKeys.forEach((key) => next.delete(key));
+        return next;
+      }
+      return new Set([...previous, ...filteredKeys]);
+    });
+  };
+
+  const handleBulkExport = async () => {
+    const people_ = people.filter((person) => bulkSelected.has(`${person.person_type}:${person.id}`));
+    if (!people_.length) return;
+    setActionError("");
+    setActionSuccess("");
+    setBulkExporting(true);
+    try {
+      const qrEntries = await Promise.all(
+        people_.map(async (person) => {
+          const key = `${person.person_type}:${person.id}`;
+          try {
+            const result = await fetchQrDataUrl(person, true);
+            return [key, result.dataUrl];
+          } catch (qrError) {
+            // One person's QR failing (e.g. a since-deactivated profile)
+            // shouldn't block exporting everyone else - that card's back
+            // just shows the "QR" placeholder IdCardFaces already falls
+            // back to when qrDataUrl is empty.
+            return [key, ""];
+          }
+        })
+      );
+      setBulkQrByKey(Object.fromEntries(qrEntries));
+      setBulkExportPeople(people_);
+      // The bulk print area only exists in the DOM/CSS vars once mounted
+      // above - wait a frame so it has actually painted before printing.
+      await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+      await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+
+      let styleTag = document.getElementById("id-card-page-style");
+      if (!styleTag) {
+        styleTag = document.createElement("style");
+        styleTag.id = "id-card-page-style";
+        document.head.appendChild(styleTag);
+      }
+      styleTag.textContent = `@page{size:${documentTheme.page_size} landscape;margin:0}`;
+
+      const cleanup = () => {
+        document.body.classList.remove("id-card-bulk-printing");
+        setBulkExportPeople(null);
+        window.removeEventListener("afterprint", cleanup);
+      };
+      window.addEventListener("afterprint", cleanup);
+      document.body.classList.add("id-card-bulk-printing");
+      setActionSuccess(`Exported ${people_.length} card${people_.length === 1 ? "" : "s"} - choose "Save as PDF" in the print dialog for one combined file.`);
+      window.print();
+    } catch (exportError) {
+      setActionError(exportError.message || "Could not export the selected cards.");
+      document.body.classList.remove("id-card-bulk-printing");
+      setBulkExportPeople(null);
+    } finally {
+      setBulkExporting(false);
+    }
+  };
+
   return (
     <section className="screen-grid id-card-workspace">
       <div className="screen-hero id-card-hero">
@@ -8716,38 +8836,85 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
               <div className="id-card-tools">
                 <label className="panel-field">
                   Type
-                  <select value={filterType} onChange={(event) => setFilterType(event.target.value)}>
+                  <select
+                    value={filterType}
+                    onChange={(event) => {
+                      setFilterType(event.target.value);
+                      if (event.target.value !== "student") setClassFilter("all");
+                    }}
+                  >
                     <option value="all">All profiles</option>
                     <option value="student">Students</option>
                     <option value="teacher">Teaching staff</option>
                     <option value="staff">Other staff</option>
                   </select>
                 </label>
+                {filterType === "student" && classOptions.length ? (
+                  <label className="panel-field">
+                    Class
+                    <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
+                      <option value="all">All classes</option>
+                      {classOptions.map((className) => (
+                        <option key={className} value={className}>{className}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <label className="panel-field">
                   Search
                   <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Name, ID, class, or role" />
                 </label>
               </div>
               {filteredPeople.length ? (
-                <div className="id-card-person-list">
-                  {filteredPeople.map((person) => {
-                    const key = `${person.person_type}:${person.id}`;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        className={`id-card-person-button ${selectedPerson && key === `${selectedPerson.person_type}:${selectedPerson.id}` ? "active" : ""}`}
-                        onClick={() => setSelectedId(key)}
-                      >
-                        <span>{person.name}</span>
-                        <small>{person.unique_id} - {person.primary_label || person.display_type}</small>
-                      </button>
-                    );
-                  })}
-                </div>
+                <>
+                  <div className="id-card-bulk-bar">
+                    <label className="id-card-bulk-select-all">
+                      <input type="checkbox" checked={allFilteredSelected} onChange={handleBulkSelectAll} />
+                      Select all ({filteredPeople.length})
+                    </label>
+                    {bulkSelected.size ? (
+                      <div className="id-card-bulk-bar-actions">
+                        <span>{bulkSelected.size} selected</span>
+                        <button type="button" className="table-action" onClick={() => setBulkSelected(new Set())}>
+                          Clear
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="id-card-person-list">
+                    {filteredPeople.map((person) => {
+                      const key = `${person.person_type}:${person.id}`;
+                      return (
+                        <div key={key} className="id-card-person-row">
+                          <input
+                            type="checkbox"
+                            checked={bulkSelected.has(key)}
+                            onChange={() => toggleBulkSelected(key)}
+                            aria-label={`Select ${person.name} for bulk export`}
+                          />
+                          <button
+                            type="button"
+                            className={`id-card-person-button ${selectedPerson && key === `${selectedPerson.person_type}:${selectedPerson.id}` ? "active" : ""}`}
+                            onClick={() => setSelectedId(key)}
+                          >
+                            <span>{person.name}</span>
+                            <small>{person.unique_id} - {person.primary_label || person.display_type}</small>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
               ) : (
                 <p className="panel-empty">No profiles match this filter.</p>
               )}
+              {bulkSelected.size ? (
+                <div className="panel-form-actions id-card-actions">
+                  <button type="button" className="table-action" onClick={handleBulkExport} disabled={bulkExporting}>
+                    {bulkExporting ? <><Spinner size={12} /> Preparing...</> : `Export ${bulkSelected.size} Selected as PDF`}
+                  </button>
+                </div>
+              ) : null}
             </article>
 
             <article className="app-panel id-card-preview-panel">
@@ -8765,6 +8932,9 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
               </div>
             </article>
           </section>
+          {bulkExportPeople ? (
+            <IdCardBulkPrintArea people={bulkExportPeople} school={cardSchool} qrByKey={bulkQrByKey} theme={documentTheme} />
+          ) : null}
         </>
       ) : null}
     </section>

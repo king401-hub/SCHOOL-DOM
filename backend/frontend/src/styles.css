@@ -24536,12 +24536,46 @@ body[data-theme="dark"] .heat-bar-track {
   margin-bottom: 1rem;
 }
 
+.id-card-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+  font-size: 0.85rem;
+}
+
+.id-card-bulk-select-all {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.id-card-bulk-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--id-card-muted);
+}
+
 .id-card-person-list {
   display: grid;
   gap: 0.65rem;
   max-height: 560px;
   overflow: auto;
   padding-right: 0.25rem;
+}
+
+.id-card-person-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.id-card-person-row .id-card-person-button {
+  flex: 1;
+  width: auto;
 }
 
 .id-card-person-button {
@@ -25431,6 +25465,66 @@ body[data-theme="dark"] .qr-scanner-copy p {
   .id-card-flip-button,
   .id-card-actions {
     display: none;
+  }
+}
+
+/* Bulk ID card export - many people's cards in one print job, so the
+   browser's own "Save as PDF" print destination produces a single combined
+   PDF. Off-screen/hidden outside print media; see IdCardBulkPrintArea and
+   AdminIdCardsScreen's handleBulkExport. */
+.id-card-bulk-print-area {
+  display: none;
+  /* Same fallback values .id-card-print-area's own CSS rule provides for
+     the single-card preview - themeToCssVars() only ever overrides
+     --id-card-teal/--id-card-green (see AppShared.jsx), so without these,
+     bulk items (wrapped in .id-card-bulk-print-item, not .id-card-print-area)
+     would have no --id-card-ink/--id-card-muted/--id-card-line at all. */
+  --id-card-ink: #102033;
+  --id-card-muted: #64748b;
+  --id-card-line: #dbe5f0;
+  --id-card-teal: #0f3d5e;
+  --id-card-green: #0f8a55;
+}
+
+@media print {
+  /* A bulk export can run while the single-card preview panel is still
+     mounted elsewhere on the same admin screen - without this, both would
+     try to fill the page during the same print job. Toggled by JS right
+     before/after window.print(); see handleBulkExport. */
+  body.id-card-bulk-printing .id-card-print-area {
+    display: none !important;
+  }
+
+  .id-card-bulk-print-area,
+  .id-card-bulk-print-area * {
+    visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .id-card-bulk-print-area {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    background: #ffffff;
+  }
+
+  .id-card-bulk-print-item {
+    display: grid;
+    grid-template-columns: 3.375in 3.375in;
+    gap: 0.18in;
+    place-items: center;
+    place-content: center;
+    width: 100%;
+    min-height: 100vh;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .id-card-bulk-print-item:last-child {
+    page-break-after: auto;
+    break-after: auto;
   }
 }
 
@@ -27991,6 +28085,10 @@ body[data-dashboard-role="student"] .student-sidebar-profile:hover .student-avat
 .fee-item-remaining { font-weight: 700; opacity: 1; color: #dc2626; }
 @media (prefers-color-scheme: dark) { .fee-item-remaining { color: #fca5a5; } }
 :root[data-theme="dark"] .fee-item-remaining { color: #fca5a5; }
+.fee-item-breakdown { margin-top: 0.65rem; padding-top: 0.6rem; border-top: 1px dashed var(--student-border, #dfe6f3); display: flex; flex-direction: column; gap: 0.3rem; }
+.fee-item-breakdown-row { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.76rem; color: var(--student-text, #64748b); }
+.fee-item-breakdown-label { opacity: 0.85; }
+.fee-item-breakdown-amount { font-weight: 600; color: var(--student-text-strong, #0f172a); flex-shrink: 0; }
 
 /* ── Payment history ───────────────────────────────────────── */
 .fee-history-list { display: flex; flex-direction: column; gap: 0.5rem; }
