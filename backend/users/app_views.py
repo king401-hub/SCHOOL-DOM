@@ -1650,6 +1650,9 @@ def _school_identity_payload(tenant, request=None):
         "logo": logo_url,
         "motto": getattr(tenant, "motto", "") or getattr(tenant, "tagline", "") or "",
         "tagline": getattr(tenant, "tagline", "") or getattr(tenant, "motto", "") or "",
+        "email": getattr(tenant, "email", "") or "",
+        "phone": getattr(tenant, "phone", "") or "",
+        "address": getattr(tenant, "address", "") or "",
         "signature": _resolve_school_signature_url(tenant, request),
         "document_theme": _document_theme_for_school(tenant),
     }
@@ -1669,7 +1672,7 @@ def _id_card_student_payload(student_profile, request=None):
         "date_of_birth": payload["date_of_birth"],
         "gender": payload["gender"],
         "primary_label": payload["class_name"],
-        "secondary_label": payload["student_type"] or "Learner",
+        "secondary_label": payload["student_type"] or "",
         "admission_or_employment_date": payload["admission_date"],
         "email": payload["email"],
         "phone": payload["phone"],

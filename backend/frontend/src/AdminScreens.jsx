@@ -8351,8 +8351,7 @@ function IdCardFaces({ person, school, qrDataUrl, theme, flipped }) {
           ) : null}
 
           <footer className="id-card-footer id-card-front-footer">
-            <strong><span>Flip card to verify {brand.email || "SchoolDom profile verification"}
-</span></strong>
+            <strong><span>{brand.email || "SchoolDom profile verification"}</span></strong>
           </footer>
           <p className="id-card-powered-by">Powered by Schooldom</p>
         </article>
@@ -8381,6 +8380,7 @@ function IdCardFaces({ person, school, qrDataUrl, theme, flipped }) {
               <p className="id-card-back-return-lead">If found please return to the following address or call the number below:</p>
               {brand.address ? <address className="id-card-back-address">{brand.address}</address> : null}
               {brand.phone ? <p className="id-card-back-phone">Tel: {brand.phone}</p> : null}
+              {brand.email ? <p className="id-card-back-email">{brand.email}</p> : null}
               <p className="id-card-back-validity">Valid only when the scan page confirms this profile as verified and active.</p>
             </div>
           </section>
