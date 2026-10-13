@@ -107,6 +107,7 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
     class_label = serializers.SerializerMethodField()
     is_outstanding_bill = serializers.SerializerMethodField()
     outstanding_from = serializers.SerializerMethodField()
+    items = serializers.SerializerMethodField()
 
     class Meta:
         model = SchoolFee
@@ -129,7 +130,16 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
             "amount_paid",
             "remaining_balance",
             "payment_status",
+            "items",
         ]
+
+    def get_items(self, obj):
+        # The itemized "Description of Charges" breakdown (Tuition, Exams,
+        # Uniforms, ...) lives on the Bill this invoice was generated from -
+        # customized/manual fees have no bill, so just show no breakdown.
+        if not obj.bill_id:
+            return []
+        return BillItemSerializer(obj.bill.items.all().order_by("sort_order"), many=True).data
 
     def _paid_amount(self, obj):
         # When the caller precomputes paid amounts in bulk (e.g.

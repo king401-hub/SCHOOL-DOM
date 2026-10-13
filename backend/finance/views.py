@@ -847,7 +847,7 @@ def _student_wallet_snapshot(user):
         student__user=user
     ).filter(
         Q(class_fee__isnull=True) | Q(class_fee__is_active=True)
-    ).order_by("due_date")[:12]
+    ).select_related("bill").prefetch_related("bill__items").order_by("due_date")[:12]
     return wallet, transactions, fees, payment_reference, bank_payments
 
 
@@ -3859,7 +3859,12 @@ def parent_dashboard(request):
     total_paid = Decimal("0")
 
     for student in parent_profile.children.select_related("user", "current_class").all():
-        fees_qs = list(SchoolFee.objects.filter(student=student).order_by("due_date"))
+        fees_qs = list(
+            SchoolFee.objects.filter(student=student)
+            .select_related("bill")
+            .prefetch_related("bill__items")
+            .order_by("due_date")
+        )
         # fee_paid_amount, not the amount_paid column: offline payments (cash,
         # POS, matched bank transfer) never write that column, so reading it
         # here showed parents who had already paid at the front desk a balance
@@ -3882,6 +3887,7 @@ def parent_dashboard(request):
                 "status": f.status,
                 "due_date": f.due_date.isoformat() if f.due_date else None,
                 "last_payment_date": f.last_payment_date.isoformat() if f.last_payment_date else None,
+                "items": BillItemSerializer(f.bill.items.all().order_by("sort_order"), many=True).data if f.bill_id else [],
             })
 
         student_obj = student

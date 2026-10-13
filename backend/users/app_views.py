@@ -37,6 +37,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from finance.models import Wallet, SchoolFee, Transaction, AdminWallet, StudentPaymentReference, ActivationCreditPool, FeeAllocation
+from finance.serializers import BillItemSerializer
 from finance.services import process_due_fees, ensure_student_wallet, get_or_create_student_payment_reference, fee_paid_amount, sync_student_class_fees
 from licensing.services import current_license_for
 from attendance.utils import get_frontend_base_url
@@ -776,6 +777,7 @@ def _school_fee_payload(fee):
         "amount_paid": paid_amount,
         "remaining_balance": remaining_balance,
         "payment_status": payment_status,
+        "items": BillItemSerializer(fee.bill.items.all().order_by("sort_order"), many=True).data if fee.bill_id else [],
     }
 
 
@@ -4776,7 +4778,10 @@ def student_dashboard(request):
         ]
         wallet_fees = [
             _school_fee_payload(fee)
-            for fee in SchoolFee.objects.filter(student=student_profile).order_by("due_date")[:12]
+            for fee in SchoolFee.objects.filter(student=student_profile)
+            .select_related("bill")
+            .prefetch_related("bill__items")
+            .order_by("due_date")[:12]
         ]
     id_card_generated_at = student_profile.id_card_generated_at if student_profile else None
     id_card_viewed_at = student_profile.id_card_viewed_at if student_profile else None

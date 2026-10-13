@@ -2049,6 +2049,16 @@ function StudentFeesPage({ session, onNavigate, themePreference, onThemeChange }
                         <span className="fee-item-due">Due {formatDate(fee.due_date)}</span>
                         {remaining > 0 && <span className="fee-item-remaining">{fmt(remaining)} left</span>}
                       </div>
+                      {fee.items && fee.items.length > 0 && (
+                        <div className="fee-item-breakdown">
+                          {fee.items.map((item) => (
+                            <div key={item.id} className="fee-item-breakdown-row">
+                              <span className="fee-item-breakdown-label">{item.description}</span>
+                              <span className="fee-item-breakdown-amount">{fmt(item.amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -10736,16 +10746,35 @@ function ParentDashboard({ session, data, onRefresh, onSignOut, isRefreshing, on
                       <tr><th>Fee</th><th>Amount</th><th>Paid</th><th>Remaining</th><th>Status</th><th>Due Date</th></tr>
                     </thead>
                     <tbody>
-                      {child.fees.map((fee) => (
-                        <tr key={fee.id}>
-                          <td>{fee.title}</td>
-                          <td>{fmt(fee.amount)}</td>
-                          <td>{fmt(fee.amount_paid)}</td>
-                          <td>{fmt(fee.remaining)}</td>
-                          <td><span className={`finance-status status-${fee.status}`}>{fee.status}</span></td>
-                          <td>{fmtDate(fee.due_date)}</td>
-                        </tr>
-                      ))}
+                      {child.fees.flatMap((fee) => {
+                        const rows = [
+                          <tr key={fee.id}>
+                            <td>{fee.title}</td>
+                            <td>{fmt(fee.amount)}</td>
+                            <td>{fmt(fee.amount_paid)}</td>
+                            <td>{fmt(fee.remaining)}</td>
+                            <td><span className={`finance-status status-${fee.status}`}>{fee.status}</span></td>
+                            <td>{fmtDate(fee.due_date)}</td>
+                          </tr>,
+                        ];
+                        if (fee.items && fee.items.length > 0) {
+                          rows.push(
+                            <tr key={`${fee.id}-breakdown`}>
+                              <td colSpan={6} style={{ paddingTop: 0, paddingBottom: "0.75rem", borderTop: "none" }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", maxWidth: "320px" }}>
+                                  {fee.items.map((item) => (
+                                    <div key={item.id} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#64748b" }}>
+                                      <span>{item.description}</span>
+                                      <span style={{ fontWeight: 600 }}>{fmt(item.amount)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+                        return rows;
+                      })}
                     </tbody>
                   </table>
                 ) : (
