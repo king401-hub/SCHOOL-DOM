@@ -13319,16 +13319,32 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   // first run is skipped so mounting with an already-active search (e.g.
   // re-opening this screen) doesn't force a redundant reload of data it was
   // just handed.
+  //
+  // onSearchChange is read through a ref rather than listed as a dependency:
+  // it's a fresh function identity on every unrelated screenData update
+  // (handleStudentSearchChange depends on loadScreen, which depends on
+  // screenData), so depending on it directly re-armed this timer - and
+  // therefore re-ran the search submit with the current searchTerm - on
+  // every unrelated change anywhere in the app, including the "View more"
+  // append's own screenData update. That resubmit calls buildStudentsQuery,
+  // which always sends an explicit (non-empty) query to force a fresh first
+  // page - exactly the reset a real search change should cause, but firing
+  // it here silently collapsed a "View more" expansion ~350ms after it
+  // rendered.
+  const onSearchChangeRef = useRef(onSearchChange);
+  useEffect(() => {
+    onSearchChangeRef.current = onSearchChange;
+  }, [onSearchChange]);
   const searchEffectSkippedFirstRun = useRef(false);
   useEffect(() => {
-    if (!onSearchChange) return;
+    if (!onSearchChangeRef.current) return;
     if (!searchEffectSkippedFirstRun.current) {
       searchEffectSkippedFirstRun.current = true;
       return;
     }
-    const handle = window.setTimeout(() => onSearchChange(searchTerm), 350);
+    const handle = window.setTimeout(() => onSearchChangeRef.current?.(searchTerm), 350);
     return () => window.clearTimeout(handle);
-  }, [searchTerm, onSearchChange]);
+  }, [searchTerm]);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [editForm, setEditForm] = useState({
