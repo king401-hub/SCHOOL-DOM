@@ -7801,10 +7801,13 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const handleAdminBillPublish = useCallback(
     async (billId) => {
       const result = await requestJson(session, "POST", `/api/finance/admin/bills/${billId}/publish/`);
+      const sendResult = result?.send_result;
       addAdminNotification({
         category: "Finance",
         module: "Bills",
-        action: `Published bill (${result?.synced_count || 0} invoice(s) synced).`,
+        action: sendResult
+          ? `Published bill (${result?.synced_count || 0} invoice(s) synced) and sent it to ${sendResult.sent} parent(s)${sendResult.failed ? `, ${sendResult.failed} failed` : ""}.`
+          : `Published bill (${result?.synced_count || 0} invoice(s) synced).`,
         status: "Success",
         priority: "High",
         tone: "success",

@@ -3287,6 +3287,111 @@ class BillItemEditAfterPublishTests(TestCase):
         self.assertFalse(SchoolFee.objects.filter(bill=draft).exists())
 
 
+class BillPublishAutoSendTests(TestCase):
+    """Publishing a draft bill (the "Generate Bill" action) now also sends
+    it straight to every parent across the bill's classes by SMS, billed to
+    the school's own SMS wallet - no separate manual Send step. Regenerating
+    an already-published bill must never re-send it."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Bill Auto Send School", schema_name="bill_auto_send_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@billautosend.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 4", section="A")
+        student_user = User.objects.create_user(
+            email="student@billautosend.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=student_user, student_id="BAS001", admission_number="ADM-BAS-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        self.parent_user = User.objects.create_user(
+            email="parent@billautosend.edu", password="ParentPass123", first_name="Parent", last_name="User",
+            role="parent", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.parent_user.phone = "2348012345678"
+        self.parent_user.save(update_fields=["phone"])
+        self.parent_profile = ParentProfile.objects.create(user=self.parent_user)
+        self.parent_profile.children.add(self.student)
+
+        self.bill = Bill.objects.create(tenant=self.school, title="Term Fees", created_by=self.admin_user)
+        self.bill.classes.set([self.school_class])
+        BillItem.objects.create(bill=self.bill, description="Tuition", amount=Decimal("5000.00"))
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin_user)
+
+    @patch("finance.services._dispatch_wallet_sms")
+    def test_publishing_a_draft_bill_auto_sends_it_to_every_parent_in_the_class(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        wallet = get_or_create_sms_wallet(self.school)
+        starting_balance = wallet.balance
+
+        response = self.client.post(f"/api/finance/admin/bills/{self.bill.id}/publish/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["send_result"]["sent"], 1)
+        mock_send.assert_called_once()
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, starting_balance - 1)
+        fee = SchoolFee.objects.get(bill=self.bill, student=self.student)
+        self.assertIsNotNone(fee.sent_at)
+
+    @patch("finance.services._dispatch_wallet_sms")
+    def test_a_parent_with_no_phone_is_skipped_not_charged(self, mock_send):
+        self.parent_user.phone = ""
+        self.parent_user.email = ""
+        self.parent_user.save(update_fields=["phone", "email"])
+        wallet = get_or_create_sms_wallet(self.school)
+        starting_balance = wallet.balance
+
+        response = self.client.post(f"/api/finance/admin/bills/{self.bill.id}/publish/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["send_result"]["skipped"], 1)
+        mock_send.assert_not_called()
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, starting_balance)
+
+    @patch("finance.services._dispatch_wallet_sms")
+    def test_regenerating_an_already_published_bill_does_not_resend_it(self, mock_send):
+        from django.core.cache import cache
+
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        first = self.client.post(f"/api/finance/admin/bills/{self.bill.id}/publish/")
+        self.assertEqual(first.status_code, 200, first.data)
+        mock_send.reset_mock()
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.refresh_from_db()
+        balance_after_first_publish = wallet.balance
+
+        # Clear the idempotency cache so the second publish below exercises the
+        # view again instead of just replaying the first call's cached response
+        # (same user/method/path/body as the first POST ...publish/ above).
+        cache.clear()
+        response = self.client.patch(
+            f"/api/finance/admin/bills/{self.bill.id}/",
+            {"items": [{"description": "Tuition", "amount": "6000.00"}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        cache.clear()
+        response = self.client.post(f"/api/finance/admin/bills/{self.bill.id}/publish/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsNone(response.data["send_result"])
+        mock_send.assert_not_called()
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, balance_after_first_publish)
+
+
 class DuplicateBillCreationGuardTests(TestCase):
     """Production data showed admins repeatedly hitting "Create Bill" for a
     class that already had one, instead of editing it - each new bill fanned

@@ -1737,7 +1737,13 @@ def admin_bill_publish(request, bill_id):
     """Publish (or re-publish/regenerate) a bill - fans out to per-student
     SchoolFee invoices. Calling this again after editing a published bill's
     due_date/notes, or after new students join a targeted class, is exactly
-    "regenerate/resync" - idempotent, no separate endpoint needed."""
+    "regenerate/resync" - idempotent, no separate endpoint needed.
+
+    The first publish (draft -> published) also auto-sends the bill to every
+    parent across the bill's classes, by SMS - the same default channel the
+    manual Send panel starts with. A regenerate never re-sends: it only
+    resyncs amounts/due dates, and parents who already got the bill shouldn't
+    get another text every time the admin tweaks it."""
     user = request.user
     if user.role not in FINANCE_ROLES:
         return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
@@ -1766,11 +1772,37 @@ def admin_bill_publish(request, bill_id):
         currency="NGN",
         reference=str(bill.id),
     )
+
+    send_result = None
+    if was_draft:
+        from users.models import ParentProfile
+
+        class_ids = list(bill.classes.values_list("id", flat=True))
+        parent_ids = list(
+            ParentProfile.objects.filter(children__current_class_id__in=class_ids, user__tenant=user.tenant)
+            .distinct()
+            .values_list("user_id", flat=True)
+        )
+        if parent_ids:
+            school = _school_payload(request, bill.tenant)
+            send_result = send_bill_invoices(bill, parent_ids, ["sms"], actor=user, school=school)
+            record_finance_activity(
+                user.tenant,
+                user,
+                "bill_sent",
+                f"Sent bill '{bill.title}' to {send_result['sent']} parent(s) ({send_result['failed']} failed, {send_result['skipped']} skipped).",
+                amount=bill.total,
+                currency="NGN",
+                reference=str(bill.id),
+                metadata=send_result,
+            )
+
     rollups = bulk_bill_status_counts([bill])
     return Response(
         {
             "success": True,
             "synced_count": synced_count,
+            "send_result": send_result,
             "bill": BillSerializer(bill, context={"bill_status_rollups": rollups}).data,
             "finance": _admin_finance_snapshot(user),
         }
