@@ -57,6 +57,52 @@ const SIGNUP_ROLES = [
   { value: "student", title: "Student", label: "Student (Non-K12 schools only)" },
 ];
 
+// The phone-OTP step's email/challenge otherwise live only in React state -
+// an accidental reload mid-step (pull-to-refresh, a deploy swapping the
+// SPA's asset hashes out from under an open tab, etc.) wiped it with no way
+// to recover, stranding the user on a blank sign-in form after they'd
+// already received a code. Persisting the step lets a reload resume it
+// instead of losing it.
+const PHONE_OTP_STEP_KEY = "schooldom.phone_otp_step";
+
+function readPhoneOtpStep() {
+  try {
+    const raw = window.sessionStorage.getItem(PHONE_OTP_STEP_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.email || !parsed?.challenge || !parsed?.savedAt) return null;
+    const elapsedSeconds = (Date.now() - parsed.savedAt) / 1000;
+    const expiresIn = Number(parsed.expiresIn) || 600;
+    if (elapsedSeconds >= expiresIn) {
+      window.sessionStorage.removeItem(PHONE_OTP_STEP_KEY);
+      return null;
+    }
+    return { ...parsed, expiresIn: Math.max(1, Math.round(expiresIn - elapsedSeconds)) };
+  } catch {
+    return null;
+  }
+}
+
+function savePhoneOtpStep(email: string, challenge: string, expiresIn: number, debugCode: string) {
+  try {
+    window.sessionStorage.setItem(
+      PHONE_OTP_STEP_KEY,
+      JSON.stringify({ email, challenge, expiresIn, debugCode, savedAt: Date.now() })
+    );
+  } catch {
+    // sessionStorage unavailable (private mode / full quota) - the step just
+    // won't survive a reload, same as before this change.
+  }
+}
+
+function clearPhoneOtpStep() {
+  try {
+    window.sessionStorage.removeItem(PHONE_OTP_STEP_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 // Fix for import.meta.env - use Vite's import.meta.env with type assertion
 const API_BASE_URL = (() => {
   const raw = (import.meta as any).env?.VITE_API_BASE_URL ?? "";
@@ -194,6 +240,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
     const query = new URLSearchParams(window.location.search);
     if (path === "/forgot-password") return "forgot";
     if (query.get("mode") === "signup") return "signup";
+    if (readPhoneOtpStep()) return "phone-otp";
     return initialMode || "signin";
   });
 
@@ -219,7 +266,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   const [guardianName, setGuardianName] = useState("");
   const [guardianPhone, setGuardianPhone] = useState("");
   const [otpCode, setOtpCode] = useState("");
-  const [otpEmail, setOtpEmail] = useState("");
+  const [otpEmail, setOtpEmail] = useState(() => readPhoneOtpStep()?.email || "");
   const [otpChallenge, setOtpChallenge] = useState("");
   const [otpPurpose, setOtpPurpose] = useState("");
   const [otpExpiresIn, setOtpExpiresIn] = useState(0);
@@ -230,9 +277,9 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   // (or never set at all - see phoneNumberInput below). Mirrors the email
   // OTP state above one-for-one.
   const [phoneOtpCode, setPhoneOtpCode] = useState("");
-  const [phoneOtpChallenge, setPhoneOtpChallenge] = useState("");
-  const [phoneOtpExpiresIn, setPhoneOtpExpiresIn] = useState(0);
-  const [phoneOtpDebugCode, setPhoneOtpDebugCode] = useState("");
+  const [phoneOtpChallenge, setPhoneOtpChallenge] = useState(() => readPhoneOtpStep()?.challenge || "");
+  const [phoneOtpExpiresIn, setPhoneOtpExpiresIn] = useState(() => readPhoneOtpStep()?.expiresIn || 0);
+  const [phoneOtpDebugCode, setPhoneOtpDebugCode] = useState(() => readPhoneOtpStep()?.debugCode || "");
   const [isResendingPhoneOtp, setIsResendingPhoneOtp] = useState(false);
   // Only used for an existing account signing in with no phone on file yet -
   // a fresh signup always collects phone upfront (see the signup form).
@@ -552,6 +599,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
           setPhoneOtpExpiresIn(response.expiresIn);
           setPhoneOtpDebugCode(response.debugCode || "");
           setPhoneOtpCode("");
+          savePhoneOtpStep(response.email, response.challenge, response.expiresIn, response.debugCode || "");
           setMode("phone-otp");
         } else {
           setPhoneNumberInput("");
@@ -703,6 +751,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
         setPhoneOtpExpiresIn(data.phone_otp_expires_in || 600);
         setPhoneOtpDebugCode(data.debug_phone_otp || "");
         setPhoneOtpCode("");
+        savePhoneOtpStep(otpEmail, data.phone_otp_challenge, data.phone_otp_expires_in || 600, data.debug_phone_otp || "");
         setMode("phone-otp");
         setSuccessMessage(data.message || "Enter the code sent to your phone.");
         return;
@@ -739,6 +788,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
       setPhoneOtpExpiresIn(data.phone_otp_expires_in || 600);
       setPhoneOtpDebugCode(data.debug_phone_otp || "");
       setPhoneOtpCode("");
+      savePhoneOtpStep(otpEmail, data.phone_otp_challenge, data.phone_otp_expires_in || 600, data.debug_phone_otp || "");
       setMode("phone-otp");
       setSuccessMessage(data.message || "Enter the code sent to your phone.");
     } catch (requestError: any) {
@@ -765,9 +815,23 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
       setPhoneOtpCode("");
       setPassword("");
       setSuccessMessage(data.message || "Phone verified.");
+      clearPhoneOtpStep();
       completeSession(data);
     } catch (requestError: any) {
-      setError(requestError.message || "Verification failed.");
+      const message = requestError.message || "Verification failed.";
+      // A stale/mismatched challenge (vs. simply a mistyped code, which the
+      // backend reports as "Invalid code. N attempt(s) remaining." and is
+      // worth retrying in place) can't be retried - most often this means
+      // the page got reloaded or a resend's response never arrived, so the
+      // saved step is already dead. Clear it and say so plainly instead of
+      // leaving the user to retry forever. Matching only on "expired" (not
+      // "invalid") is what keeps this from also firing on a mistyped code.
+      if (/expired/i.test(message)) {
+        clearPhoneOtpStep();
+        setError(`${message} Tap "Resend code" below to get a fresh one.`);
+      } else {
+        setError(message);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -783,10 +847,13 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
         email: otpEmail,
         challenge: phoneOtpChallenge,
       });
-      setPhoneOtpChallenge(data.phone_otp_challenge || phoneOtpChallenge);
-      setPhoneOtpExpiresIn(data.phone_otp_expires_in || 600);
+      const nextChallenge = data.phone_otp_challenge || phoneOtpChallenge;
+      const nextExpiresIn = data.phone_otp_expires_in || 600;
+      setPhoneOtpChallenge(nextChallenge);
+      setPhoneOtpExpiresIn(nextExpiresIn);
       setPhoneOtpDebugCode(data.debug_phone_otp || "");
       setPhoneOtpCode("");
+      savePhoneOtpStep(otpEmail, nextChallenge, nextExpiresIn, data.debug_phone_otp || "");
       setSuccessMessage(data.message || "A new code has been sent to your phone.");
     } catch (requestError: any) {
       setError(requestError.message || "Could not resend the code.");
@@ -1301,6 +1368,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                         switchMode("signin");
                         setPhoneOtpCode("");
                         setPhoneOtpDebugCode("");
+                        clearPhoneOtpStep();
                       }}
                     >
                       Back to sign in
