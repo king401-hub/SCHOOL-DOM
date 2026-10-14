@@ -1327,7 +1327,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                 ) : mode === "phone-otp" ? (
                   <form className="signup-form otp-form" onSubmit={handleVerifyPhoneOtp} noValidate>
                     <p className="success-text">
-                      We texted a 6-digit code to confirm the phone number on <strong>{otpEmail}</strong>.
+                      We texted a 6-digit code to the phone number on file for <strong>{otpEmail}</strong>.
                     </p>
                     <label htmlFor="admin-phone-otp">Verification code</label>
                     <div className="input-wrap">
