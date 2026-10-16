@@ -14,13 +14,14 @@ location to offer, unlike the phone-based QR self-scan that model was
 originally built for).
 """
 import threading
+from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from django.utils.dateparse import parse_time
+from django.utils.dateparse import parse_datetime, parse_time
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -136,28 +137,37 @@ def _student_dva_payload(student_profile):
     return None
 
 
-def _gate_sms_text(student, action, event):
+def _gate_sms_text(student, action, event, occurred_at=None):
     """Deliberately separate from users.app_views._attendance_sms_text -
     that one is gated behind a parent's paid Kids Monitor subscription
     (see _notify_parents_on_attendance); SchoolGate's parent SMS is
     unconditional and funded outside the school's SMS wallet (per product
     decision), and goes out via KudiSMS rather than the eBulkSMS that
     gated call site (and every other SMS in the platform) uses - see
-    finance.services.send_kudisms."""
-    now_str = timezone.localtime(timezone.now()).strftime('%I:%M %p').lstrip('0')
+    finance.services.send_kudisms.
+
+    `occurred_at`: the real moment of the tap, for a scan replayed from a
+    kiosk's offline queue - without this the text always said "now", so a
+    scan that actually happened yesterday (queued while offline, synced
+    this morning) read as if it had just happened. The date is always
+    included (not just when it differs from today) so the message never
+    depends on when the parent happens to read it."""
+    moment = timezone.localtime(occurred_at or timezone.now())
+    time_str = moment.strftime('%I:%M %p').lstrip('0')
+    date_str = moment.strftime('%b %d')
     name = student.get_full_name() or student.email
     if action == 'clock_out':
-        return f'{name} left school at {now_str}. -SchoolDom'
+        return f'{name} left school at {time_str} on {date_str}. -SchoolDom'
     event_label = {'early': 'arrived (early)', 'late': 'arrived (late)'}.get(event, 'arrived')
-    return f'{name} {event_label} at {now_str}. -SchoolDom'
+    return f'{name} {event_label} at {time_str} on {date_str}. -SchoolDom'
 
 
-def _send_gate_sms(student_user, student_profile, action, event):
+def _send_gate_sms(student_user, student_profile, action, event, occurred_at=None):
     from finance.services import guardian_contacts_for_student
     phone, _email = guardian_contacts_for_student(student_profile)
     if not phone:
         return
-    message = _gate_sms_text(student_user, action, event)
+    message = _gate_sms_text(student_user, action, event, occurred_at=occurred_at)
     threading.Thread(
         target=_send_attendance_sms_batch,
         args=([(phone, message)], settings.SCHOOLGATE_SMS_PROVIDER),
@@ -366,6 +376,48 @@ def _find_by_idempotency_key(idempotency_key):
     return None, None
 
 
+# How far a client-reported scan time is trusted to be the real moment of
+# the tap rather than something garbled/wrong. Backward: a terminal can
+# genuinely sit offline for a long stretch (a bad SIM, a holiday) with scans
+# queued the whole time - 30 days covers that without trusting an obviously
+# broken clock. Forward: only small device clock drift, never a future scan.
+SCANNED_AT_MAX_PAST = timedelta(days=30)
+SCANNED_AT_MAX_FUTURE = timedelta(minutes=10)
+
+
+def _parse_scanned_at(request):
+    """The real moment a tap happened, when the client sent one and it looks
+    sane - None otherwise, which every caller below treats exactly like it
+    did before this field existed (fall back to timezone.now()).
+
+    Exists because a kiosk that was offline queues the scan locally and
+    replays it once back online, possibly a day or more later - without
+    this, attendance recorded from a replay lands on the date/time the
+    *replay* happened, not the date/time the student actually walked
+    through the gate, and the parent SMS says the same wrong thing."""
+    raw = str(request.data.get('scanned_at') or '').strip()
+    if not raw:
+        return None
+    try:
+        # parse_datetime doesn't itself guard against out-of-range components
+        # (e.g. month=13) - it lets the underlying datetime() constructor
+        # raise ValueError rather than returning None for those, unlike every
+        # other malformed-string case. A corrupted/garbled client value must
+        # never be able to 500 the whole scan - same reasoning as every other
+        # "fall back to None" branch here.
+        parsed = parse_datetime(raw)
+    except (ValueError, TypeError):
+        return None
+    if parsed is None:
+        return None
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.utc)
+    now = timezone.now()
+    if parsed < now - SCANNED_AT_MAX_PAST or parsed > now + SCANNED_AT_MAX_FUTURE:
+        return None
+    return parsed
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def attendance_scan_create(request):
@@ -433,10 +485,11 @@ def _too_soon_response(person, clocked_in_at):
 
 
 def _record_student_scan(request, school, student, card_uid, idempotency_key):
-    today = timezone.localdate()
+    scanned_at = _parse_scanned_at(request)
+    today = timezone.localdate(scanned_at) if scanned_at else timezone.localdate()
     existing_today = AttendanceRecord.objects.filter(student=student, date=today).first()
     if existing_today and existing_today.clock_in_at and not existing_today.clock_out_at:
-        elapsed = (timezone.now() - existing_today.clock_in_at).total_seconds()
+        elapsed = ((scanned_at or timezone.now()) - existing_today.clock_in_at).total_seconds()
         if elapsed < MIN_SECONDS_BETWEEN_CLOCK_IN_AND_OUT:
             return _too_soon_response(student, existing_today.clock_in_at)
 
@@ -458,8 +511,9 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
             tenant_obj=tenant_obj,
             actor=request.user,
             location=location,
-            attendance_date=timezone.localdate(),
+            attendance_date=today,
             school_name=school.name,
+            occurred_at=scanned_at,
         )
     except AttendanceClockError as exc:
         return _bad_request(str(exc))
@@ -470,7 +524,7 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
     )
 
     gate_settings = get_or_create_gate_settings(school)
-    event = gate_settings.classify_event(timezone.localtime(timezone.now()).time())
+    event = gate_settings.classify_event(timezone.localtime(scanned_at or timezone.now()).time())
 
     # SchoolGate spec section 3: "No fee information should be displayed
     # during clock-out" - and section 2A (Attendance Only mode) never shows
@@ -495,7 +549,7 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
     # re-sending here or the parent gets the same SMS twice.
     sms_sent_locally = str(request.data.get('sms_sent_locally') or '').strip().lower() in ('1', 'true', 'yes')
     if not sms_sent_locally and not (school.is_schoolgate and school.subscription_tier == "basic"):
-        _send_gate_sms(student, student_profile, action, event)
+        _send_gate_sms(student, student_profile, action, event, occurred_at=scanned_at)
 
     return Response({
         'success': True,
@@ -519,8 +573,16 @@ def _record_staff_scan(request, school, staff, card_uid, idempotency_key):
     self-scan (scan_qr_code) this model was originally built for - every
     location field below is left null on purpose, all of which are nullable
     on TeacherAttendance already."""
-    today = timezone.localdate()
+    scanned_at = _parse_scanned_at(request)
+    today = timezone.localdate(scanned_at) if scanned_at else timezone.localdate()
     existing = TeacherAttendance.objects.filter(teacher=staff, attendance_date=today).first()
+    # check_in_time is auto_now_add (create() always stamps the real current
+    # time, ignoring any value passed in) and _apply_clock_out always sets
+    # check_out_time to timezone.now() too (it's shared with the QR self-scan
+    # path, which has no reason to ever backdate) - a replayed offline scan's
+    # real timestamp can only land via a follow-up update(), same trick the
+    # idempotency_key/card_uid write below already uses.
+    extra_update = {}
 
     if existing is None:
         attendance = TeacherAttendance.objects.create(
@@ -531,9 +593,14 @@ def _record_staff_scan(request, school, staff, card_uid, idempotency_key):
             device_info='SchoolDom RFID',
         )
         action = 'clock_in'
-        message = f"{staff.get_full_name()} clocked in at {timezone.localtime(attendance.check_in_time).strftime('%I:%M %p').lstrip('0')}."
+        event_time = scanned_at or attendance.check_in_time
+        if scanned_at:
+            extra_update['check_in_time'] = scanned_at
+            extra_update['attendance_date'] = today
+        local_event = timezone.localtime(event_time)
+        message = f"{staff.get_full_name()} clocked in at {local_event.strftime('%I:%M %p').lstrip('0')} on {local_event.strftime('%b %d')}."
     elif existing.check_out_time is None:
-        elapsed = (timezone.now() - existing.check_in_time).total_seconds()
+        elapsed = ((scanned_at or timezone.now()) - existing.check_in_time).total_seconds()
         if elapsed < MIN_SECONDS_BETWEEN_CLOCK_IN_AND_OUT:
             return _too_soon_response(staff, existing.check_in_time)
 
@@ -541,14 +608,21 @@ def _record_staff_scan(request, school, staff, card_uid, idempotency_key):
         _apply_clock_out(existing, no_location)
         attendance = existing
         action = 'clock_out'
-        message = f"{staff.get_full_name()} clocked out at {timezone.localtime(attendance.check_out_time).strftime('%I:%M %p').lstrip('0')}."
+        event_time = scanned_at or attendance.check_out_time
+        if scanned_at:
+            extra_update['check_out_time'] = scanned_at
+        local_event = timezone.localtime(event_time)
+        message = f"{staff.get_full_name()} clocked out at {local_event.strftime('%I:%M %p').lstrip('0')} on {local_event.strftime('%b %d')}."
     else:
         return _bad_request(f'{staff.get_full_name()} has already clocked out today.')
 
     TeacherAttendance.objects.filter(pk=attendance.pk).update(
         idempotency_key=idempotency_key,
         card_uid=card_uid,
+        **extra_update,
     )
+    if extra_update:
+        attendance.refresh_from_db()
 
     return Response({
         'success': True,

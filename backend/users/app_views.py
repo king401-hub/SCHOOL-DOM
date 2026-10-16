@@ -15021,6 +15021,7 @@ def _record_attendance_clock(
     requested_action="",
     school_name="",
     status_value="present",
+    occurred_at=None,
 ):
     """Clock a student in or out for one day.
 
@@ -15029,10 +15030,16 @@ def _record_attendance_clock(
     what a gate scanner needs - it sends an identical request every scan and the
     second one of the day is the departure.
 
+    `occurred_at`: the real moment the tap happened, when that differs from
+    "now" - a kiosk that was offline queues the scan and replays it once back
+    online, possibly a day or more later (see rfid_attendance.views
+    attendance_scan_create's scanned_at handling). Left as None, every
+    timestamp/comparison below is "now" exactly as before.
+
     Raises AttendanceClockError when the action cannot apply, so callers can turn
     it straight into a 400 rather than silently recording the wrong thing.
     """
-    now = timezone.now()
+    now = occurred_at or timezone.now()
     requested_action = str(requested_action or "").strip().lower()
     if requested_action and requested_action not in ATTENDANCE_CLOCK_ACTIONS:
         raise AttendanceClockError("action must be clock_in or clock_out.")

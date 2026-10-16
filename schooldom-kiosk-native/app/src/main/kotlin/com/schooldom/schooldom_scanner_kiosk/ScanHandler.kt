@@ -43,6 +43,10 @@ object ScanHandler {
         return SimpleDateFormat("h:mm a", Locale.US).format(Date(millis))
     }
 
+    private fun formatDate(millis: Long): String {
+        return SimpleDateFormat("MMM d", Locale.US).format(Date(millis))
+    }
+
     /** Runs on a background thread; calls [onResult] on that same thread -
      * the caller is responsible for hopping back to the main thread.
      * [smsBridge] may be null (e.g. SEND_SMS permission not yet granted);
@@ -71,6 +75,13 @@ object ScanHandler {
                     put("card_uid", uid)
                     put("idempotency_key", idempotencyKey)
                     put("device_id", KioskStore.deviceId(context))
+                    // The real moment of the tap, not whenever this request
+                    // actually gets sent - matters once a scan queues offline
+                    // and replays later, possibly a day or more afterward
+                    // (see OfflineQueue/ApiClient.replayOfflineQueue). The
+                    // backend ignores this when missing, malformed, or wildly
+                    // out of bounds - see rfid_attendance.views._parse_scanned_at.
+                    put("scanned_at", isoAt(now))
                 }
                 val result = ApiClient.apiRequest(
                     context, "POST", "/api/rfid/attendance/scan/",
@@ -148,12 +159,14 @@ object ScanHandler {
         val phone = contact["phone"] ?: ""
         if (phone.isNotEmpty() && smsBridge != null) {
             val name = contact["name"]?.ifEmpty { "Student" } ?: "Student"
-            val timeText = formatTime(System.currentTimeMillis())
+            val nowMillis = System.currentTimeMillis()
+            val timeText = formatTime(nowMillis)
+            val dateText = formatDate(nowMillis)
             val text = when (event) {
-                "clockout" -> "$name left school at $timeText. -SchoolDom"
-                "early" -> "$name arrived (early) at $timeText. -SchoolDom"
-                "late" -> "$name arrived (late) at $timeText. -SchoolDom"
-                else -> "$name was scanned at the school gate at $timeText. -SchoolDom"
+                "clockout" -> "$name left school at $timeText on $dateText. -SchoolDom"
+                "early" -> "$name arrived (early) at $timeText on $dateText. -SchoolDom"
+                "late" -> "$name arrived (late) at $timeText on $dateText. -SchoolDom"
+                else -> "$name was scanned at the school gate at $timeText on $dateText. -SchoolDom"
             }
             val latch = CountDownLatch(1)
             var sent = false
