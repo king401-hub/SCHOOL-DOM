@@ -4263,6 +4263,16 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
   const planningTitle = nonK12 ? "Course Outline & Notepad" : "Lesson Plans & Notepad";
   const planningItemLabel = nonK12 ? "Course outline" : "Lesson plan";
 
+  // A success message here (saved plan, applied NERDC template, saved note)
+  // is a one-off confirmation, not a status the admin needs to keep reading -
+  // it had no auto-clear at all, so it just sat on screen until something
+  // else overwrote it or the page was reloaded.
+  useEffect(() => {
+    if (!feedback) return undefined;
+    const timer = window.setTimeout(() => setFeedback(""), 5000);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
+
   const loadPlanning = useCallback(async (classId, subjectId) => {
     setError("");
     try {
