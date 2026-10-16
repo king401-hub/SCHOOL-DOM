@@ -4471,6 +4471,14 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
               <FormattedTextarea value={form.activities} onChange={(event) => setForm((prev) => ({ ...prev, activities: event.target.value }))} rows={2} />
             </label>
             <label className="panel-field full">
+              Resources
+              <FormattedTextarea value={form.resources} onChange={(event) => setForm((prev) => ({ ...prev, resources: event.target.value }))} rows={2} />
+            </label>
+            <label className="panel-field full">
+              Assessment
+              <FormattedTextarea value={form.assessment} onChange={(event) => setForm((prev) => ({ ...prev, assessment: event.target.value }))} rows={2} />
+            </label>
+            <label className="panel-field full">
               Import a file (optional)
               <input
                 type="file"
