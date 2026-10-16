@@ -48,9 +48,17 @@ def resolve_navigation_page(page: str) -> tuple[str, str]:
     for label, route in NAVIGATION_ROUTES.items():
         if page_key == route:
             return label, route
-    for label in sorted(NAVIGATION_ROUTES, key=len, reverse=True):
-        if label in page_key:
-            return label, NAVIGATION_ROUTES[label]
+    # Bidirectional substring match - a label is only ever checked as a
+    # substring of what was asked for ("finance" in "take me to finance"),
+    # which silently misses the reverse case where the asked-for phrase is a
+    # substring of a (usually plural) label instead, e.g. "id card" vs the
+    # dictionary's "id cards" - neither contains the other textually once you
+    # require it one-directional, so this fell through to the "dashboard"
+    # default for any singular variant of a plural label.
+    if len(page_key) >= 3:
+        for label in sorted(NAVIGATION_ROUTES, key=len, reverse=True):
+            if label in page_key or page_key in label:
+                return label, NAVIGATION_ROUTES[label]
     return "dashboard", NAVIGATION_ROUTES["dashboard"]
 
 # ── Tool schema definitions (fed to Ollama as the `tools` list) ──────────────
@@ -1194,6 +1202,17 @@ class SecretaryTools:
             return method(**arguments)
         except TypeError as exc:
             return {"status": "error", "error_code": "BAD_ARGS", "message": f"Invalid arguments: {exc}"}
+        except Exception as exc:
+            # Most tool methods already catch their own exceptions and return
+            # a {"status": "error", ...} result, but this is the one choke
+            # point every tool call goes through - a bug in any tool that
+            # DOESN'T (or an exception type its own try/except didn't
+            # anticipate) used to propagate all the way up through the agent
+            # loop uncaught, crashing the whole chat turn with a raw 500
+            # instead of a normal tool-error result the model (and admin)
+            # could actually see and react to.
+            logger.exception("Tool %s raised an unhandled exception", tool_name)
+            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
 
     def count_students(self, class_name: str = None) -> dict:
         """Count students in the school, optionally filtered by class."""

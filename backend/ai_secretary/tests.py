@@ -339,6 +339,23 @@ class PhaseOneAdminAgentTests(TestCase):
                 self.assertEqual(result["status"], "success")
                 self.assertEqual(result["route"], expected_route)
 
+    def test_navigation_matches_a_singular_variant_of_a_plural_label(self):
+        """Regression: "id card" used to fall all the way through to the
+        "dashboard" default, because the match only ever checked whether a
+        dictionary label (the plural "id cards") was a substring of what was
+        asked for - never the reverse, which is what a singular phrasing
+        needs. Same bug would hit "exam" vs "exams", "class" vs "classes"."""
+        routes = {
+            "id card": "/id-cards",
+            "exam": "/exams",
+            "class": "/classes",
+        }
+        for request, expected_route in routes.items():
+            with self.subTest(request=request):
+                result = self.tools.dispatch("navigate_to_page", {"page": request})
+                self.assertEqual(result["status"], "success")
+                self.assertEqual(result["route"], expected_route)
+
 
 class LegacyTenantResolutionTests(TestCase):
     """_get_class() (and everything built on it) has to bridge from
