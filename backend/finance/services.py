@@ -4069,9 +4069,10 @@ def sync_tenant_class_fees(tenant, actor=None):
     existing SchoolFee for those pairs, one bulk_create for missing rows, and
     one bulk_update for rows that actually need a field changed, instead of
     up to a few queries per pair. Applies the exact same per-row rules as
-    sync_class_fee_for_student (never touches a PAID or is_customized fee),
-    just evaluated in bulk. sync_class_fee_for_student itself is untouched -
-    still used by sync_class_fee_assignments (the create/edit-class-fee path)."""
+    sync_class_fee_for_student (never touches a fee with any ledger payment
+    recorded against it, or an is_customized one), just evaluated in bulk.
+    sync_class_fee_for_student itself is untouched - still used by
+    sync_class_fee_assignments (the create/edit-class-fee path)."""
     from users.models import StudentProfile
 
     class_fees = list(ClassFee.objects.filter(is_active=True).select_related("school_class", "created_by"))
@@ -4107,6 +4108,15 @@ def sync_tenant_class_fees(tenant, actor=None):
         (fee.student_id, fee.class_fee_id): fee
         for fee in SchoolFee.objects.filter(class_fee_id__in=class_fee_ids, student_id__in=student_ids)
     }
+    # Ledger-based, matching sync_class_fee_for_student's guard exactly -
+    # status == PAID alone misses a PARTIAL invoice (e.g. a DVA/split
+    # payment that only ever updates FeeAllocation/amount_paid, not status
+    # necessarily reaching PAID), so a routine ClassFee edit could otherwise
+    # overwrite the amount of a fee a parent had already part-paid here
+    # while the per-student path (used by the student dashboard) correctly
+    # refused to touch it - the two sides would then disagree about whether
+    # the fee is fully paid.
+    paid_amounts = bulk_fee_paid_amounts(existing_by_pair.values())
 
     to_create = []
     to_update = []
@@ -4126,7 +4136,7 @@ def sync_tenant_class_fees(tenant, actor=None):
                 )
             )
             continue
-        if fee.status == SchoolFee.STATUS_PAID or fee.is_customized:
+        if fee.is_customized or paid_amounts.get(fee.id, Decimal("0.00")) > 0:
             continue
         changed = False
         for field, value in {
