@@ -9,7 +9,7 @@ for how the active branch is enforced on every request.
 """
 import logging
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -183,5 +183,97 @@ def switch_branch(request):
             "message": f"Switched to {target.branch_label or target.name}.",
             "branch": _branch_payload(target, target.id),
             **tokens,
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def transfer_student(request):
+    """Move one student - with their full history (fees, payment
+    references, attendance, exam results) - from the currently active
+    branch to another branch in the same school_group. The student keeps
+    the same account/login, now scoped to the new branch; their class,
+    term, and elective subjects are cleared (those belong to the old
+    branch's own roster and have no equivalent on the new one yet) for the
+    admin to reassign there. This is the "moves with them" mode - a
+    "fresh start" mode (a brand new, unlinked record on the new branch,
+    old one left untouched) is a separate, not-yet-built follow-up."""
+    user, error = _require_branch_manager(request)
+    if error:
+        return error
+
+    student_id = request.data.get("student_id")
+    target_tenant_id = request.data.get("target_tenant_id")
+    if not student_id or not target_tenant_id:
+        return Response(
+            {"success": False, "message": "student_id and target_tenant_id are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        target = SchoolTenant.objects.get(pk=target_tenant_id, school_group_id=user.school_group_id)
+    except (SchoolTenant.DoesNotExist, ValueError, TypeError):
+        return Response({"success": False, "message": "That branch does not belong to your school."}, status=status.HTTP_404_NOT_FOUND)
+
+    if target.id == user.tenant_id:
+        return Response({"success": False, "message": "That student is already on this branch."}, status=status.HTTP_400_BAD_REQUEST)
+
+    from users.models import StudentProfile
+
+    try:
+        student = StudentProfile.objects.select_related("user").get(pk=student_id, user__tenant_id=user.tenant_id)
+    except (StudentProfile.DoesNotExist, ValueError, TypeError):
+        return Response({"success": False, "message": "That student does not belong to your current branch."}, status=status.HTTP_404_NOT_FOUND)
+
+    from academic.models import AttendanceRecord
+    from exams.models import ExamAttempt
+    from finance.models import BankPayment, StudentPaymentReference
+    from rfid_attendance.models import CardAssignment
+    from users.models import resolve_legacy_tenant_for_school
+
+    target_legacy = resolve_legacy_tenant_for_school(target)
+    student_user = student.user
+    warnings = []
+
+    with transaction.atomic():
+        student_user.tenant = target
+        student_user.save(update_fields=["tenant"])
+
+        if student.current_class_id or student.current_term_id:
+            student.current_class = None
+            student.current_term = None
+        student.save(update_fields=["current_class", "current_term"])
+        student.elective_subjects.clear()
+
+        StudentPaymentReference.objects.filter(student=student).update(tenant=target)
+        BankPayment.objects.filter(student=student).update(tenant=target)
+
+        try:
+            # Its own savepoint, not just a bare try/except: on Postgres an
+            # IntegrityError aborts the whole enclosing transaction until a
+            # rollback happens, which would otherwise take the student's
+            # tenant/class/payment-reference updates above down with it too
+            # over what should be a non-fatal, extremely rare edge case.
+            with transaction.atomic():
+                CardAssignment.objects.filter(holder=student_user).update(tenant=target)
+        except IntegrityError:
+            # An active card with the same UID already exists on the new
+            # branch - vanishingly rare (card readers are per-device), and
+            # not worth failing the whole transfer over. The admin can
+            # reassign a card on the new branch directly.
+            warnings.append("A card assignment could not be moved - please reassign an RFID card on the new branch.")
+
+        if target_legacy:
+            AttendanceRecord.objects.filter(student=student_user).update(tenant=target_legacy, class_group=None)
+            ExamAttempt.objects.filter(student=student_user).update(tenant=target_legacy)
+        else:
+            warnings.append("Could not resolve the new branch's academic records - attendance and exam history stayed linked to the old branch.")
+
+    return Response(
+        {
+            "success": True,
+            "message": f"{student_user.get_full_name()} moved to {target.branch_label or target.name}.",
+            "warnings": warnings,
         }
     )

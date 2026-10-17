@@ -7,6 +7,7 @@ urlpatterns = [
     path("branches/", branch_views.list_branches, name="app_list_branches"),
     path("branches/create/", branch_views.create_branch, name="app_create_branch"),
     path("branches/switch/", branch_views.switch_branch, name="app_switch_branch"),
+    path("branches/transfer-student/", branch_views.transfer_student, name="app_transfer_student"),
     path("term-transition/resolve/", app_views.term_transition_resolve, name="app_term_transition_resolve"),
     path("term-transition/summary/", app_views.term_transition_summary, name="app_term_transition_summary"),
     path("terms/past-summary/", app_views.past_terms_summary, name="app_past_terms_summary"),

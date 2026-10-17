@@ -69,6 +69,14 @@ class BranchSwitchingTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         return {row["email"] for row in response.data["students"]}
 
+    def _student_id(self, email):
+        response = self.client.get("/api/app/students/")
+        self.assertEqual(response.status_code, 200, response.data)
+        for row in response.data["students"]:
+            if row["email"] == email:
+                return row["id"]
+        self.fail(f"{email} not found in the current branch's student list")
+
     # -- creating a branch ---------------------------------------------------
 
     def test_creating_the_first_branch_auto_creates_a_group_and_labels_the_original_main(self):
@@ -191,3 +199,114 @@ class BranchSwitchingTests(TestCase):
 
         self._create_student("only.student@greenwood.edu")
         self.assertEqual(self._student_emails(), {"only.student@greenwood.edu"})
+
+    # -- transferring a student between branches -----------------------------
+
+    def test_transferring_a_student_moves_them_to_the_target_branch(self):
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+        main_id = str(self.school.id)
+
+        self._create_student("mover@greenwood.edu")
+        self.assertEqual(self._student_emails(), {"mover@greenwood.edu"})
+
+        response = self.client.post(
+            "/api/app/branches/transfer-student/",
+            {"student_id": self._student_id("mover@greenwood.edu"), "target_tenant_id": secondary_id},
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        # Gone from Main...
+        self.assertEqual(self._student_emails(), set())
+
+        # ...and now on Secondary.
+        switch = self.client.post("/api/app/branches/switch/", {"tenant_id": secondary_id})
+        self._auth(switch.data["access"])
+        self.assertEqual(self._student_emails(), {"mover@greenwood.edu"})
+
+        from users.models import StudentProfile
+        moved = StudentProfile.objects.get(user__email="mover@greenwood.edu")
+        self.assertEqual(str(moved.user.tenant_id), secondary_id)
+        self.assertIsNone(moved.current_class_id, "a class from the old branch must not dangle across tenants")
+        self.assertIsNone(moved.current_term_id)
+
+    def test_transferring_a_students_payment_reference_moves_with_them(self):
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+        self._create_student("payref@greenwood.edu")
+
+        from finance.models import StudentPaymentReference
+        from users.models import StudentProfile
+
+        student = StudentProfile.objects.get(user__email="payref@greenwood.edu")
+        payref = StudentPaymentReference.objects.create(student=student, tenant=self.school, code="PR-TEST-0001")
+
+        response = self.client.post(
+            "/api/app/branches/transfer-student/",
+            {"student_id": str(student.id), "target_tenant_id": secondary_id},
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        payref.refresh_from_db()
+        self.assertEqual(str(payref.tenant_id), secondary_id)
+
+    def test_transfer_rejects_a_student_who_is_not_on_your_current_branch(self):
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+
+        switch = self.client.post("/api/app/branches/switch/", {"tenant_id": secondary_id})
+        self._auth(switch.data["access"])
+        self._create_student("on.secondary@greenwood.edu")
+        secondary_student_id = self._student_id("on.secondary@greenwood.edu")
+
+        switch_back = self.client.post("/api/app/branches/switch/", {"tenant_id": str(self.school.id)})
+        self._auth(switch_back.data["access"])
+
+        response = self.client.post(
+            "/api/app/branches/transfer-student/",
+            {"student_id": secondary_student_id, "target_tenant_id": secondary_id},
+        )
+        self.assertEqual(response.status_code, 404, response.data)
+
+    def test_transfer_rejects_a_target_branch_outside_your_group(self):
+        other_school = SchoolTenant.objects.create(name="Unrelated School", schema_name="unrelated_school_2", is_active=True)
+        self._login()
+        self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        self._create_student("stuck@greenwood.edu")
+
+        response = self.client.post(
+            "/api/app/branches/transfer-student/",
+            {"student_id": self._student_id("stuck@greenwood.edu"), "target_tenant_id": str(other_school.id)},
+        )
+        self.assertEqual(response.status_code, 404, response.data)
+
+    def test_transfer_rejects_the_same_branch_as_a_no_op(self):
+        self._login()
+        self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        self._create_student("same.branch@greenwood.edu")
+
+        response = self.client.post(
+            "/api/app/branches/transfer-student/",
+            {"student_id": self._student_id("same.branch@greenwood.edu"), "target_tenant_id": str(self.school.id)},
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+
+    def test_only_school_admin_or_principal_can_transfer_students(self):
+        User.objects.create_user(
+            email="transfer.teacher@greenwood.edu", password="TeacherPass123", first_name="Tee", last_name="Cher",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self._login()
+        self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        self._create_student("guarded@greenwood.edu")
+        student_id = self._student_id("guarded@greenwood.edu")
+
+        self._login(email="transfer.teacher@greenwood.edu", password="TeacherPass123", school_code=self.school.schema_name)
+        response = self.client.post(
+            "/api/app/branches/transfer-student/",
+            {"student_id": student_id, "target_tenant_id": str(self.school.id)},
+        )
+        self.assertEqual(response.status_code, 403, response.data)

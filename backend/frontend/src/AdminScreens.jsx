@@ -13456,6 +13456,48 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   const [deletingStudentId, setDeletingStudentId] = useState("");
   const [pendingDeleteStudent, setPendingDeleteStudent] = useState(null);
   const [deleteSuccess, setDeleteSuccess] = useState(null);
+  // Branches this school has (see users.branch_views) - only fetched for
+  // school_admin/principal, and the "Transfer" action only ever shows once
+  // there's actually somewhere else to transfer a student to.
+  const [branches, setBranches] = useState([]);
+  const [pendingTransferStudent, setPendingTransferStudent] = useState(null);
+  const [transferTargetId, setTransferTargetId] = useState("");
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferError, setTransferError] = useState("");
+  const [transferWarning, setTransferWarning] = useState("");
+  useEffect(() => {
+    if (!session) return;
+    requestJson(session, "GET", "/api/app/branches/")
+      .then((result) => setBranches(result?.branches || []))
+      .catch(() => {});
+  }, [session]);
+  const openTransferDialog = (student) => {
+    setPendingTransferStudent(student);
+    setTransferTargetId("");
+    setTransferError("");
+    setTransferWarning("");
+  };
+  const handleConfirmTransfer = async () => {
+    if (!pendingTransferStudent || !transferTargetId || transferBusy) return;
+    setTransferBusy(true);
+    setTransferError("");
+    try {
+      const result = await requestJson(session, "POST", "/api/app/branches/transfer-student/", {
+        student_id: pendingTransferStudent.id,
+        target_tenant_id: transferTargetId,
+      });
+      setPendingTransferStudent(null);
+      setTransferTargetId("");
+      if (result?.warnings?.length) {
+        setTransferWarning(result.warnings.join(" "));
+      }
+      onRetry?.();
+    } catch (err) {
+      setTransferError(err.message || "Could not transfer student.");
+    } finally {
+      setTransferBusy(false);
+    }
+  };
   const [activityTitleForm, setActivityTitleForm] = useState({ name: "", star_rating: "1" });
   const [editingActivityTitleId, setEditingActivityTitleId] = useState("");
   const [activityTitleBusyId, setActivityTitleBusyId] = useState("");
@@ -14068,6 +14110,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
 
       <article className="app-panel">
         <h3>Student Directory</h3>
+        {transferWarning ? <p className="form-feedback error">{transferWarning}</p> : null}
         <div className="directory-tools">
                 <button
                   type="button"
@@ -14138,6 +14181,11 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                           <button type="button" className="table-action" onClick={() => handleStartEdit(item)}>
                             Edit
                           </button>
+                          {branches.length > 1 ? (
+                            <button type="button" className="table-action" onClick={() => openTransferDialog(item)}>
+                              Transfer
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="table-action danger"
@@ -14196,6 +14244,48 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                     disabled={deletingStudentId === pendingDeleteStudent.id}
                   >
                     {deletingStudentId === pendingDeleteStudent.id ? <><Spinner size={12} /> Deleting...</> : "Delete student"}
+                  </button>
+                </div>
+              </article>
+            </div>
+          ) : null}
+
+          {pendingTransferStudent ? (
+            <div className="student-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="student-transfer-title">
+              <article className="student-delete-card">
+                <p className="student-delete-kicker">Transfer student</p>
+                <h3 id="student-transfer-title">
+                  Move {pendingTransferStudent.name || pendingTransferStudent.email || "this student"} to another branch?
+                </h3>
+                <p>
+                  Their account, class record, payment reference, attendance and exam history move with them. Their
+                  current class and term are cleared - assign those again on the new branch.
+                </p>
+                <label className="panel-field full">
+                  Move to
+                  <select value={transferTargetId} onChange={(event) => setTransferTargetId(event.target.value)} disabled={transferBusy}>
+                    <option value="">Select a branch</option>
+                    {branches
+                      .filter((branch) => !branch.is_active)
+                      .map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.branch_label || branch.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                {transferError ? <p className="form-feedback error">{transferError}</p> : null}
+                <div className="student-delete-actions">
+                  <button type="button" className="table-action" onClick={() => setPendingTransferStudent(null)} disabled={transferBusy}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="table-action student-delete-confirm"
+                    onClick={handleConfirmTransfer}
+                    disabled={transferBusy || !transferTargetId}
+                  >
+                    {transferBusy ? <><Spinner size={12} /> Moving...</> : "Transfer student"}
                   </button>
                 </div>
               </article>
