@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown, Download, Clock, Copy, Briefcase, CalendarClock, Wallet, UserCheck, CheckCircle2, XCircle, Banknote, Eye, EyeOff, Smartphone } from "lucide-react";
+import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown, Download, Clock, Copy, Briefcase, CalendarClock, Wallet, UserCheck, CheckCircle2, XCircle, Banknote, Eye, EyeOff, Smartphone, Building2 } from "lucide-react";
 import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
@@ -38,6 +38,7 @@ import {
   Popup,
   describeReceiptOutcome,
   useCurrentTerm,
+  writeStoredSession,
 } from "./AppShared";
 import { TeacherExamBuilder, TheoryGradingPanel, ExamGroupBuilder } from "./TeacherExamPanels";
 import { PageHeader, SectionCard, MetricTile, EmptyState, useAdminStudioScope } from "./teacher/TeacherKit";
@@ -251,6 +252,91 @@ function PhoneVerificationBanner({ visible, onGoToSettings }) {
           <X size={14} />
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Only renders anything once a school has created a second branch (see
+ * users.branch_views) - invisible for the overwhelming majority of schools,
+ * which never touch this feature. Switching re-issues tokens scoped to the
+ * chosen branch and reloads the page outright, rather than trying to
+ * refresh every already-loaded screen in place, so nothing keeps rendering
+ * data fetched under the branch the admin just left. */
+function BranchSwitcher({ session }) {
+  const role = session?.user?.role;
+  const eligible = role === "school_admin" || role === "principal";
+  const [branches, setBranches] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!session || !eligible) return undefined;
+    let cancelled = false;
+    requestJson(session, "GET", "/api/app/branches/")
+      .then((result) => {
+        if (!cancelled) setBranches(result?.branches || []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session, eligible]);
+
+  if (!eligible || !branches || branches.length < 2) return null;
+  const active = branches.find((branch) => branch.is_active) || branches[0];
+
+  const handleSwitch = async (branchId) => {
+    if (branchId === active.id || switching) return;
+    setSwitching(true);
+    setError("");
+    try {
+      const result = await requestJson(session, "POST", "/api/app/branches/switch/", { tenant_id: branchId });
+      session.access = result.access;
+      session.refresh = result.refresh;
+      writeStoredSession(session);
+      window.location.reload();
+    } catch (err) {
+      setError(err.message || "Could not switch branch.");
+      setSwitching(false);
+    }
+  };
+
+  return (
+    <div className="branch-switcher">
+      <button
+        type="button"
+        className="topbar-icon-btn branch-switcher-trigger"
+        onClick={() => setOpen((prev) => !prev)}
+        disabled={switching}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <Building2 size={16} />
+        <span>{active.branch_label || active.name}</span>
+        <ChevronDown size={14} />
+      </button>
+      {open ? (
+        <div className="branch-switcher-menu" role="menu">
+          {branches.map((branch) => (
+            <button
+              key={branch.id}
+              type="button"
+              role="menuitem"
+              className={`branch-switcher-option${branch.is_active ? " active" : ""}`}
+              onClick={() => {
+                setOpen(false);
+                handleSwitch(branch.id);
+              }}
+              disabled={switching}
+            >
+              <span>{branch.branch_label || branch.name}</span>
+              {branch.is_active ? <CheckCircle2 size={14} /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {error ? <p className="form-feedback error branch-switcher-error">{error}</p> : null}
     </div>
   );
 }
@@ -10880,6 +10966,93 @@ function addMonthsAndDays(dateStr, months, days) {
   return result.toISOString().slice(0, 10);
 }
 
+/** Lets a school_admin/principal turn their single school into named
+ * branches (e.g. "Primary"/"Secondary") that share this name but keep
+ * fully separate students, classes, fees and every other record - see
+ * users.branch_views. Invisible to every other role, and shows nothing
+ * extra once there are no branches, so a school that never uses this
+ * never sees it. */
+function BranchesSettingsPanel({ session, role }) {
+  const eligible = role === "school_admin" || role === "principal";
+  const [branches, setBranches] = useState(null);
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState("");
+
+  const load = useCallback(() => {
+    if (!session || !eligible) return;
+    requestJson(session, "GET", "/api/app/branches/")
+      .then((result) => setBranches(result?.branches || []))
+      .catch(() => {});
+  }, [session, eligible]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!eligible) return null;
+
+  const handleCreate = async (event) => {
+    event.preventDefault();
+    const trimmed = label.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    setError("");
+    setFeedback("");
+    try {
+      const result = await requestJson(session, "POST", "/api/app/branches/create/", { branch_label: trimmed });
+      setFeedback(result?.message || "Branch created.");
+      setLabel("");
+      load();
+    } catch (err) {
+      setError(err.message || "Could not create branch.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <article className="app-panel">
+      <div className="panel-head">
+        <h3>School Branches</h3>
+        <small>
+          Run this school as named branches (e.g. "Primary"/"Secondary") that share this name but keep fully
+          separate students, classes, and records - switch between them from the top bar, with this same login.
+        </small>
+      </div>
+      {branches && branches.length > 0 ? (
+        <ul className="branches-settings-list">
+          {branches.map((branch) => (
+            <li key={branch.id}>
+              <span>{branch.branch_label || branch.name}</span>
+              {branch.is_active ? <span className="pill">Current</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <form className="panel-form-grid" onSubmit={handleCreate}>
+        <label className="panel-field">
+          {branches && branches.length > 0 ? "Add another branch" : "Add a branch"}
+          <input
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder={branches && branches.length > 0 ? "e.g. Boarding" : "e.g. Secondary"}
+            disabled={busy}
+          />
+        </label>
+        <div className="panel-form-actions">
+          <button type="submit" disabled={busy || !label.trim()}>
+            {busy ? <><Spinner size={12} /> Creating...</> : "Add branch"}
+          </button>
+        </div>
+      </form>
+      {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+      {error ? <p className="form-feedback error">{error}</p> : null}
+    </article>
+  );
+}
+
 function AdminSettingsScreen({
   data,
   user,
@@ -11286,6 +11459,7 @@ function AdminSettingsScreen({
 
       {data ? (
         <>
+        <BranchesSettingsPanel session={session} role={user?.role} />
         <article className="app-panel">
           <div className="theme-switcher">
             <p className="field-note">Interface Theme</p>
@@ -15851,6 +16025,7 @@ function AdminLicenseScreen({ data, loading, error, onRetry, onActivate, onPurch
 export {
   TermTransitionPopup,
   PhoneVerificationBanner,
+  BranchSwitcher,
   AdminDashboardScreen,
   AdminPerformanceHeatmapScreen,
   AdminFinanceScreen,

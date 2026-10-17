@@ -137,6 +137,7 @@ const AdminTableScreen = lazyAdminScreen("AdminTableScreen");
 const AdminClassesScreen = lazyAdminScreen("AdminClassesScreen");
 const TermTransitionPopup = lazyAdminScreen("TermTransitionPopup");
 const PhoneVerificationBanner = lazyAdminScreen("PhoneVerificationBanner");
+const BranchSwitcher = lazyAdminScreen("BranchSwitcher");
 const AdminHRPayrollScreen = lazyAdminScreen("AdminHRPayrollScreen");
 const AdminPayrollScreen = lazyAdminScreen("AdminPayrollScreen");
 const AdminNonTeachingStaffScreen = lazyAdminScreen("AdminNonTeachingStaffScreen");
@@ -9914,6 +9915,9 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
           <div className="topbar-actions">
             <TopbarClock />
             <CurrentTermBadge session={session} showWhenEmpty />
+            <Suspense fallback={null}>
+              <BranchSwitcher session={session} />
+            </Suspense>
             <button
               type="button"
               className="topbar-icon-btn theme-toggle-btn"

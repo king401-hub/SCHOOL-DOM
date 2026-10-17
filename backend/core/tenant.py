@@ -52,6 +52,14 @@ class SchoolTenant(models.Model):
         blank=True,
         related_name="schools",
     )
+    # A single school operating as branches (e.g. "Primary"/"Secondary") under
+    # one name/brand - distinct from the proprietor's SchoolGroup use case,
+    # where each school is fully separate with its own admin login. Branches
+    # share the same school_group AND the same admin's login (see
+    # users.authentication.BranchAwareJWTAuthentication), switching which one
+    # is active without re-authenticating. Blank for every school that isn't
+    # branching - never shown/required unless a branch was actually created.
+    branch_label = models.CharField(max_length=50, blank=True, default="")
     # Sales/growth-ops territory assignment (Ops Console spec) - distinct from
     # country/state below, which describe the school's own physical location.
     ops_region = models.ForeignKey(

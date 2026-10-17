@@ -1,10 +1,12 @@
 import json
+import uuid
 
 from django.contrib.auth.models import AnonymousUser
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import HttpResponse, JsonResponse
 from django.test import RequestFactory, SimpleTestCase, override_settings
+from rest_framework_simplejwt.tokens import AccessToken
 
 from middleware.idempotency import MAX_FINGERPRINT_BODY, IdempotencyMiddleware
 
@@ -54,3 +56,42 @@ class IdempotencyMiddlewareBodyTests(SimpleTestCase):
         self.assertEqual(len(calls), 1, "the second identical POST should have been replayed from cache")
         self.assertEqual(json.loads(second.content), {"created": True})
         self.assertEqual(second.status_code, first.status_code)
+
+    def _bearer_header(self, user_id, active_tenant):
+        token = AccessToken()
+        token["user_id"] = user_id
+        token["active_tenant"] = active_tenant
+        return f"Bearer {token}"
+
+    def test_identical_posts_from_different_branches_are_not_deduplicated(self):
+        """Regression: the cache key used to ignore which branch (active
+        tenant) a request came from - a branch-switching admin posting the
+        same body to the same path from branch A then branch B within the
+        10s window used to get branch A's cached response replayed for
+        branch B's request, even though branch B's own request actually
+        executed with branch B's data server-side."""
+        calls = []
+        admin_id = str(uuid.uuid4())
+
+        def view(req):
+            calls.append(1)
+            return JsonResponse({"created": True, "call": len(calls)}, status=201)
+
+        def submit(active_tenant):
+            request = self.factory.post(
+                "/api/things/",
+                data=json.dumps({"name": "same"}),
+                content_type="application/json",
+                HTTP_AUTHORIZATION=self._bearer_header(admin_id, active_tenant),
+            )
+            request.user = AnonymousUser()
+            return IdempotencyMiddleware(view)(request)
+
+        first = submit("branch-a")
+        second = submit("branch-b")
+        third = submit("branch-a")
+
+        self.assertEqual(len(calls), 2, "each distinct branch should execute its own request once")
+        self.assertEqual(json.loads(first.content)["call"], 1)
+        self.assertEqual(json.loads(second.content)["call"], 2)
+        self.assertEqual(json.loads(third.content), json.loads(first.content), "a repeat for the same branch is still deduplicated")

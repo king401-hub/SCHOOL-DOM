@@ -619,14 +619,23 @@ def apply_access_lifetime(access_token, role):
     return access_token
 
 
-def get_tokens_for_user(user):
-    """Generate JWT tokens for user"""
+def get_tokens_for_user(user, active_tenant=None):
+    """Generate JWT tokens for user.
+
+    `active_tenant` is only ever meaningful for a branch-switching admin
+    (see users.branch_views / users.authentication.BranchAwareJWTAuthentication)
+    - every other caller omits it, which defaults the active branch to the
+    user's own home tenant (`tenant` claim), identical to today's behavior.
+    """
     refresh = RefreshToken.for_user(user)
-    
+
     # Add custom claims
     refresh['role'] = user.role
     refresh['tenant'] = str(user.tenant.id) if user.tenant else None
-    
+    active = active_tenant or user.tenant
+    if active and user.school_group_id:
+        refresh['active_tenant'] = str(active.id)
+
     return {
         'refresh': str(refresh),
         'access': str(apply_access_lifetime(refresh.access_token, user.role)),

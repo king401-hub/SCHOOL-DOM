@@ -5,6 +5,9 @@ import time
 from django.core.cache import cache
 from django.http import JsonResponse
 
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import AccessToken
+
 IDEMPOTENCY_TTL = 10  # seconds — window in which identical requests are deduplicated
 SKIP_METHODS = {"GET", "HEAD", "OPTIONS"}
 SKIP_PREFIXES = ("/admin/", "/static/", "/media/")
@@ -54,10 +57,33 @@ def _too_big_to_fingerprint(request):
         return False
 
 
+def _requester_fingerprint(request):
+    """(user_id, active_tenant) for the request's own JWT, read directly
+    from the Authorization header - at this point in the middleware chain
+    (before DRF's own authentication runs inside the view) request.user is
+    still Django's session-based lazy user, which is anonymous for every
+    bearer-token API call this app actually makes, so it can't tell two
+    different signed-in admins (or two branches of the same admin) apart.
+    Falls back to ("anon", None) for anything that isn't a valid access
+    token - never raises, since this is only ever used for cache-key
+    uniqueness, not authorization."""
+    header = request.META.get("HTTP_AUTHORIZATION", "")
+    if not header.startswith("Bearer "):
+        return "anon", None
+    try:
+        token = AccessToken(header[len("Bearer "):])
+    except TokenError:
+        return "anon", None
+    return token.get("user_id", "anon"), token.get("active_tenant")
+
+
 def _fingerprint(request):
-    user_id = request.user.pk if request.user and request.user.is_authenticated else "anon"
+    user_id, active_tenant = _requester_fingerprint(request)
     body = request.body[:4096]  # only the first 4 KB is hashed (the caller has ruled out huge bodies)
-    raw = f"{user_id}:{request.method}:{request.path}:{body!r}"
+    # active_tenant is included so a branch-switching admin posting the same
+    # body to the same path from two different branches within the TTL gets
+    # each branch's own response, never the other branch's cached one.
+    raw = f"{user_id}:{active_tenant}:{request.method}:{request.path}:{body!r}"
     return "idem:" + hashlib.sha256(raw.encode()).hexdigest()
 
 

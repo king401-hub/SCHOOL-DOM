@@ -1,9 +1,12 @@
 from django.urls import path
 
-from . import app_views, proprietor_views
+from . import app_views, branch_views, proprietor_views
 
 urlpatterns = [
     path("dashboard/", app_views.dashboard_snapshot, name="app_dashboard_snapshot"),
+    path("branches/", branch_views.list_branches, name="app_list_branches"),
+    path("branches/create/", branch_views.create_branch, name="app_create_branch"),
+    path("branches/switch/", branch_views.switch_branch, name="app_switch_branch"),
     path("term-transition/resolve/", app_views.term_transition_resolve, name="app_term_transition_resolve"),
     path("term-transition/summary/", app_views.term_transition_summary, name="app_term_transition_summary"),
     path("terms/past-summary/", app_views.past_terms_summary, name="app_past_terms_summary"),
