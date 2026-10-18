@@ -25623,12 +25623,19 @@ body[data-theme="dark"] .qr-scanner-copy p {
   }
 }
 
-/* Bulk ID card export - many people's cards in one print job, so the
-   browser's own "Save as PDF" print destination produces a single combined
-   PDF. Off-screen/hidden outside print media; see IdCardBulkPrintArea and
-   AdminIdCardsScreen's handleBulkExport. */
+/* Bulk ID card export - every selected person's card is captured
+   individually (html2canvas, one PDF per person: front page + back page)
+   and packaged into one zip file, so export quality never depends on a
+   mobile browser's own (wildly inconsistent) print-to-PDF rendering - see
+   IdCardBulkPrintArea and AdminIdCardsScreen's handleBulkExport. Rendered
+   fully laid out (never display:none - a hidden element has no box for
+   html2canvas to capture) but pushed off-screen, never seen by the admin. */
 .id-card-bulk-print-area {
-  display: none;
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: max-content;
+  background: #ffffff;
   /* Same fallback values .id-card-print-area's own CSS rule provides for
      the single-card preview - themeToCssVars() only ever overrides
      --id-card-teal/--id-card-green (see AppShared.jsx), so without these,
@@ -25641,46 +25648,30 @@ body[data-theme="dark"] .qr-scanner-copy p {
   --id-card-green: #0f8a55;
 }
 
-@media print {
-  /* A bulk export can run while the single-card preview panel is still
-     mounted elsewhere on the same admin screen - without this, both would
-     try to fill the page during the same print job. Toggled by JS right
-     before/after window.print(); see handleBulkExport. */
-  body.id-card-bulk-printing .id-card-print-area {
-    display: none !important;
-  }
+/* Every face captured here is read straight off the DOM, never through the
+   interactive on-screen flip (3D transform + backface-visibility:hidden) -
+   html2canvas doesn't reliably support 3D transform contexts, so this area
+   always lays both faces out flat and visible, the same override the old
+   print path only ever applied under @media print. */
+.id-card-bulk-print-item {
+  display: grid;
+  grid-template-columns: 3.375in 3.375in;
+  gap: 0.18in;
+}
 
-  .id-card-bulk-print-area,
-  .id-card-bulk-print-area * {
-    visibility: visible !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
+.id-card-bulk-print-item .id-card-flip-inner {
+  display: contents;
+  transform: none !important;
+}
 
-  .id-card-bulk-print-area {
-    display: block !important;
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    background: #ffffff;
-  }
+.id-card-bulk-print-item .id-card-face {
+  position: relative;
+  inset: auto;
+  backface-visibility: visible;
+}
 
-  .id-card-bulk-print-item {
-    display: grid;
-    grid-template-columns: 3.375in 3.375in;
-    gap: 0.18in;
-    place-items: center;
-    place-content: center;
-    width: 100%;
-    min-height: 100vh;
-    page-break-after: always;
-    break-after: page;
-  }
-
-  .id-card-bulk-print-item:last-child {
-    page-break-after: auto;
-    break-after: auto;
-  }
+.id-card-bulk-print-item .id-card-back {
+  transform: none;
 }
 
 .document-workspace {

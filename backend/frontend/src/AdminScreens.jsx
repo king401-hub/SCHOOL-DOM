@@ -8497,10 +8497,12 @@ export function IdCardPreview({ person, school, qrDataUrl, theme }) {
   );
 }
 
-/** One page per person (front+back side by side, matching the single-card
- * print layout) inside one shared print job - window.print()'s "Save as
- * PDF" destination is what turns this into one combined PDF file. See
- * AdminIdCardsScreen's handleBulkExport. */
+/** Renders every selected person's card off-screen (see the
+ * .id-card-bulk-print-area/-item CSS - laid out, just pushed out of view,
+ * never display:none, since html2canvas can't capture a box with no
+ * layout) so AdminIdCardsScreen's handleBulkExport can capture each
+ * person's front/back faces individually and package them into one zip,
+ * one PDF per person. */
 function IdCardBulkPrintArea({ people, school, qrByKey, theme }) {
   return (
     <div className="id-card-bulk-print-area">
@@ -8840,6 +8842,15 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
     });
   };
 
+  // Standard CR80 card size (matches .id-card-preview-card's own CSS) -
+  // used directly as the PDF page size so each exported file is already a
+  // print-ready, correctly-proportioned card, not a guess derived from
+  // whatever pixel size the browser happened to render it at.
+  const ID_CARD_WIDTH_IN = 3.375;
+  const ID_CARD_HEIGHT_IN = 2.125;
+
+  const sanitizeFileName = (value) => String(value || "").replace(/[\\/:*?"<>|]+/g, "_").trim();
+
   const handleBulkExport = async () => {
     const people_ = people.filter((person) => bulkSelected.has(`${person.person_type}:${person.id}`));
     if (!people_.length) return;
@@ -8864,33 +8875,74 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
       );
       setBulkQrByKey(Object.fromEntries(qrEntries));
       setBulkExportPeople(people_);
-      // The bulk print area only exists in the DOM/CSS vars once mounted
-      // above - wait a frame so it has actually painted before printing.
+      // The bulk print area only mounts (and its images finish loading)
+      // once this state lands - wait a couple of frames so everything has
+      // actually painted before html2canvas reads it off the DOM.
       await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
       await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 
-      let styleTag = document.getElementById("id-card-page-style");
-      if (!styleTag) {
-        styleTag = document.createElement("style");
-        styleTag.id = "id-card-page-style";
-        document.head.appendChild(styleTag);
+      // Loaded on demand (consistent with downloadPrintablePdf's own
+      // lazy jsPDF import) so neither adds weight to the main bundle for
+      // the common case where an admin never bulk-exports cards.
+      const [{ default: html2canvas }, { default: JSZip }, { jsPDF }] = await Promise.all([
+        import("html2canvas"),
+        import("jszip"),
+        import("jspdf"),
+      ]);
+
+      const zip = new JSZip();
+      const usedNames = new Set();
+      const itemNodes = Array.from(document.querySelectorAll(".id-card-bulk-print-item"));
+      let exported = 0;
+
+      for (let index = 0; index < people_.length; index += 1) {
+        const person = people_[index];
+        const node = itemNodes[index];
+        const frontEl = node?.querySelector(".id-card-face.id-card-front");
+        const backEl = node?.querySelector(".id-card-face.id-card-back");
+        if (!frontEl) continue;
+
+        const captureOptions = { scale: 2, backgroundColor: "#ffffff", useCORS: true };
+        const frontCanvas = await html2canvas(frontEl, captureOptions);
+        const doc = new jsPDF({ orientation: "landscape", unit: "in", format: [ID_CARD_WIDTH_IN, ID_CARD_HEIGHT_IN], compress: true });
+        doc.addImage(frontCanvas.toDataURL("image/png"), "PNG", 0, 0, ID_CARD_WIDTH_IN, ID_CARD_HEIGHT_IN, undefined, "FAST");
+        if (backEl) {
+          const backCanvas = await html2canvas(backEl, captureOptions);
+          doc.addPage([ID_CARD_WIDTH_IN, ID_CARD_HEIGHT_IN], "landscape");
+          doc.addImage(backCanvas.toDataURL("image/png"), "PNG", 0, 0, ID_CARD_WIDTH_IN, ID_CARD_HEIGHT_IN, undefined, "FAST");
+        }
+
+        const baseName = sanitizeFileName(`${person.name || "ID Card"} - ${person.unique_id || person.id}`) || `id-card-${index + 1}`;
+        let fileName = `${baseName}.pdf`;
+        let suffix = 2;
+        while (usedNames.has(fileName)) {
+          fileName = `${baseName} (${suffix}).pdf`;
+          suffix += 1;
+        }
+        usedNames.add(fileName);
+        zip.file(fileName, doc.output("blob"));
+        exported += 1;
       }
-      styleTag.textContent = `@page{size:${documentTheme.page_size} landscape;margin:0}`;
 
-      const cleanup = () => {
-        document.body.classList.remove("id-card-bulk-printing");
-        setBulkExportPeople(null);
-        window.removeEventListener("afterprint", cleanup);
-      };
-      window.addEventListener("afterprint", cleanup);
-      document.body.classList.add("id-card-bulk-printing");
-      setActionSuccess(`Exported ${people_.length} card${people_.length === 1 ? "" : "s"} - choose "Save as PDF" in the print dialog for one combined file.`);
-      window.print();
+      if (!exported) {
+        throw new Error("Could not render any of the selected cards.");
+      }
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const zipUrl = URL.createObjectURL(zipBlob);
+      const link = document.createElement("a");
+      link.href = zipUrl;
+      link.download = `id-cards-${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(zipUrl);
+
+      setActionSuccess(`Exported ${exported} card${exported === 1 ? "" : "s"} to a zip file, one PDF per person.`);
     } catch (exportError) {
       setActionError(exportError.message || "Could not export the selected cards.");
-      document.body.classList.remove("id-card-bulk-printing");
-      setBulkExportPeople(null);
     } finally {
+      setBulkExportPeople(null);
       setBulkExporting(false);
     }
   };
@@ -8997,7 +9049,7 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
               {bulkSelected.size ? (
                 <div className="panel-form-actions id-card-actions">
                   <button type="button" className="table-action" onClick={handleBulkExport} disabled={bulkExporting}>
-                    {bulkExporting ? <><Spinner size={12} /> Preparing...</> : `Export ${bulkSelected.size} Selected as PDF`}
+                    {bulkExporting ? <><Spinner size={12} /> Exporting...</> : `Export ${bulkSelected.size} Selected as ZIP`}
                   </button>
                 </div>
               ) : null}
