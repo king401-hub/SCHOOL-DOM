@@ -144,12 +144,21 @@ object ScanHandler {
             // The backend is only slow, not unreachable, so it may well know
             // this card - our cache just doesn't. Keep the scan queued for
             // the replay to settle instead of telling a real student their
-            // card is unregistered.
-            return ScanResult(ScanOutcome.WELCOME, "Saved - will sync when back online.", null)
+            // card is unregistered. The UID is shown regardless, same
+            // reasoning as the branch below - an admin reading it off this
+            // screen to assign the card shouldn't have to care which exact
+            // path produced the message.
+            return ScanResult(ScanOutcome.WELCOME, "Card $uid saved - will sync when back online.", null)
         }
         if (contact == null) {
             OfflineQueue.removeByIdempotencyKey(context, idempotencyKey)
-            return ScanResult(ScanOutcome.INVALID, "Card not recognized (offline).", null)
+            // The raw UID is what an admin reads off this screen to type
+            // into the web "Assign Card" form - the online path already
+            // includes it (the server's own "Card <uid> is not linked to
+            // anyone." message), so the offline path must too, or the
+            // terminal is useless for card assignment whenever it isn't
+            // fully online.
+            return ScanResult(ScanOutcome.INVALID, "Card $uid is not recognized (offline).", null)
         }
 
         val event = GateSettingsCache.classifyEvent(context, System.currentTimeMillis())

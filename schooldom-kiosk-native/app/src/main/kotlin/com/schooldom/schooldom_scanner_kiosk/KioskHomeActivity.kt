@@ -425,7 +425,15 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
 
         resetResultRunnable?.let { mainHandler.removeCallbacks(it) }
         val hasFees = fees != null
-        val displayMs = if (hasFees) 15_000L else 6_000L
+        // An admin reading this screen to assign an unrecognized card's UID
+        // into the web form needs real time to read and write down 8+ hex
+        // characters, not a glance - 6s (the normal result flash) isn't
+        // enough for that specific workflow.
+        val displayMs = when {
+            hasFees -> 15_000L
+            result.outcome == ScanOutcome.INVALID -> 12_000L
+            else -> 6_000L
+        }
         val runnable = Runnable {
             readyBlock.visibility = View.VISIBLE
             resultBlock.visibility = View.GONE
