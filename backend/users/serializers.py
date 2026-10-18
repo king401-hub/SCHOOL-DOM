@@ -189,7 +189,12 @@ class RegisterSerializer(serializers.Serializer):
                     guardian_phone=guardian_phone or "",
                     state_of_origin=state_of_origin or "",
                     local_government=local_government or "",
-                    guardian_relation="Guardian"
+                    guardian_relation="Guardian",
+                    # See users.app_views._ensure_student_profile_for_tenant's
+                    # own comment on this field - a self-registered student's
+                    # card should be viewable immediately too, not gated
+                    # behind an admin manually "downloading" it first.
+                    id_card_generated_at=timezone.now(),
                 )
                 try:
                     from finance.services import ensure_student_wallet

@@ -550,6 +550,10 @@ class SecretaryTools:
                 guardian_name=guardian_name,
                 guardian_phone=guardian_phone,
                 guardian_relation=(guardian_relation or "Guardian").strip(),
+                # See users.app_views._ensure_student_profile_for_tenant's own
+                # comment - a student the AI secretary creates should be able
+                # to see their own card immediately too.
+                id_card_generated_at=dj_timezone.now(),
             )
 
             return {

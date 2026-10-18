@@ -1995,6 +1995,12 @@ def _ensure_student_profile_for_tenant(
         student_type=student_type or "",
         extra_curricular_activity_title=extra_curricular_activity_title,
         home_address=home_address or "",
+        # The admin ID Cards screen used to be the only thing that could set
+        # this (only when they explicitly downloaded that student's card),
+        # which gated the student's own "My ID Card" page behind a manual,
+        # one-at-a-time admin action nobody was reliably doing - every new
+        # student's card is ready to view immediately now instead.
+        id_card_generated_at=timezone.now(),
     )
 
 
