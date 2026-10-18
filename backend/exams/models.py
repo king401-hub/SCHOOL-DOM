@@ -4,11 +4,21 @@ import hmac
 import secrets
 import string
 
+import django
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
 from django.utils import timezone
 from core.models import TimeStampedModel, TenantAwareModel
+
+# CheckConstraint's `check` kwarg was renamed to `condition` in Django 5.1
+# and removed in 6.0 - this repo's requirements.txt pins Django 6.0.8 (needs
+# `condition`), but production has historically lagged on older Django
+# (4.2, which only understands `check`). Resolving the kwarg name at import
+# time keeps a single model definition working on whichever is installed,
+# instead of the two sides silently drifting out of sync again.
+_CHECK_CONSTRAINT_KWARG = "condition" if django.VERSION >= (5, 1) else "check"
+
 
 class ExamType(TenantAwareModel, TimeStampedModel):
     name = models.CharField(max_length=100)  # MCQ, Essay, Mixed
@@ -256,10 +266,12 @@ class ExamPin(TenantAwareModel, TimeStampedModel):
         ]
         constraints = [
             models.CheckConstraint(
-                condition=(
-                    models.Q(exam__isnull=False, group__isnull=True)
-                    | models.Q(exam__isnull=True, group__isnull=False)
-                ),
+                **{
+                    _CHECK_CONSTRAINT_KWARG: (
+                        models.Q(exam__isnull=False, group__isnull=True)
+                        | models.Q(exam__isnull=True, group__isnull=False)
+                    )
+                },
                 name="exampin_requires_exam_xor_group",
             ),
         ]
@@ -358,10 +370,12 @@ class ExamPinUsage(TenantAwareModel, TimeStampedModel):
         ]
         constraints = [
             models.CheckConstraint(
-                condition=(
-                    models.Q(exam__isnull=False, group__isnull=True)
-                    | models.Q(exam__isnull=True, group__isnull=False)
-                ),
+                **{
+                    _CHECK_CONSTRAINT_KWARG: (
+                        models.Q(exam__isnull=False, group__isnull=True)
+                        | models.Q(exam__isnull=True, group__isnull=False)
+                    )
+                },
                 name="exampinusage_requires_exam_xor_group",
             ),
         ]
