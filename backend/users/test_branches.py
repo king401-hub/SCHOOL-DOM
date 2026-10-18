@@ -8,9 +8,11 @@ and users.branch_views for the implementation these tests exercise through
 real HTTP calls and real JWTs (never force_authenticate, which would bypass
 the authentication class entirely and prove nothing about it).
 """
+import re
 import uuid
 from unittest.mock import patch
 
+from django.core import mail
 from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -309,4 +311,190 @@ class BranchSwitchingTests(TestCase):
             "/api/app/branches/transfer-student/",
             {"student_id": student_id, "target_tenant_id": str(self.school.id)},
         )
+        self.assertEqual(response.status_code, 403, response.data)
+
+    # -- "fresh start" transfer mode -----------------------------------------
+
+    def test_fresh_start_transfer_creates_a_new_record_and_deactivates_the_old_one(self):
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+        self._create_student("fresh.old@greenwood.edu")
+        student_id = self._student_id("fresh.old@greenwood.edu")
+
+        response = self.client.post(
+            "/api/app/branches/transfer-student/",
+            {
+                "student_id": student_id,
+                "target_tenant_id": secondary_id,
+                "mode": "fresh",
+                "new_email": "fresh.new@greenwood.edu",
+                "new_student_password": "FreshStart123",
+                "confirm_new_student_password": "FreshStart123",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        # Old record stays on Main, deactivated, with its own email intact.
+        from users.models import User
+        old_user = User.objects.get(email="fresh.old@greenwood.edu")
+        self.assertFalse(old_user.is_active)
+        self.assertEqual(old_user.tenant_id, self.school.id)
+        # Still listed on Main (the directory doesn't filter out inactive
+        # students) - crucially, Main's list must not gain a SECOND entry
+        # for the same person, and the old email must still be exactly
+        # that, not silently changed.
+        self.assertIn("fresh.old@greenwood.edu", self._student_emails())
+        self.assertNotIn("fresh.new@greenwood.edu", self._student_emails())
+
+        # New, independent record on Secondary.
+        switch = self.client.post("/api/app/branches/switch/", {"tenant_id": secondary_id})
+        self._auth(switch.data["access"])
+        self.assertEqual(self._student_emails(), {"fresh.new@greenwood.edu"})
+
+        new_user = User.objects.get(email="fresh.new@greenwood.edu")
+        self.assertTrue(new_user.is_active)
+        self.assertNotEqual(new_user.id, old_user.id, "fresh start must be a distinct account, not the same one renamed")
+        self.assertEqual(str(new_user.tenant_id), secondary_id)
+
+    def test_fresh_start_transfer_requires_a_new_email(self):
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+        self._create_student("needs.email@greenwood.edu")
+
+        response = self.client.post(
+            "/api/app/branches/transfer-student/",
+            {
+                "student_id": self._student_id("needs.email@greenwood.edu"),
+                "target_tenant_id": secondary_id,
+                "mode": "fresh",
+                "new_student_password": "FreshStart123",
+                "confirm_new_student_password": "FreshStart123",
+            },
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+
+    def test_fresh_start_transfer_rejects_an_email_already_in_use(self):
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+        self._create_student("original@greenwood.edu")
+        self._create_student("taken@greenwood.edu")
+
+        response = self.client.post(
+            "/api/app/branches/transfer-student/",
+            {
+                "student_id": self._student_id("original@greenwood.edu"),
+                "target_tenant_id": secondary_id,
+                "mode": "fresh",
+                "new_email": "taken@greenwood.edu",
+                "new_student_password": "FreshStart123",
+                "confirm_new_student_password": "FreshStart123",
+            },
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        # Nothing should have moved - the original account must still be
+        # exactly as it was before the rejected attempt.
+        self.assertIn("original@greenwood.edu", self._student_emails())
+        from users.models import User
+        self.assertTrue(User.objects.get(email="original@greenwood.edu").is_active)
+
+    # -- deleting a branch ----------------------------------------------------
+
+    def _latest_otp_code(self):
+        match = re.search(r"\b(\d{6})\b", mail.outbox[-1].body)
+        self.assertIsNotNone(match, "no 6-digit code found in the latest email")
+        return match.group(1)
+
+    def test_deleting_an_empty_branch_requires_password_and_otp_then_succeeds(self):
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+
+        otp_response = self.client.post(f"/api/app/branches/{secondary_id}/request-delete-otp/")
+        self.assertEqual(otp_response.status_code, 200, otp_response.data)
+        code = self._latest_otp_code()
+
+        response = self.client.post(
+            f"/api/app/branches/{secondary_id}/delete/",
+            {
+                "current_password": "AdminPass123",
+                "otp_code": code,
+                "otp_challenge": otp_response.data["otp_challenge"],
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(SchoolTenant.objects.filter(pk=secondary_id).exists())
+
+    def test_deleting_a_branch_with_students_is_rejected(self):
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+        switch = self.client.post("/api/app/branches/switch/", {"tenant_id": secondary_id})
+        self._auth(switch.data["access"])
+        self._create_student("occupant@greenwood.edu")
+        self._auth(self._access_token())  # back to Main to issue the delete request as the branch manager
+
+        otp_response = self.client.post(f"/api/app/branches/{secondary_id}/request-delete-otp/")
+        code = self._latest_otp_code()
+        response = self.client.post(
+            f"/api/app/branches/{secondary_id}/delete/",
+            {"current_password": "AdminPass123", "otp_code": code, "otp_challenge": otp_response.data["otp_challenge"]},
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertTrue(SchoolTenant.objects.filter(pk=secondary_id).exists())
+
+    def test_cannot_delete_the_branch_you_are_currently_on(self):
+        self._login()
+        self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+
+        otp_response = self.client.post(f"/api/app/branches/{self.school.id}/request-delete-otp/")
+        code = self._latest_otp_code()
+        response = self.client.post(
+            f"/api/app/branches/{self.school.id}/delete/",
+            {"current_password": "AdminPass123", "otp_code": code, "otp_challenge": otp_response.data["otp_challenge"]},
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+
+    def test_delete_rejects_the_wrong_password(self):
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+
+        otp_response = self.client.post(f"/api/app/branches/{secondary_id}/request-delete-otp/")
+        code = self._latest_otp_code()
+        response = self.client.post(
+            f"/api/app/branches/{secondary_id}/delete/",
+            {"current_password": "WrongPassword", "otp_code": code, "otp_challenge": otp_response.data["otp_challenge"]},
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertTrue(SchoolTenant.objects.filter(pk=secondary_id).exists())
+
+    def test_delete_rejects_the_wrong_otp_code(self):
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+
+        otp_response = self.client.post(f"/api/app/branches/{secondary_id}/request-delete-otp/")
+        code = self._latest_otp_code()
+        wrong = "111111" if code != "111111" else "222222"
+        response = self.client.post(
+            f"/api/app/branches/{secondary_id}/delete/",
+            {"current_password": "AdminPass123", "otp_code": wrong, "otp_challenge": otp_response.data["otp_challenge"]},
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertTrue(SchoolTenant.objects.filter(pk=secondary_id).exists())
+
+    def test_only_school_admin_or_principal_can_delete_branches(self):
+        User.objects.create_user(
+            email="delete.teacher@greenwood.edu", password="TeacherPass123", first_name="Tee", last_name="Cher",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+
+        self._login(email="delete.teacher@greenwood.edu", password="TeacherPass123", school_code=self.school.schema_name)
+        response = self.client.post(f"/api/app/branches/{secondary_id}/request-delete-otp/")
         self.assertEqual(response.status_code, 403, response.data)

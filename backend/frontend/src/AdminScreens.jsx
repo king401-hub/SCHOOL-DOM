@@ -10980,6 +10980,15 @@ function BranchesSettingsPanel({ session, role }) {
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
 
+  // Delete flow: request-OTP, then password+code to confirm. pendingDelete
+  // holds which branch is being deleted and the challenge from the first
+  // step; null means no delete dialog is open.
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteOtpCode, setDeleteOtpCode] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   const load = useCallback(() => {
     if (!session || !eligible) return;
     requestJson(session, "GET", "/api/app/branches/")
@@ -11012,6 +11021,42 @@ function BranchesSettingsPanel({ session, role }) {
     }
   };
 
+  const startDelete = async (branch) => {
+    setDeleteError("");
+    setDeletePassword("");
+    setDeleteOtpCode("");
+    setDeleteBusy(true);
+    try {
+      const result = await requestJson(session, "POST", `/api/app/branches/${branch.id}/request-delete-otp/`);
+      setPendingDelete({ branch, otpChallenge: result?.otp_challenge || "" });
+    } catch (err) {
+      setError(err.message || "Could not send a verification code.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const confirmDelete = async (event) => {
+    event.preventDefault();
+    if (!pendingDelete || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      const result = await requestJson(session, "POST", `/api/app/branches/${pendingDelete.branch.id}/delete/`, {
+        current_password: deletePassword,
+        otp_code: deleteOtpCode,
+        otp_challenge: pendingDelete.otpChallenge,
+      });
+      setPendingDelete(null);
+      setFeedback(result?.message || "Branch deleted.");
+      load();
+    } catch (err) {
+      setDeleteError(err.message || "Could not delete branch.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   return (
     <article className="app-panel">
       <div className="panel-head">
@@ -11026,7 +11071,15 @@ function BranchesSettingsPanel({ session, role }) {
           {branches.map((branch) => (
             <li key={branch.id}>
               <span>{branch.branch_label || branch.name}</span>
-              {branch.is_active ? <span className="pill">Current</span> : null}
+              <span className="branches-settings-list-actions">
+                {branch.is_active ? (
+                  <span className="pill">Current</span>
+                ) : (
+                  <button type="button" className="table-action danger" onClick={() => startDelete(branch)} disabled={deleteBusy}>
+                    Delete
+                  </button>
+                )}
+              </span>
             </li>
           ))}
         </ul>
@@ -11049,6 +11102,52 @@ function BranchesSettingsPanel({ session, role }) {
       </form>
       {feedback ? <p className="form-feedback success">{feedback}</p> : null}
       {error ? <p className="form-feedback error">{error}</p> : null}
+
+      {pendingDelete ? (
+        <div className="student-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="branch-delete-title">
+          <article className="student-delete-card">
+            <div className="student-delete-icon" aria-hidden="true">!</div>
+            <p className="student-delete-kicker">Delete branch</p>
+            <h3 id="branch-delete-title">
+              Permanently delete {pendingDelete.branch.branch_label || pendingDelete.branch.name}?
+            </h3>
+            <p>
+              This cannot be undone. A verification code was sent to your email - enter your password and the code
+              to confirm.
+            </p>
+            <form className="panel-form-grid" onSubmit={confirmDelete}>
+              <label className="panel-field full">
+                Your password
+                <input type="password" value={deletePassword} onChange={(event) => setDeletePassword(event.target.value)} disabled={deleteBusy} />
+              </label>
+              <label className="panel-field full">
+                Verification code
+                <input
+                  value={deleteOtpCode}
+                  onChange={(event) => setDeleteOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                  inputMode="numeric"
+                  maxLength={6}
+                  disabled={deleteBusy}
+                />
+              </label>
+              {deleteError ? <p className="form-feedback error">{deleteError}</p> : null}
+              <div className="student-delete-actions">
+                <button type="button" className="table-action" onClick={() => setPendingDelete(null)} disabled={deleteBusy}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="table-action danger student-delete-confirm"
+                  disabled={deleteBusy || !deletePassword || deleteOtpCode.length !== 6}
+                >
+                  {deleteBusy ? <><Spinner size={12} /> Deleting...</> : "Delete branch"}
+                </button>
+              </div>
+            </form>
+          </article>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -13462,6 +13561,10 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   const [branches, setBranches] = useState([]);
   const [pendingTransferStudent, setPendingTransferStudent] = useState(null);
   const [transferTargetId, setTransferTargetId] = useState("");
+  const [transferMode, setTransferMode] = useState("move");
+  const [transferNewEmail, setTransferNewEmail] = useState("");
+  const [transferNewPassword, setTransferNewPassword] = useState("");
+  const [transferConfirmNewPassword, setTransferConfirmNewPassword] = useState("");
   const [transferBusy, setTransferBusy] = useState(false);
   const [transferError, setTransferError] = useState("");
   const [transferWarning, setTransferWarning] = useState("");
@@ -13474,6 +13577,10 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   const openTransferDialog = (student) => {
     setPendingTransferStudent(student);
     setTransferTargetId("");
+    setTransferMode("move");
+    setTransferNewEmail("");
+    setTransferNewPassword("");
+    setTransferConfirmNewPassword("");
     setTransferError("");
     setTransferWarning("");
   };
@@ -13482,10 +13589,17 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
     setTransferBusy(true);
     setTransferError("");
     try {
-      const result = await requestJson(session, "POST", "/api/app/branches/transfer-student/", {
+      const payload = {
         student_id: pendingTransferStudent.id,
         target_tenant_id: transferTargetId,
-      });
+        mode: transferMode,
+      };
+      if (transferMode === "fresh") {
+        payload.new_email = transferNewEmail.trim();
+        payload.new_student_password = transferNewPassword;
+        payload.confirm_new_student_password = transferConfirmNewPassword;
+      }
+      const result = await requestJson(session, "POST", "/api/app/branches/transfer-student/", payload);
       setPendingTransferStudent(null);
       setTransferTargetId("");
       if (result?.warnings?.length) {
@@ -14257,10 +14371,6 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                 <h3 id="student-transfer-title">
                   Move {pendingTransferStudent.name || pendingTransferStudent.email || "this student"} to another branch?
                 </h3>
-                <p>
-                  Their account, class record, payment reference, attendance and exam history move with them. Their
-                  current class and term are cleared - assign those again on the new branch.
-                </p>
                 <label className="panel-field full">
                   Move to
                   <select value={transferTargetId} onChange={(event) => setTransferTargetId(event.target.value)} disabled={transferBusy}>
@@ -14274,6 +14384,55 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                       ))}
                   </select>
                 </label>
+                <div className="segmented-control transfer-mode-control">
+                  <button type="button" className={transferMode === "move" ? "active" : ""} onClick={() => setTransferMode("move")} disabled={transferBusy}>
+                    Move with history
+                  </button>
+                  <button type="button" className={transferMode === "fresh" ? "active" : ""} onClick={() => setTransferMode("fresh")} disabled={transferBusy}>
+                    Fresh start
+                  </button>
+                </div>
+                {transferMode === "move" ? (
+                  <p>
+                    Their account, class record, payment reference, attendance and exam history move with them. Their
+                    current class and term are cleared - assign those again on the new branch.
+                  </p>
+                ) : (
+                  <>
+                    <p>
+                      A brand new, independent student record is created on the new branch with its own login. Their
+                      current record stays exactly as it is on this branch - deactivated, history untouched.
+                    </p>
+                    <label className="panel-field full">
+                      New login email
+                      <input
+                        type="email"
+                        value={transferNewEmail}
+                        onChange={(event) => setTransferNewEmail(event.target.value)}
+                        placeholder="e.g. jane.new@school.edu"
+                        disabled={transferBusy}
+                      />
+                    </label>
+                    <label className="panel-field full">
+                      New password
+                      <input
+                        type="password"
+                        value={transferNewPassword}
+                        onChange={(event) => setTransferNewPassword(event.target.value)}
+                        disabled={transferBusy}
+                      />
+                    </label>
+                    <label className="panel-field full">
+                      Confirm new password
+                      <input
+                        type="password"
+                        value={transferConfirmNewPassword}
+                        onChange={(event) => setTransferConfirmNewPassword(event.target.value)}
+                        disabled={transferBusy}
+                      />
+                    </label>
+                  </>
+                )}
                 {transferError ? <p className="form-feedback error">{transferError}</p> : null}
                 <div className="student-delete-actions">
                   <button type="button" className="table-action" onClick={() => setPendingTransferStudent(null)} disabled={transferBusy}>
@@ -14283,7 +14442,11 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                     type="button"
                     className="table-action student-delete-confirm"
                     onClick={handleConfirmTransfer}
-                    disabled={transferBusy || !transferTargetId}
+                    disabled={
+                      transferBusy ||
+                      !transferTargetId ||
+                      (transferMode === "fresh" && (!transferNewEmail.trim() || !transferNewPassword || !transferConfirmNewPassword))
+                    }
                   >
                     {transferBusy ? <><Spinner size={12} /> Moving...</> : "Transfer student"}
                   </button>

@@ -8695,6 +8695,11 @@ body[data-theme="dark"] .rank-badge-plain { background: rgba(148, 163, 184, 0.12
   color: #0f172a;
 }
 
+.transfer-mode-control {
+  width: 100%;
+  margin: 0.75rem 0;
+}
+
 .panel-form-actions {
   display: flex;
   align-items: center;

@@ -187,45 +187,9 @@ def switch_branch(request):
     )
 
 
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def transfer_student(request):
-    """Move one student - with their full history (fees, payment
-    references, attendance, exam results) - from the currently active
-    branch to another branch in the same school_group. The student keeps
-    the same account/login, now scoped to the new branch; their class,
-    term, and elective subjects are cleared (those belong to the old
-    branch's own roster and have no equivalent on the new one yet) for the
-    admin to reassign there. This is the "moves with them" mode - a
-    "fresh start" mode (a brand new, unlinked record on the new branch,
-    old one left untouched) is a separate, not-yet-built follow-up."""
-    user, error = _require_branch_manager(request)
-    if error:
-        return error
-
-    student_id = request.data.get("student_id")
-    target_tenant_id = request.data.get("target_tenant_id")
-    if not student_id or not target_tenant_id:
-        return Response(
-            {"success": False, "message": "student_id and target_tenant_id are required."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    try:
-        target = SchoolTenant.objects.get(pk=target_tenant_id, school_group_id=user.school_group_id)
-    except (SchoolTenant.DoesNotExist, ValueError, TypeError):
-        return Response({"success": False, "message": "That branch does not belong to your school."}, status=status.HTTP_404_NOT_FOUND)
-
-    if target.id == user.tenant_id:
-        return Response({"success": False, "message": "That student is already on this branch."}, status=status.HTTP_400_BAD_REQUEST)
-
-    from users.models import StudentProfile
-
-    try:
-        student = StudentProfile.objects.select_related("user").get(pk=student_id, user__tenant_id=user.tenant_id)
-    except (StudentProfile.DoesNotExist, ValueError, TypeError):
-        return Response({"success": False, "message": "That student does not belong to your current branch."}, status=status.HTTP_404_NOT_FOUND)
-
+def _transfer_student_move(student, target):
+    """"Moves with them" mode: the student's own account/login is re-scoped
+    to the target branch. Returns (response_payload, warnings)."""
     from academic.models import AttendanceRecord
     from exams.models import ExamAttempt
     from finance.models import BankPayment, StudentPaymentReference
@@ -270,10 +234,261 @@ def transfer_student(request):
         else:
             warnings.append("Could not resolve the new branch's academic records - attendance and exam history stayed linked to the old branch.")
 
+    return {"message": f"{student_user.get_full_name()} moved to {target.branch_label or target.name}."}, warnings
+
+
+def _transfer_student_fresh(student, target, request):
+    """"Fresh start" mode: a brand new, unlinked student record is created
+    on the target branch (its own new login - email is globally unique, so
+    it can't reuse the old account's) and the old record is left completely
+    untouched on the old branch except for being deactivated, so its
+    history stays exactly where it was, under its own branch."""
+    import types
+
+    from users.app_views import _ensure_student_profile_for_tenant
+
+    new_email = str(request.data.get("new_email") or "").strip().lower()
+    new_password = str(request.data.get("new_student_password") or "").strip()
+    confirm_new_password = str(request.data.get("confirm_new_student_password") or "").strip()
+    if not new_email:
+        return None, ["A new login email is required for a fresh-start transfer."], status.HTTP_400_BAD_REQUEST
+
+    from users.models import User
+
+    if User.objects.filter(email__iexact=new_email).exists():
+        return None, ["That email is already in use by another account."], status.HTTP_400_BAD_REQUEST
+
+    student_user = student.user
+    target_proxy = types.SimpleNamespace(tenant=target, tenant_id=target.id)
+
+    try:
+        with transaction.atomic():
+            new_profile = _ensure_student_profile_for_tenant(
+                user=target_proxy,
+                email=new_email,
+                first_name=student_user.first_name,
+                middle_name=student_user.middle_name,
+                last_name=student_user.last_name,
+                guardian_name=student.guardian_name,
+                guardian_phone=student.guardian_phone,
+                guardian_email=student.guardian_email,
+                guardian_relation=student.guardian_relation,
+                second_guardian_name=student.second_guardian_name,
+                second_guardian_phone=student.second_guardian_phone,
+                second_guardian_email=student.second_guardian_email,
+                second_guardian_relation=student.second_guardian_relation,
+                state_of_origin=student.state_of_origin,
+                local_government=student.local_government,
+                disability=student.disability,
+                medical_records=student.medical_conditions,
+                blood_group=student.blood_group,
+                student_type=student.student_type,
+                home_address=student.home_address,
+                student_password=new_password,
+                confirm_student_password=confirm_new_password,
+            )
+            new_user = new_profile.user
+            new_user.gender = student_user.gender
+            new_user.date_of_birth = student_user.date_of_birth
+            new_user.save(update_fields=["gender", "date_of_birth"])
+
+            # The old record is left exactly as it was - its fees, payment
+            # references, attendance, and exam history all stay on the old
+            # branch, untouched - only deactivated so it no longer appears
+            # as a live, sign-in-able account.
+            student_user.is_active = False
+            student_user.save(update_fields=["is_active"])
+    except ValueError as exc:
+        return None, [str(exc)], status.HTTP_400_BAD_REQUEST
+
+    return (
+        {
+            "message": (
+                f"Created a new record for {new_user.get_full_name()} on {target.branch_label or target.name}. "
+                f"Their old record stays on this branch, deactivated, with its history untouched."
+            ),
+            "new_student_id": str(new_profile.id),
+        },
+        [],
+        None,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def transfer_student(request):
+    """Transfer one student from the currently active branch to another
+    branch in the same school_group - either "move" (the same account/
+    login is re-scoped, full history follows - see _transfer_student_move)
+    or "fresh" (a brand new, unlinked record on the new branch; the old one
+    is deactivated but left untouched - see _transfer_student_fresh). The
+    admin picks per transfer; there is no single right answer (a
+    graduating class moving up a level usually wants "move", a one-off
+    exchange usually wants "fresh")."""
+    user, error = _require_branch_manager(request)
+    if error:
+        return error
+
+    student_id = request.data.get("student_id")
+    target_tenant_id = request.data.get("target_tenant_id")
+    mode = request.data.get("mode") or "move"
+    if mode not in ("move", "fresh"):
+        return Response({"success": False, "message": 'mode must be "move" or "fresh".'}, status=status.HTTP_400_BAD_REQUEST)
+    if not student_id or not target_tenant_id:
+        return Response(
+            {"success": False, "message": "student_id and target_tenant_id are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        target = SchoolTenant.objects.get(pk=target_tenant_id, school_group_id=user.school_group_id)
+    except (SchoolTenant.DoesNotExist, ValueError, TypeError):
+        return Response({"success": False, "message": "That branch does not belong to your school."}, status=status.HTTP_404_NOT_FOUND)
+
+    if target.id == user.tenant_id:
+        return Response({"success": False, "message": "That student is already on this branch."}, status=status.HTTP_400_BAD_REQUEST)
+
+    from users.models import StudentProfile
+
+    try:
+        student = StudentProfile.objects.select_related("user").get(pk=student_id, user__tenant_id=user.tenant_id)
+    except (StudentProfile.DoesNotExist, ValueError, TypeError):
+        return Response({"success": False, "message": "That student does not belong to your current branch."}, status=status.HTTP_404_NOT_FOUND)
+
+    if mode == "move":
+        payload, warnings = _transfer_student_move(student, target)
+    else:
+        payload, warnings, error_status = _transfer_student_fresh(student, target, request)
+        if payload is None:
+            return Response({"success": False, "message": " ".join(warnings)}, status=error_status)
+
+    return Response({"success": True, "warnings": warnings, **payload})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def branch_request_delete_otp(request, branch_id):
+    """Emails the signed-in admin a one-time code before they're allowed to
+    delete a branch - unconditional, same as the finance subaccount
+    settlement-change gate, because this protects a branch's entire record
+    from being permanently destroyed, not just login."""
+    user, error = _require_branch_manager(request)
+    if error:
+        return error
+
+    try:
+        target = SchoolTenant.objects.get(pk=branch_id, school_group_id=user.school_group_id)
+    except (SchoolTenant.DoesNotExist, ValueError, TypeError):
+        return Response({"success": False, "message": "That branch does not belong to your school."}, status=status.HTTP_404_NOT_FOUND)
+
+    from users.views import ADMIN_OTP_EXPIRY_MINUTES, send_admin_otp
+
+    challenge = send_admin_otp(user, purpose="delete_branch")
     return Response(
         {
             "success": True,
-            "message": f"{student_user.get_full_name()} moved to {target.branch_label or target.name}.",
-            "warnings": warnings,
+            "message": f"A verification code was sent to your email to confirm deleting {target.branch_label or target.name}.",
+            "otp_challenge": challenge,
+            "otp_expires_in": ADMIN_OTP_EXPIRY_MINUTES * 60,
         }
     )
+
+
+def _verify_delete_branch_step_up(request, user):
+    """Password + emailed-OTP gate for permanently deleting a branch.
+    Returns an error Response to short-circuit the caller, or None once
+    both checks pass (the OTP code is consumed on success so it can't be
+    replayed) - same shape as finance._verify_subaccount_change_step_up."""
+    from django.contrib.auth.hashers import check_password
+
+    from users.views import ADMIN_OTP_MAX_ATTEMPTS, clear_admin_otp, get_admin_email_device
+
+    current_password = str(request.data.get("current_password") or "")
+    otp_code = str(request.data.get("otp_code") or "").strip()
+    otp_challenge = str(request.data.get("otp_challenge") or "").strip()
+
+    if not (current_password and otp_code and otp_challenge):
+        return Response(
+            {"success": False, "message": "Deleting a branch needs your password and the emailed verification code."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not user.check_password(current_password):
+        return Response({"success": False, "message": "Incorrect password."}, status=status.HTTP_400_BAD_REQUEST)
+
+    otp_user = get_admin_email_device(user, challenge=otp_challenge)
+    if not otp_user:
+        return Response(
+            {"success": False, "message": "Verification code expired or invalid - request a new one."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if user.admin_otp_attempts >= ADMIN_OTP_MAX_ATTEMPTS:
+        return Response(
+            {"success": False, "message": "Too many incorrect codes - request a new one."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+    if not user.admin_otp_hash or not check_password(otp_code, user.admin_otp_hash):
+        user.admin_otp_attempts += 1
+        user.save(update_fields=["admin_otp_attempts"])
+        remaining = max(ADMIN_OTP_MAX_ATTEMPTS - user.admin_otp_attempts, 0)
+        return Response(
+            {"success": False, "message": f"Invalid verification code. {remaining} attempt(s) remaining."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    clear_admin_otp(user)
+    return None
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def delete_branch(request, branch_id):
+    """Permanently delete a branch - password + emailed OTP required (see
+    branch_request_delete_otp / _verify_delete_branch_step_up), and only
+    once it has nobody left on it: transfer every student (and reassign any
+    staff) off a branch before it can be deleted, so this can never
+    silently destroy a live student's or teacher's record. Cannot delete
+    the branch you're currently on - switch to a different one first."""
+    user, error = _require_branch_manager(request)
+    if error:
+        return error
+
+    try:
+        target = SchoolTenant.objects.get(pk=branch_id, school_group_id=user.school_group_id)
+    except (SchoolTenant.DoesNotExist, ValueError, TypeError):
+        return Response({"success": False, "message": "That branch does not belong to your school."}, status=status.HTTP_404_NOT_FOUND)
+
+    if target.id == user.tenant_id:
+        return Response(
+            {"success": False, "message": "Switch to a different branch before deleting this one."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    from users.models import User
+
+    remaining = User.objects.filter(tenant=target).count()
+    if remaining:
+        return Response(
+            {
+                "success": False,
+                "message": f"{target.branch_label or target.name} still has {remaining} account(s) on it - transfer students (and reassign any staff) off this branch before deleting it.",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    step_up_error = _verify_delete_branch_step_up(request, user)
+    if step_up_error:
+        return step_up_error
+
+    from django.db.models import ProtectedError
+
+    label = target.branch_label or target.name
+    try:
+        with transaction.atomic():
+            target.delete()
+    except ProtectedError:
+        return Response(
+            {"success": False, "message": "This branch still has records referencing it that can't be removed automatically - contact support."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response({"success": True, "message": f"{label} was deleted."})
