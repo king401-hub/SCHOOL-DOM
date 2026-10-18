@@ -175,6 +175,46 @@ def _send_gate_sms(student_user, student_profile, action, event, occurred_at=Non
     ).start()
 
 
+def _send_gate_sms_from_wallet(school, student_user, student_profile, action, event, occurred_at=None):
+    """SchoolGate Basic's version of _send_gate_sms: same message, same
+    unconditional trigger (every scan, both directions), but billed to the
+    school's own SMS wallet instead of funded free by SchoolDom - Basic's
+    plan doesn't include the free daily clock-in/out SMS Premium gets, but
+    the school can still send it themselves, the same way any other
+    wallet-metered message in the platform works.
+
+    Threaded like _send_gate_sms and for the same reason: this must never
+    make the terminal wait on an SMS/wallet round-trip before it can show
+    the scan result."""
+    from finance.models import SmsMessageLog
+    from finance.services import (
+        InsufficientSmsCreditsError,
+        SmsWalletLockedError,
+        guardian_contacts_for_student,
+        send_wallet_sms,
+    )
+    phone, _email = guardian_contacts_for_student(student_profile)
+    if not phone:
+        return
+    message = _gate_sms_text(student_user, action, event, occurred_at=occurred_at)
+
+    def _send():
+        try:
+            send_wallet_sms(
+                school, phone, message,
+                category=SmsMessageLog.ATTENDANCE,
+                narration='SchoolGate attendance (Basic plan)',
+            )
+        except (InsufficientSmsCreditsError, SmsWalletLockedError):
+            # An empty/locked wallet must never block attendance itself -
+            # the scan is already recorded by the time this runs. The
+            # parent simply doesn't get this one text; same reasoning every
+            # other wallet-billed send in this codebase already follows.
+            pass
+
+    threading.Thread(target=_send, daemon=True).start()
+
+
 def _person_summary(request, user_obj):
     """Name/role/photo/class for one person - used both by the card-assignment
     conflict response (Section 4d: "show the already-assigned person's name,
@@ -537,19 +577,23 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
 
     # Unconditional parent SMS on every scan (both directions) - a product
     # decision to send regardless of the paid Kids Monitor subscription
-    # gate the phone/QR clock flow uses, and not charged to the school's
-    # SMS wallet (see _send_gate_sms / _gate_sms_text docstrings). SchoolGate
-    # Basic doesn't include this - only Premium gets the daily clock-in/out
-    # SMS (Basic still gets the weekly summary, see
-    # rfid_attendance.tasks.send_schoolgate_weekly_reports). Full-product
-    # schools are unaffected either way.
+    # gate the phone/QR clock flow uses. Premium gets it free, funded by
+    # SchoolDom and never charged to the school's SMS wallet (see
+    # _send_gate_sms / _gate_sms_text docstrings). Basic doesn't include
+    # that free send, but still gets the same text billed to its own SMS
+    # wallet instead (see _send_gate_sms_from_wallet) - an empty/locked
+    # wallet just means that one text doesn't go out, not that attendance
+    # fails. Full-product schools are unaffected either way.
     # sms_sent_locally: the kiosk sends this text itself via the terminal's
     # own SIM when it couldn't reach us live, then replays the queued scan
     # once back online purely to persist the attendance record - skip
     # re-sending here or the parent gets the same SMS twice.
     sms_sent_locally = str(request.data.get('sms_sent_locally') or '').strip().lower() in ('1', 'true', 'yes')
-    if not sms_sent_locally and not (school.is_schoolgate and school.subscription_tier == "basic"):
-        _send_gate_sms(student, student_profile, action, event, occurred_at=scanned_at)
+    if not sms_sent_locally:
+        if school.is_schoolgate and school.subscription_tier == "basic":
+            _send_gate_sms_from_wallet(school, student, student_profile, action, event, occurred_at=scanned_at)
+        else:
+            _send_gate_sms(student, student_profile, action, event, occurred_at=scanned_at)
 
     return Response({
         'success': True,

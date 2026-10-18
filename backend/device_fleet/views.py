@@ -138,10 +138,15 @@ def generate_provisioning_key(request):
     if forbidden:
         return forbidden
 
+    tier = str(request.data.get('subscription_tier') or '').strip().lower()
+    if tier and tier not in dict(ProvisioningKey.SUBSCRIPTION_TIER_CHOICES):
+        return Response({'success': False, 'message': 'subscription_tier must be basic or premium.'}, status=status.HTTP_400_BAD_REQUEST)
+
     key = ProvisioningKey.objects.create(
         created_by=request.user,
         single_use=request.data.get('single_use', True),
         notes=str(request.data.get('notes') or '').strip(),
+        **({'subscription_tier': tier} if tier else {}),
     )
     _log(None, request.user, 'provisioning_key_generated', details=key.key)
     return Response({'success': True, 'data': ProvisioningKeySerializer(key).data}, status=status.HTTP_201_CREATED)
@@ -189,6 +194,14 @@ def assign_school(request, device_pk):
     if device.status in ('unregistered', 'provisioning'):
         device.status = 'active'
     device.save(update_fields=['tenant', 'paired_tenant', 'status', 'updated_at'])
+
+    # The provisioning key's basic/premium tier only means anything for a
+    # SchoolGate tenant - subscription_tier is decorative/unrelated on a
+    # Full SchoolDom school (see SchoolTenant.is_schoolgate), so never write
+    # it there even if a key happened to carry a non-default tier.
+    if device.pending_subscription_tier and school.is_schoolgate:
+        school.subscription_tier = device.pending_subscription_tier
+        school.save(update_fields=['subscription_tier'])
 
     if device.scanner_user_id:
         # Scans this device posts (via its own JWT, not this admin's) resolve
@@ -332,6 +345,7 @@ def device_provision(request):
     device = Device.objects.create(
         name=str(request.data.get('device_name') or '').strip(),
         license_key=key.key,
+        pending_subscription_tier=key.subscription_tier,
         device_model=str(request.data.get('device_model') or '').strip(),
         os_version=str(request.data.get('os_version') or '').strip(),
         app_version=str(request.data.get('app_version') or '').strip(),

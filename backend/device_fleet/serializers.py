@@ -39,7 +39,7 @@ class DeviceSerializer(serializers.ModelSerializer):
 class ProvisioningKeySerializer(serializers.ModelSerializer):
     class Meta:
         model = ProvisioningKey
-        fields = ['id', 'key', 'status', 'single_use', 'expires_at', 'created_at', 'used_at', 'notes']
+        fields = ['id', 'key', 'status', 'single_use', 'subscription_tier', 'expires_at', 'created_at', 'used_at', 'notes']
 
 
 class DeviceAuditLogSerializer(serializers.ModelSerializer):

@@ -739,14 +739,27 @@ function renderQuickActions() {
     <button class="qa-btn" id="qa-refresh"><span class="qa-icon">${ICONS.refresh}</span>Refresh Data</button>
   `;
   $('#qa-refresh').addEventListener('click', loadDashboard);
-  $('#qa-generate-key').addEventListener('click', generateLicenseKey);
-  $('#qa-register-device').addEventListener('click', generateLicenseKey);
+  $('#qa-generate-key').addEventListener('click', openTierModal);
+  $('#qa-register-device').addEventListener('click', openTierModal);
   $all('[data-view-link-inline]').forEach(btn => btn.addEventListener('click', () => switchView(btn.dataset.viewLinkInline)));
 }
 
-async function generateLicenseKey() {
+function openTierModal() {
+  $('#tier-modal').classList.add('active');
+}
+$('#tier-modal-close').addEventListener('click', () => $('#tier-modal').classList.remove('active'));
+$('#tier-modal-basic').addEventListener('click', () => {
+  $('#tier-modal').classList.remove('active');
+  generateLicenseKey('basic');
+});
+$('#tier-modal-premium').addEventListener('click', () => {
+  $('#tier-modal').classList.remove('active');
+  generateLicenseKey('premium');
+});
+
+async function generateLicenseKey(tier) {
   try {
-    const res = await API.post('/api/device-fleet/provisioning-keys/', {});
+    const res = await API.post('/api/device-fleet/provisioning-keys/', tier ? { subscription_tier: tier } : {});
     $('#key-modal-value').textContent = res.data.key;
     $('#key-modal').classList.add('active');
   } catch (err) {
@@ -786,7 +799,7 @@ async function loadDevicesView(filterKey) {
 }
 
 $('#device-search').addEventListener('input', debounce(() => loadDevicesView(), 300));
-$('#devices-register-btn').addEventListener('click', generateLicenseKey);
+$('#devices-register-btn').addEventListener('click', openTierModal);
 
 function renderDeviceFilterBar(active) {
   const filters = ['all', 'online', 'offline', 'low_battery', 'charging', 'unassigned', 'suspended', 'needs_attention'];

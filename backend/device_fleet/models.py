@@ -39,9 +39,26 @@ class ProvisioningKey(models.Model):
         ('revoked', 'Revoked'),
     ]
 
+    SUBSCRIPTION_TIER_CHOICES = [
+        ('basic', 'Basic'),
+        ('premium', 'Premium'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     key = models.CharField(max_length=64, unique=True, default=generate_provisioning_key)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='unused')
+    # Which SchoolGate plan a device activated with this key should start
+    # on, chosen when the key is generated (the Electron superadmin app's
+    # "Generate Key" form) rather than left to whoever later assigns a
+    # school to figure out separately. Copied onto Device.pending_subscription_tier
+    # at provision time (device_provision) - the device has no school yet
+    # at that point - then applied to the school's own SchoolTenant.
+    # subscription_tier once assign_school actually resolves one. Same
+    # 'basic'/'premium' values SchoolTenant.subscription_tier already uses
+    # for a SchoolGate plan (see core/tenant.py) - only those two, since a
+    # key is only ever meant to set a SchoolGate plan, never the unrelated
+    # 'free'/'enterprise' values a full-product school's own field can hold.
+    subscription_tier = models.CharField(max_length=10, choices=SUBSCRIPTION_TIER_CHOICES, default='premium')
     single_use = models.BooleanField(default=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(
@@ -106,6 +123,14 @@ class Device(models.Model):
     # support reference after the key itself is consumed (ProvisioningKey.key
     # is copied here at provision time, not looked up live).
     license_key = models.CharField(max_length=64, blank=True, default='')
+    # ProvisioningKey.subscription_tier, copied over at provision time - the
+    # device has no school yet at that point (status='provisioning'), so
+    # there's nowhere to actually apply a SchoolGate plan until a superadmin
+    # runs assign_school, which is what reads this field and writes it onto
+    # the school's own SchoolTenant.subscription_tier.
+    pending_subscription_tier = models.CharField(
+        max_length=10, choices=ProvisioningKey.SUBSCRIPTION_TIER_CHOICES, blank=True, default='',
+    )
 
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='unregistered')
     # The CURRENTLY ACTIVE school once a second school is paired below - a

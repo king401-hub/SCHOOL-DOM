@@ -380,6 +380,19 @@
 
 <div id="toast"></div>
 
+<div class="modal-backdrop" id="tier-modal">
+  <div class="modal-card">
+    <div class="modal-header">New Device License Key <span class="modal-close" id="tier-modal-close"></span></div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">Which SchoolGate plan should this key activate? If the terminal ever has no SIM, Basic falls back to the school's own SMS wallet for the clock-in/out SMS; Premium stays free, funded by SchoolDom.</p>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-secondary" id="tier-modal-basic" style="flex:1;">Basic</button>
+        <button class="btn btn-primary" id="tier-modal-premium" style="flex:1;">Premium</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="key-modal">
   <div class="modal-card">
     <div class="modal-header">New Device License Key <span class="modal-close" id="key-modal-close"></span></div>
