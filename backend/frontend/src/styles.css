@@ -17033,6 +17033,38 @@ body[data-theme="dark"] .eg-pin-display {
   margin: 0;
 }
 
+.my-question-bank-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.my-question-bank-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.86rem;
+}
+
+body[data-theme="dark"] .my-question-bank-list li {
+  border-color: #1e293b;
+}
+
+.my-question-bank-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cbt-bank-picker-head p {
   color: #64748b;
   font-size: 0.88rem;

@@ -656,6 +656,7 @@ const newBuilderQuestion = (questionType = "mcq", extra = {}) => ({
   questionImagePreview: "",
   questionAttachmentName: "",
   kind: "",
+  saveToBank: false,
   ...extra,
 });
 
@@ -695,6 +696,9 @@ function buildPreparedQuestion(question) {
     correct_answer: isTheory ? "" : (question.options || [])[Number(question.correctIndex)]?.trim() || "",
     explanation: question.explanation?.trim() || "",
     source_question_id: question.cbtBankQuestionId || undefined,
+    // Already-reused bank questions (source_question_id set) need no
+    // re-saving - they're already sitting in the bank they came from.
+    save_to_bank: !isTheory && !question.cbtBankQuestionId && Boolean(question.saveToBank),
     question_image_field: question.questionImageFile ? `question_image_${question.id}` : "",
     question_attachment_field: question.questionAttachmentFile ? `question_attachment_${question.id}` : "",
     group_key: groupKey,
@@ -941,6 +945,9 @@ export function TeacherExamBuilder({
       return next;
     });
   }, []);
+  const [myBankQuestions, setMyBankQuestions] = useState([]);
+  const [myBankLoading, setMyBankLoading] = useState(false);
+  const [myBankError, setMyBankError] = useState("");
   const [centralBoards, setCentralBoards] = useState([]);
   const [centralBoard, setCentralBoard] = useState("");
   const [centralSubjects, setCentralSubjects] = useState([]);
@@ -1026,6 +1033,36 @@ export function TeacherExamBuilder({
         questionImagePreview: item.image || "",
       };
   };
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    setMyBankLoading(true);
+    setMyBankError("");
+    const params = form.subjectId ? `?subject_id=${encodeURIComponent(form.subjectId)}` : "";
+    requestJson(session, "GET", `/api/app/exams/question-bank/${params}`)
+      .then((result) => {
+        if (cancelled) return;
+        setMyBankQuestions((result.questions || []).filter((item) => item.question_type === "mcq"));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setMyBankQuestions([]);
+        setMyBankError(err.message || "Could not load your question bank.");
+      })
+      .finally(() => {
+        if (!cancelled) setMyBankLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, form.subjectId]);
+
+  const addFromMyBank = (item) => {
+    setQuestions((previous) => [...previous, normalizeBankQuestion(item)]);
+    setFeedback("Question added from your bank.");
+    setError("");
+  };
+
   useEffect(() => {
     if (!session) return;
     (async () => {
@@ -1660,6 +1697,43 @@ export function TeacherExamBuilder({
 
           {activeSection === "questions" ? (
             <div className="exam-builder-list">
+              {form.examFormat !== "theory" ? (
+                <div className="cbt-bank-picker my-question-bank-picker">
+                  <div className="cbt-bank-picker-head">
+                    <div>
+                      <h3>My question bank</h3>
+                      <p>Questions you've saved for reuse{form.subjectId ? " in this subject" : ""} - and any a colleague has shared.</p>
+                    </div>
+                  </div>
+                  {myBankError ? <p className="form-feedback error">{myBankError}</p> : null}
+                  {myBankLoading ? (
+                    <p className="panel-empty compact"><Spinner size={12} /> Loading your bank...</p>
+                  ) : myBankQuestions.length === 0 ? (
+                    <p className="panel-empty compact">
+                      Nothing saved yet - tick "Save to my question bank" on a question below to build one up.
+                    </p>
+                  ) : (
+                    <ul className="my-question-bank-list">
+                      {myBankQuestions.map((item) => {
+                        const alreadyAdded = questions.some((question) => question.cbtBankQuestionId === item.id);
+                        return (
+                          <li key={item.id}>
+                            <span className="my-question-bank-text">{item.text}</span>
+                            <button
+                              type="button"
+                              className="table-action"
+                              onClick={() => addFromMyBank(item)}
+                              disabled={alreadyAdded}
+                            >
+                              {alreadyAdded ? "Added" : "Add"}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
               {form.examFormat !== "theory" && centralBoards.length ? (
                 <div className="cbt-bank-picker">
                   <div className="cbt-bank-picker-head">
@@ -2022,6 +2096,16 @@ export function TeacherExamBuilder({
                           />
                         </label>
                       </div>
+                      {!question.cbtBankQuestionId ? (
+                        <label className="panel-field full checkbox-field">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(question.saveToBank)}
+                            onChange={(event) => updateQuestion(question.id, { saveToBank: event.target.checked })}
+                          />
+                          Save to my question bank, so I can reuse it in a future exam
+                        </label>
+                      ) : null}
                     </>
                   ) : (
                     <div className="exam-builder-row">

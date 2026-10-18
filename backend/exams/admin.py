@@ -71,8 +71,8 @@ class QuestionGroupAdmin(admin.ModelAdmin):
 
 @admin.register(QuestionBank)
 class QuestionBankAdmin(PlatformAdminOnlyMixin, admin.ModelAdmin):
-    list_display = ("name", "board", "subject", "teacher", "is_shared", "tenant", "created_at")
-    list_filter = ("tenant", "board", "is_shared", "subject")
+    list_display = ("name", "board", "subject", "teacher", "is_shared", "nominated_for_central_bank", "tenant", "created_at")
+    list_filter = ("tenant", "board", "is_shared", "nominated_for_central_bank", "subject")
     search_fields = ("name", "subject__name", "teacher__email")
     autocomplete_fields = ("subject", "teacher")
     filter_horizontal = ("questions",)

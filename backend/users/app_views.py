@@ -10219,6 +10219,12 @@ def _clean_exam_questions_payload(raw_questions, exam_format="objective", allow_
                 "points": points,
                 "explanation": str(item.get("explanation", "")).strip() if isinstance(item, dict) else "",
                 "source_question_id": source_question_id,
+                # Opt-in: save this question into the teacher's own reusable
+                # per-subject bank (see _save_questions_to_teacher_bank) so
+                # it can be picked into a future exam instead of being
+                # retyped - never set on theory questions, which the bank
+                # picker (cbt_question_bank) only ever surfaces as mcq.
+                "save_to_bank": bool(isinstance(item, dict) and item.get("save_to_bank")) and not is_theory,
                 "question_image_field": str(item.get("question_image_field") or "").strip(),
                 "question_attachment_field": str(item.get("question_attachment_field") or "").strip(),
                 "group_key": group_key,
@@ -10231,6 +10237,31 @@ def _clean_exam_questions_payload(raw_questions, exam_format="objective", allow_
             }
         )
     return cleaned_questions, ""
+
+
+def _save_questions_to_teacher_bank(tenant_obj, teacher, subject, questions):
+    """Add questions to the teacher's own reusable per-subject bank,
+    creating it the first time - one bank per (tenant, teacher, subject)
+    that accumulates over every exam they ever opt a question into, so
+    "save for reuse" actually means something across exams, not just
+    within the one being created. `board=""` in the lookup is deliberate:
+    it's what keeps this strictly apart from a central (JAMB/WAEC/...)
+    bank, which always has `board` set and lives under a different,
+    non-school Tenant entirely - see cbt_question_bank's own separate
+    global_banks_qs. No-ops (returns None) without a subject, since
+    QuestionBank.subject isn't nullable and a question typed under "no
+    subject selected" has nothing sensible to file itself under."""
+    if not subject or not questions:
+        return None
+    bank, _ = QuestionBank.objects.get_or_create(
+        tenant=tenant_obj,
+        teacher=teacher,
+        subject=subject,
+        board="",
+        defaults={"name": f"{subject.name} - {teacher.get_full_name() or teacher.email}"},
+    )
+    bank.questions.add(*questions)
+    return bank
 
 
 def _exam_question_from_payload(item, tenant_obj, user, request=None, groups_by_key=None, group_order=0, existing=None):
@@ -10626,6 +10657,9 @@ def cbt_question_bank(request):
                 "subject_name": bank.subject.name if bank.subject else "",
                 "question_count": len(bank_questions),
                 "is_shared": bank.is_shared,
+                "is_central": bool(bank.board),
+                "is_mine": bank.teacher_id == user.id,
+                "nominated_for_central_bank": bank.nominated_for_central_bank,
             }
         )
         for question in bank_questions:
@@ -10647,6 +10681,47 @@ def cbt_question_bank(request):
             "questions": question_rows,
         }
     )
+
+
+def _owned_teacher_bank_or_404(request, bank_id):
+    """A teacher's own, non-central bank - never a bank belonging to a
+    colleague (even a shared one) or to the platform's central tenant.
+    Sharing/nominating is an action only the bank's own author can take."""
+    return get_object_or_404(
+        _scope_to_user_tenant(QuestionBank.objects.all(), request.user),
+        id=bank_id,
+        teacher=request.user,
+        board="",
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def cbt_question_bank_toggle_shared(request, bank_id):
+    """Share (or unshare) one of the teacher's own banks with colleagues at
+    the same school. cbt_question_bank's own tenant-scoped query is what
+    actually enforces this never crosses schools - this endpoint only ever
+    flips the flag on a bank this teacher already owns."""
+    bank = _owned_teacher_bank_or_404(request, bank_id)
+    bank.is_shared = _to_bool(request.data.get("is_shared"), default=not bank.is_shared)
+    bank.save(update_fields=["is_shared", "updated_at"])
+    return Response({"success": True, "is_shared": bank.is_shared})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def cbt_question_bank_toggle_nominate(request, bank_id):
+    """A teacher's opt-in signal that this bank's content is worth the
+    SchoolDom team reviewing for inclusion in the real central bank -
+    never promotes anything automatically (see QuestionBank.
+    nominated_for_central_bank's own docstring)."""
+    bank = _owned_teacher_bank_or_404(request, bank_id)
+    bank.nominated_for_central_bank = _to_bool(
+        request.data.get("nominated"), default=not bank.nominated_for_central_bank
+    )
+    bank.nominated_at = timezone.now() if bank.nominated_for_central_bank else None
+    bank.save(update_fields=["nominated_for_central_bank", "nominated_at", "updated_at"])
+    return Response({"success": True, "nominated_for_central_bank": bank.nominated_for_central_bank})
 
 
 @api_view(["GET"])
@@ -11762,6 +11837,13 @@ def create_exam(request):
         for index, item in enumerate(cleaned_questions, start=1)
     ]
     exam.questions.add(*created_questions)
+    to_bank = [
+        question
+        for item, question in zip(cleaned_questions, created_questions)
+        if item.get("save_to_bank")
+    ]
+    if to_bank:
+        _save_questions_to_teacher_bank(tenant_obj, request.user, subject, to_bank)
     should_notify = request.user.role == "teacher" and notify_admin_requested
     if should_notify:
         _notify_admins_exam_ready(exam, request.user)

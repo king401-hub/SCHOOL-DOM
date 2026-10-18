@@ -29,8 +29,24 @@ class QuestionBank(TenantAwareModel, TimeStampedModel):
     subject = models.ForeignKey('academic.Subject', on_delete=models.CASCADE)
     teacher = models.ForeignKey('users.User', on_delete=models.CASCADE)
     questions = models.ManyToManyField('Question', related_name='question_banks')
+    # Shares this bank with colleagues AT THE SAME SCHOOL - cbt_question_bank's
+    # own query already scopes by tenant first, so this never crosses schools;
+    # it only ever widens visibility within one school's own teachers. Not to
+    # be confused with a central (board-scoped) bank, which lives under a
+    # completely separate, non-school Tenant and is never reached through this
+    # flag at all.
     is_shared = models.BooleanField(default=False)
     board = models.CharField(max_length=10, choices=BOARD_CHOICES, blank=True, default="")
+    # A teacher's own opt-in signal that this bank's content is good enough to
+    # suggest for the real platform-wide central bank. Never promotes
+    # anything automatically - the SchoolDom team reviews nominated banks
+    # (filterable in Django admin) and, if the content holds up, runs the
+    # same manual import tooling that already populates JAMB/WAEC/NECO banks
+    # (see exams/bulk_import.py) to bring it in under the platform's own
+    # editorial control, the same quality bar every other central-bank
+    # question already went through.
+    nominated_for_central_bank = models.BooleanField(default=False)
+    nominated_at = models.DateTimeField(null=True, blank=True)
 
 
 class Topic(TenantAwareModel, TimeStampedModel):
@@ -240,7 +256,7 @@ class ExamPin(TenantAwareModel, TimeStampedModel):
         ]
         constraints = [
             models.CheckConstraint(
-                check=(
+                condition=(
                     models.Q(exam__isnull=False, group__isnull=True)
                     | models.Q(exam__isnull=True, group__isnull=False)
                 ),
@@ -342,7 +358,7 @@ class ExamPinUsage(TenantAwareModel, TimeStampedModel):
         ]
         constraints = [
             models.CheckConstraint(
-                check=(
+                condition=(
                     models.Q(exam__isnull=False, group__isnull=True)
                     | models.Q(exam__isnull=True, group__isnull=False)
                 ),
