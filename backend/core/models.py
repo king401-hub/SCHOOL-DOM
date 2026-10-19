@@ -19,7 +19,7 @@ class TenantAwareModel(TimeStampedModel):
         abstract = True
 
 # Ensure core models defined in other modules are registered.
-from .tenant import Domain, SchoolGroup, SchoolTenant  # noqa: E402,F401
+from .tenant import Domain, SchoolGroup, SchoolTenant, primary_school_tenants  # noqa: E402,F401
 from .audit import AuditLog  # noqa: E402,F401
 from .schoolgate import SchoolGatePayment  # noqa: E402,F401
 

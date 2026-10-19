@@ -250,6 +250,34 @@ class SchoolTenant(models.Model):
             is_enabled=True,
         ).exists()
 
+
+def primary_school_tenants(queryset=None):
+    """Collapse a SchoolTenant queryset down to one row per real-world
+    school, so a branch (users.branch_views.create_branch - another
+    SchoolTenant sharing school_group with its parent, not a new customer)
+    never gets counted or listed as a separate school. A standalone school
+    (school_group is None - the overwhelming majority) always passes
+    through unchanged; within a group, only the earliest-created branch
+    (the school as it existed before anyone added branches) survives.
+
+    Works on any SchoolTenant-shaped queryset/model (same school_group/
+    created_on fields), so callers that resolve the school model
+    dynamically (e.g. superadmin_dashboard.services.platform_models) can
+    reuse it without hardcoding SchoolTenant."""
+    from django.db.models import OuterRef, Subquery
+
+    base = SchoolTenant.objects.all() if queryset is None else queryset
+    model = base.model
+    earliest_in_group = (
+        model.objects.filter(school_group_id=OuterRef("school_group_id"))
+        .order_by("created_on", "id")
+        .values("id")[:1]
+    )
+    return base.annotate(_group_primary_id=Subquery(earliest_in_group)).filter(
+        models.Q(school_group__isnull=True) | models.Q(id=models.F("_group_primary_id"))
+    )
+
+
 class Domain(models.Model):
     """Simple domain model without django-tenants dependency"""
     tenant = models.ForeignKey(SchoolTenant, on_delete=models.CASCADE, related_name='domains')

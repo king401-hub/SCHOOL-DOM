@@ -11024,10 +11024,12 @@ function addMonthsAndDays(dateStr, months, days) {
  * users.branch_views. Invisible to every other role, and shows nothing
  * extra once there are no branches, so a school that never uses this
  * never sees it. */
-function BranchesSettingsPanel({ session, role }) {
+function BranchesSettingsPanel({ session, role, schoolName }) {
   const eligible = role === "school_admin" || role === "principal";
   const [branches, setBranches] = useState(null);
   const [label, setLabel] = useState("");
+  const [name, setName] = useState(schoolName || "");
+  const [nameTouched, setNameTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
@@ -11052,19 +11054,32 @@ function BranchesSettingsPanel({ session, role }) {
     load();
   }, [load]);
 
+  // Suggest the current school's name for the new branch until the admin
+  // edits it themselves - a branch defaults to the same name but doesn't
+  // have to stay that way (e.g. a franchised campus trading as something
+  // else).
+  useEffect(() => {
+    if (!nameTouched && schoolName) setName(schoolName);
+  }, [schoolName, nameTouched]);
+
   if (!eligible) return null;
 
   const handleCreate = async (event) => {
     event.preventDefault();
     const trimmed = label.trim();
+    const trimmedName = name.trim();
     if (!trimmed || busy) return;
     setBusy(true);
     setError("");
     setFeedback("");
     try {
-      const result = await requestJson(session, "POST", "/api/app/branches/create/", { branch_label: trimmed });
+      const result = await requestJson(session, "POST", "/api/app/branches/create/", {
+        branch_label: trimmed,
+        name: trimmedName,
+      });
       setFeedback(result?.message || "Branch created.");
       setLabel("");
+      setNameTouched(false);
       load();
     } catch (err) {
       setError(err.message || "Could not create branch.");
@@ -11114,8 +11129,9 @@ function BranchesSettingsPanel({ session, role }) {
       <div className="panel-head">
         <h3>School Branches</h3>
         <small>
-          Run this school as named branches (e.g. "Primary"/"Secondary") that share this name but keep fully
-          separate students, classes, and records - switch between them from the top bar, with this same login.
+          Run this school as named branches (e.g. "Primary"/"Secondary") that keep fully separate students,
+          classes, and records - switch between them from the top bar, with this same login. Each branch can keep
+          the same school name or use its own.
         </small>
       </div>
       {branches && branches.length > 0 ? (
@@ -11145,6 +11161,19 @@ function BranchesSettingsPanel({ session, role }) {
             placeholder={branches && branches.length > 0 ? "e.g. Boarding" : "e.g. Secondary"}
             disabled={busy}
           />
+        </label>
+        <label className="panel-field">
+          School name for this branch
+          <input
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+              setNameTouched(true);
+            }}
+            placeholder={schoolName || "School name"}
+            disabled={busy}
+          />
+          <small className="field-note">Suggested from your current school name - change it if this branch trades under its own name.</small>
         </label>
         <div className="panel-form-actions">
           <button type="submit" disabled={busy || !label.trim()}>
@@ -11610,7 +11639,7 @@ function AdminSettingsScreen({
 
       {data ? (
         <>
-        <BranchesSettingsPanel session={session} role={user?.role} />
+        <BranchesSettingsPanel session={session} role={user?.role} schoolName={school?.name} />
         <article className="app-panel">
           <div className="theme-switcher">
             <p className="field-note">Interface Theme</p>

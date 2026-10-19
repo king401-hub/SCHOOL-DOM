@@ -1,11 +1,13 @@
 """Branch switching for a single school operating as named branches (e.g.
-"Primary"/"Secondary") under one name - distinct from the proprietor /
-Group-of-Schools flow (proprietor_views.py), where each school is fully
-separate with its own admin login. Here one admin keeps ONE login and
-switches which branch is active; each branch is still a fully separate
-SchoolTenant (its own students/classes/fees/...), so data never mixes
-between branches - see users.authentication.BranchAwareJWTAuthentication
-for how the active branch is enforced on every request.
+"Primary"/"Secondary") - distinct from the proprietor / Group-of-Schools
+flow (proprietor_views.py), where each school is fully separate with its
+own admin login. Here one admin keeps ONE login and switches which branch
+is active; each branch is still a fully separate SchoolTenant (its own
+students/classes/fees/...), so data never mixes between branches - see
+users.authentication.BranchAwareJWTAuthentication for how the active
+branch is enforced on every request. A branch's own name defaults to the
+parent school's but can be changed (e.g. a franchised campus trading
+under its own name) - see branch_name in create_branch below.
 """
 import logging
 
@@ -96,6 +98,11 @@ def create_branch(request):
         )
 
     current_branch = user.tenant
+    # The branch's own display name (ID cards, receipts, certificates...) -
+    # defaults to the parent school's name but an admin can give a branch a
+    # genuinely different one (e.g. a franchised campus trading under its
+    # own name).
+    branch_name = (request.data.get("name") or "").strip() or current_branch.name
 
     with transaction.atomic():
         group = current_branch.school_group
@@ -103,6 +110,18 @@ def create_branch(request):
             group = SchoolGroup.objects.create(name=current_branch.name, owner=user)
             current_branch.school_group = group
             current_branch.save(update_fields=["school_group"])
+        elif group.owner_id != user.id:
+            # This tenant's school_group already belongs to someone else -
+            # a proprietor managing several genuinely distinct schools
+            # (proprietor_views.py), who assigned this user as that one
+            # school's own admin. That's a different feature: branching
+            # must never insert a new tenant into a group this user
+            # doesn't own, or it would show up in the proprietor's own
+            # schools list/count as if it were one of their schools.
+            return Response(
+                {"success": False, "message": "This school is part of a multi-school group managed elsewhere - branches aren't available here."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         if user.school_group_id != group.id:
             user.school_group = group
             user.save(update_fields=["school_group"])
@@ -117,7 +136,7 @@ def create_branch(request):
         domain_name = generate_unique_domain(schema_name)
 
         branch = SchoolTenant.objects.create(
-            name=current_branch.name,
+            name=branch_name,
             branch_label=branch_label,
             schema_name=schema_name,
             school_group=group,
@@ -127,11 +146,23 @@ def create_branch(request):
             currency=current_branch.currency,
             timezone=current_branch.timezone,
             is_active=True,
+            product=current_branch.product,
+            # A branch is the same legal school under KYC review, not a
+            # new applicant - inherit the parent's compliance standing
+            # (and its 30-day clock reference, rather than restarting one)
+            # so a branch can never be silently suspended by
+            # core.tasks.send_compliance_reminders for paperwork nobody
+            # would even know to submit on its behalf.
+            compliance_status=current_branch.compliance_status,
+            compliance_deadline_reference_at=current_branch.compliance_deadline_reference(),
+            compliance_submitted_at=current_branch.compliance_submitted_at,
+            compliance_reviewed_at=current_branch.compliance_reviewed_at,
+            compliance_reviewed_by=current_branch.compliance_reviewed_by,
         )
         # Keep legacy tenant model in sync for modules still using
         # tenants.Tenant (academic.Class and friends) - same bridge
         # users.views.create_school builds for a brand new school.
-        Tenant.objects.get_or_create(slug=schema_name, defaults={"name": f"{current_branch.name} ({branch_label})"})
+        Tenant.objects.get_or_create(slug=schema_name, defaults={"name": branch_name})
         Domain.objects.create(tenant=branch, domain=domain_name, is_primary=True)
 
         # The branch this admin is creating from also needs its own label

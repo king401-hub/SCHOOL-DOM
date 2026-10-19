@@ -115,15 +115,37 @@ def dashboard_context():
     month_start = today.replace(day=1)
 
     school_model = models["school"]
+    # A branch (another SchoolTenant sharing school_group with its parent -
+    # see users.branch_views.create_branch) is the same real-world school,
+    # not a new one - collapse those down before counting so adding a
+    # branch never looks like a new signup. Only applies when the resolved
+    # model actually has school_group (core.SchoolTenant does); any other
+    # fallback "School" model is counted as-is.
+    if has_field_path(school_model, "school_group"):
+        from core.models import primary_school_tenants
+        primary_schools_qs = primary_school_tenants(school_model.objects.all())
+    else:
+        primary_schools_qs = school_model.objects.all() if school_model else None
+
+    def _count_primary(filters=None):
+        if primary_schools_qs is None:
+            return 0
+        qs = primary_schools_qs
+        if filters:
+            try:
+                qs = qs.filter(**filters)
+            except FieldError:
+                return 0
+        return qs.count()
 
     monthly_revenue, _ = _platform_revenue(since=month_start)
     _, transactions_count = _platform_revenue()
 
     stats = {
-        "schools": safe_count(school_model),
-        "pending_schools": safe_count(school_model, {"compliance_status": "submitted"}) if has_field_path(school_model, "compliance_status") else 0,
-        "active_schools": safe_count(school_model, {"is_active": True}) if has_field_path(school_model, "is_active") else safe_count(school_model, {"status__iexact": "active"}),
-        "suspended_schools": safe_count(school_model, {"is_active": False}) if has_field_path(school_model, "is_active") else safe_count(school_model, {"status__iexact": "suspended"}),
+        "schools": _count_primary(),
+        "pending_schools": _count_primary({"compliance_status": "submitted"}) if has_field_path(school_model, "compliance_status") else 0,
+        "active_schools": _count_primary({"is_active": True}) if has_field_path(school_model, "is_active") else _count_primary({"status__iexact": "active"}),
+        "suspended_schools": _count_primary({"is_active": False}) if has_field_path(school_model, "is_active") else _count_primary({"status__iexact": "suspended"}),
         "users": User.objects.count(),
         "subscriptions": safe_count(models["subscription"]),
         "open_tickets": safe_count(models["ticket"], {"status__in": ["open", "pending", "new"]}),
@@ -133,9 +155,9 @@ def dashboard_context():
     }
 
     recent_schools = []
-    if school_model:
+    if primary_schools_qs is not None:
         order_field = "-created_on" if has_field_path(school_model, "created_on") else "-id"
-        recent_schools = school_model.objects.all().order_by(order_field)[:8]
+        recent_schools = primary_schools_qs.order_by(order_field)[:8]
 
     recent_activity = []
     notifications = []

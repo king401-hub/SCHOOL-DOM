@@ -21,7 +21,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from core.models import SchoolTenant
+from core.models import SchoolTenant, primary_school_tenants
 from users.models import User
 
 from .models import AppRelease, Device, DeviceAuditLog, ProvisioningKey
@@ -108,7 +108,9 @@ def devices_list(request):
         'low_battery': sum(1 for d in all_devices if d.is_low_battery),
         'charging': all_devices.filter(battery_charging=True).count(),
         'needs_attention': sum(1 for d in all_devices if d.needs_attention()),
-        'total_schools': SchoolTenant.objects.filter(is_active=True).count(),
+        # One count per real-world school, not per branch - see
+        # core.tenant.primary_school_tenants.
+        'total_schools': primary_school_tenants(SchoolTenant.objects.filter(is_active=True)).count(),
     }
 
     return Response({

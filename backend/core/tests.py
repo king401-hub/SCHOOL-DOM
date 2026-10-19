@@ -6,7 +6,7 @@ from django.conf import settings
 from django.test import TestCase
 from django.utils import timezone
 
-from core.models import SchoolTenant
+from core.models import SchoolGroup, SchoolTenant, primary_school_tenants
 from core.tasks import send_compliance_reminders
 from notifications.models import Notification
 from users.models import User
@@ -84,6 +84,52 @@ class NoInterpolatedSqlTests(TestCase):
             "pass values as parameters (cursor.execute(sql, [value])) instead of "
             "formatting them into the query:\n" + "\n".join(offenders),
         )
+
+
+class PrimarySchoolTenantsTests(TestCase):
+    """A branch (users.branch_views.create_branch) is another SchoolTenant
+    row sharing school_group with its parent, not a new school - anything
+    that counts/lists "schools" platform-wide (superadmin dashboards,
+    device fleet stats) must collapse those branches down to one entry per
+    real school via primary_school_tenants, or creating a branch would look
+    exactly like a brand new signup."""
+
+    def test_a_standalone_school_with_no_group_passes_through_unchanged(self):
+        standalone = SchoolTenant.objects.create(name="Lone School", schema_name="lone_school", is_active=True)
+        ids = set(primary_school_tenants().values_list("id", flat=True))
+        self.assertIn(standalone.id, ids)
+
+    def test_only_the_earliest_branch_in_a_group_survives(self):
+        owner = User.objects.create_user(
+            email="owner@group.test", password="OwnerPass123", role="school_admin", is_active=True,
+        )
+        group = SchoolGroup.objects.create(name="Grouped School", owner=owner)
+        main = SchoolTenant.objects.create(
+            name="Grouped School", schema_name="grouped_main", school_group=group, branch_label="Main", is_active=True,
+        )
+        secondary = SchoolTenant.objects.create(
+            name="Grouped School", schema_name="grouped_secondary", school_group=group, branch_label="Secondary", is_active=True,
+        )
+
+        ids = list(primary_school_tenants(SchoolTenant.objects.filter(school_group=group)).values_list("id", flat=True))
+        self.assertEqual(ids, [main.id])
+        self.assertNotIn(secondary.id, ids)
+
+    def test_two_separate_groups_each_keep_their_own_primary_row(self):
+        owner_one = User.objects.create_user(
+            email="owner1@group.test", password="OwnerPass123", role="school_admin", is_active=True,
+        )
+        owner_two = User.objects.create_user(
+            email="owner2@group.test", password="OwnerPass123", role="school_admin", is_active=True,
+        )
+        group_one = SchoolGroup.objects.create(name="School One", owner=owner_one)
+        group_two = SchoolGroup.objects.create(name="School Two", owner=owner_two)
+        main_one = SchoolTenant.objects.create(name="School One", schema_name="school_one_main", school_group=group_one, is_active=True)
+        SchoolTenant.objects.create(name="School One", schema_name="school_one_branch", school_group=group_one, is_active=True)
+        main_two = SchoolTenant.objects.create(name="School Two", schema_name="school_two_main", school_group=group_two, is_active=True)
+
+        ids = set(primary_school_tenants(SchoolTenant.objects.filter(school_group__in=[group_one, group_two])).values_list("id", flat=True))
+        self.assertEqual(ids, {main_one.id, main_two.id})
 
 
 class ComplianceReminderTaskTests(TestCase):

@@ -15,6 +15,7 @@ from unittest.mock import patch
 from django.core import mail
 from django.core.cache import cache
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import SchoolGroup, SchoolTenant
@@ -107,6 +108,67 @@ class BranchSwitchingTests(TestCase):
         cache.clear()
         response = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
         self.assertEqual(response.status_code, 400, response.data)
+
+    def test_a_branch_can_be_given_its_own_name(self):
+        self._login()
+        response = self.client.post(
+            "/api/app/branches/create/", {"branch_label": "Franchise", "name": "Lakeside Prep"},
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        branch = SchoolTenant.objects.get(branch_label="Franchise")
+        self.assertEqual(branch.name, "Lakeside Prep")
+        self.school.refresh_from_db()
+        self.assertEqual(self.school.name, "Greenwood International School", "parent's own name is untouched")
+
+    def test_a_branch_inherits_the_parents_compliance_status_and_clock_instead_of_restarting_it(self):
+        """A branch is the same legal school under KYC review, not a new
+        applicant - it must never start life as 'not_submitted' with a
+        fresh 30-day clock (core.tasks.send_compliance_reminders would
+        eventually suspend it with nobody to notify, since no director
+        user is ever created on a branch)."""
+        reviewer = User.objects.create_user(
+            email="reviewer@schooldom.test", password="ReviewerPass123", role="super_admin", is_active=True,
+        )
+        now = timezone.now()
+        self.school.compliance_status = "approved"
+        self.school.compliance_submitted_at = now
+        self.school.compliance_reviewed_at = now
+        self.school.compliance_reviewed_by = reviewer
+        self.school.product = SchoolTenant.PRODUCT_SCHOOLGATE
+        self.school.save(update_fields=[
+            "compliance_status", "compliance_submitted_at", "compliance_reviewed_at",
+            "compliance_reviewed_by", "product",
+        ])
+
+        self._login()
+        response = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        self.assertEqual(response.status_code, 201, response.data)
+
+        branch = SchoolTenant.objects.get(branch_label="Secondary")
+        self.assertEqual(branch.compliance_status, "approved")
+        self.assertEqual(branch.compliance_reviewed_by_id, reviewer.id)
+        self.assertEqual(branch.product, SchoolTenant.PRODUCT_SCHOOLGATE)
+        self.assertEqual(branch.compliance_deadline_reference(), self.school.compliance_deadline_reference())
+
+    def test_cannot_create_a_branch_inside_a_group_owned_by_someone_else(self):
+        """A school_admin a proprietor assigned to run ONE of the
+        proprietor's several distinct schools (users.proprietor_views) must
+        never be able to insert a "branch" into the proprietor's own
+        SchoolGroup - that would make a brand new SchoolTenant show up in
+        the proprietor's own schools list/count as if it were theirs."""
+        proprietor = User.objects.create_user(
+            email="proprietor@group.test", password="ProprietorPass123", role="school_superadmin", is_active=True,
+        )
+        group = SchoolGroup.objects.create(name="Proprietor's Schools", owner=proprietor)
+        self.school.school_group = group
+        self.school.save(update_fields=["school_group"])
+        self.admin.school_group = group
+        self.admin.save(update_fields=["school_group"])
+
+        self._login()
+        response = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertFalse(SchoolTenant.objects.filter(branch_label="Secondary").exists())
 
     def test_only_school_admin_or_principal_can_manage_branches(self):
         User.objects.create_user(
