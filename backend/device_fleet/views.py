@@ -471,6 +471,8 @@ def device_heartbeat(request):
     if device.paired_tenant_id:
         payload['paired_school_id'] = str(device.paired_tenant_id)
         payload['paired_school_name'] = device.paired_tenant.name
+    if device.attendance_cleared_at:
+        payload['attendance_cleared_at'] = device.attendance_cleared_at.isoformat()
 
     # A device that has never reported its version code (older builds
     # predating this field) has nothing safe to compare against - skip the

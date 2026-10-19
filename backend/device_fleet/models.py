@@ -206,6 +206,15 @@ class Device(models.Model):
     location_updated_at = models.DateTimeField(null=True, blank=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
     last_sync_at = models.DateTimeField(null=True, blank=True)
+    # Bumped whenever an admin deletes academic.AttendanceRecord rows for
+    # this device's school from the Control Panel (see academic.admin.
+    # AttendanceRecordAdmin) - the kiosk's on-device "Today's Attendance
+    # Log" is a same-day, same-device convenience cache with no other link
+    # to the real server-side records (see AttendanceLogStore.kt's own
+    # docstring), so without this signal it kept showing names an admin had
+    # just deleted server-side. Compared against a locally-stored value on
+    # every heartbeat; a change means "clear your local log".
+    attendance_cleared_at = models.DateTimeField(null=True, blank=True)
 
     first_activated_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(
