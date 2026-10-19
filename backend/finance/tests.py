@@ -2000,6 +2000,75 @@ class PaystackDvaReconciliationTests(TestCase):
         self.assertIn("Outstanding: 10,000", second_call_message)
         self.assertNotIn("Outstanding: 30,000", second_call_message)
 
+    def test_stuck_pending_transaction_is_retried_not_treated_as_duplicate(self):
+        """Regression: a Transaction left at allocation_status=PENDING (the
+        shape a prior attempt leaves behind if it raised partway through
+        allocation - the webhook view turns that into an HTTP 400, and
+        Paystack retries the same reference) used to be treated exactly like
+        an already-processed payment and skipped forever, permanently
+        stranding the money with nothing to show for it on the fee."""
+        stuck_tx = Transaction.objects.create(
+            tx_type=Transaction.SPLIT_PAYMENT,
+            status=Transaction.STATUS_SUCCESS,
+            amount=Decimal("50000.00"),
+            reference="DVA-STUCK-REF",
+            paystack_ref="DVA-TEST-STUCK",
+            provider="paystack",
+            narration="Virtual account payment — Parent User",
+            parent_id=self.parent_user.id,
+            school_id=self.school.id,
+            tuition_amount=Decimal("50000.00"),
+            allocation_status=Transaction.ALLOCATION_PENDING,
+        )
+        self.assertEqual(FeeAllocation.objects.filter(transaction=stuck_tx).count(), 0)
+
+        result = process_virtual_account_payment(
+            tenant=self.school,
+            account_number=self.vac.account_number,
+            amount_naira=Decimal("50000.00"),
+            paystack_reference="DVA-TEST-STUCK",
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(Transaction.objects.filter(paystack_ref="DVA-TEST-STUCK").count(), 1)
+        stuck_tx.refresh_from_db()
+        self.assertEqual(stuck_tx.allocation_status, Transaction.ALLOCATION_ALLOCATED)
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+        self.assertEqual(fee_paid_amount(self.fee), Decimal("50000.00"))
+        self.assertTrue(FeeAllocation.objects.filter(transaction=stuck_tx, fee=self.fee).exists())
+
+    def test_fully_allocated_transaction_is_still_skipped_as_duplicate(self):
+        """A Transaction that already finished allocating must still be
+        skipped on a retry/redelivery - only a stuck PENDING one should be
+        retried, never one that already moved real money."""
+        done_tx = Transaction.objects.create(
+            tx_type=Transaction.SPLIT_PAYMENT,
+            status=Transaction.STATUS_SUCCESS,
+            amount=Decimal("50000.00"),
+            reference="DVA-DONE-REF",
+            paystack_ref="DVA-TEST-DONE",
+            provider="paystack",
+            narration="Virtual account payment — Parent User",
+            parent_id=self.parent_user.id,
+            school_id=self.school.id,
+            tuition_amount=Decimal("50000.00"),
+            allocation_status=Transaction.ALLOCATION_ALLOCATED,
+        )
+
+        result = process_virtual_account_payment(
+            tenant=self.school,
+            account_number=self.vac.account_number,
+            amount_naira=Decimal("50000.00"),
+            paystack_reference="DVA-TEST-DONE",
+        )
+
+        self.assertEqual(result["status"], "duplicate")
+        self.assertEqual(Transaction.objects.filter(paystack_ref="DVA-TEST-DONE").count(), 1)
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PENDING)
+        self.assertEqual(FeeAllocation.objects.filter(transaction=done_tx).count(), 0)
+
 
 class FeeReminderSecureLinkTests(TestCase):
     """Fee reminder SMS (single-parent and bulk-personalized) must include a

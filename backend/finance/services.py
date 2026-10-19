@@ -6537,87 +6537,136 @@ def process_virtual_account_payment(
     Matches account_number → parent, allocates payment to their children's fees.
     """
     from finance.models import ParentVirtualAccount, Transaction, FeeAllocation
-    from users.models import ParentProfile
+    from users.models import ParentProfile, User
 
     logger.info(
         "DVA payment received: ref=%s account=%s amount=%.2f",
         paystack_reference, account_number, float(amount_naira),
     )
 
-    # Prevent duplicate processing
-    if Transaction.objects.filter(paystack_ref=paystack_reference).exists():
+    # A Transaction already exists for this reference either because it was
+    # fully processed before (nothing to do - skip), or because a prior
+    # attempt created the Transaction and then raised before allocating it to
+    # any fee (e.g. a transient DB error inside the allocation block below,
+    # which the webhook view turns into an HTTP 400). Treating both cases the
+    # same used to leave a failed payment stuck forever: Paystack's own
+    # webhook retries, and any manual resend, would bounce off this check
+    # before ever reaching the allocation logic again. Only a Transaction
+    # that actually finished allocating (or was genuinely overpaid with
+    # nowhere to put the rest) is skipped; one still stuck at "pending" is
+    # retried using the same row instead of creating a duplicate.
+    existing_tx = Transaction.objects.filter(paystack_ref=paystack_reference).first()
+    if existing_tx and existing_tx.allocation_status != Transaction.ALLOCATION_PENDING:
         logger.info("DVA payment %s already processed — skipping.", paystack_reference)
         return {"status": "duplicate", "message": "Already processed"}
 
-    # Look up parent by virtual account number. account_number has no DB
-    # uniqueness constraint (the admin-assignment endpoint now blocks new
-    # duplicates, but data assigned before that guard existed may still
-    # collide) - .get() would raise MultipleObjectsReturned and this payment
-    # would be lost with only a server log to show for it, so resolve
-    # deterministically instead and loudly flag the ambiguity for a human.
-    matches = list(
-        ParentVirtualAccount.objects.select_related("parent")
-        .filter(account_number=account_number, is_active=True)
-        .order_by("-created_at")
-    )
-    if len(matches) > 1:
-        logger.error(
-            "DVA payment %s: account_number=%s is assigned to %d active parents - "
-            "allocating to the most recently assigned one and flagging for review.",
-            paystack_reference, account_number, len(matches),
-        )
-        record_finance_activity(
-            tenant, None, "duplicate_virtual_account",
-            f"Virtual account {account_number} is assigned to {len(matches)} parents - "
-            f"payment {paystack_reference} was allocated to one of them. Resolve the duplicate assignment.",
-            amount=_as_decimal(amount_naira), reference=paystack_reference,
-            metadata={"account_number": account_number, "parent_ids": [str(m.parent_id) for m in matches]},
-        )
-    vac = matches[0] if matches else None
-    if vac is None:
-        # Fall back: check if this is the school's main collection DVA (AdminWallet)
+    if existing_tx:
+        # Resolve the parent from the existing Transaction rather than
+        # re-matching account_number - the virtual account may have been
+        # reassigned to a different parent since the first attempt, and this
+        # retry must still credit the original payer.
         try:
-            admin_wallet = AdminWallet.objects.select_related("tenant").get(
-                bank_account_number=account_number
+            parent_user = User.objects.get(id=existing_tx.parent_id)
+        except User.DoesNotExist:
+            logger.error(
+                "DVA payment %s: retry found no user for parent_id=%s.",
+                paystack_reference, existing_tx.parent_id,
             )
-            school_tenant = admin_wallet.tenant or tenant
-            narration_text = (
-                (metadata or {}).get("webhook_data", {}).get("narration", "")
-                or f"Paystack DVA {paystack_reference}"
-            )
-            payment, created = ingest_bank_payment(
-                tenant=school_tenant,
-                amount=amount_naira,
-                narration=narration_text,
-                bank_reference=paystack_reference,
-                currency="NGN",
-                metadata=metadata or {},
-                actor=None,
-            )
-            logger.info(
-                "DVA payment %s ingested as school BankPayment — status=%s created=%s",
-                paystack_reference, payment.status, created,
-            )
-            return {
-                "status": "ingested_school_account",
-                "bank_payment_status": payment.status,
-                "bank_payment_id": str(payment.id),
-            }
-        except AdminWallet.DoesNotExist:
-            pass
-
-        logger.error(
-            "DVA payment %s: no active ParentVirtualAccount or AdminWallet for account_number=%s",
-            paystack_reference, account_number,
+            return {"status": "error", "message": "Could not resolve parent for retry."}
+        amount = existing_tx.amount
+        resolved_tenant = parent_user.tenant or tenant
+        tx = existing_tx
+        logger.warning(
+            "DVA payment %s: retrying allocation for a Transaction stuck at allocation_status=pending.",
+            paystack_reference,
         )
-        return {"status": "error", "message": f"No active virtual account for {account_number}"}
+    else:
+        # Look up parent by virtual account number. account_number has no DB
+        # uniqueness constraint (the admin-assignment endpoint now blocks new
+        # duplicates, but data assigned before that guard existed may still
+        # collide) - .get() would raise MultipleObjectsReturned and this payment
+        # would be lost with only a server log to show for it, so resolve
+        # deterministically instead and loudly flag the ambiguity for a human.
+        matches = list(
+            ParentVirtualAccount.objects.select_related("parent")
+            .filter(account_number=account_number, is_active=True)
+            .order_by("-created_at")
+        )
+        if len(matches) > 1:
+            logger.error(
+                "DVA payment %s: account_number=%s is assigned to %d active parents - "
+                "allocating to the most recently assigned one and flagging for review.",
+                paystack_reference, account_number, len(matches),
+            )
+            record_finance_activity(
+                tenant, None, "duplicate_virtual_account",
+                f"Virtual account {account_number} is assigned to {len(matches)} parents - "
+                f"payment {paystack_reference} was allocated to one of them. Resolve the duplicate assignment.",
+                amount=_as_decimal(amount_naira), reference=paystack_reference,
+                metadata={"account_number": account_number, "parent_ids": [str(m.parent_id) for m in matches]},
+            )
+        vac = matches[0] if matches else None
+        if vac is None:
+            # Fall back: check if this is the school's main collection DVA (AdminWallet)
+            try:
+                admin_wallet = AdminWallet.objects.select_related("tenant").get(
+                    bank_account_number=account_number
+                )
+                school_tenant = admin_wallet.tenant or tenant
+                narration_text = (
+                    (metadata or {}).get("webhook_data", {}).get("narration", "")
+                    or f"Paystack DVA {paystack_reference}"
+                )
+                payment, created = ingest_bank_payment(
+                    tenant=school_tenant,
+                    amount=amount_naira,
+                    narration=narration_text,
+                    bank_reference=paystack_reference,
+                    currency="NGN",
+                    metadata=metadata or {},
+                    actor=None,
+                )
+                logger.info(
+                    "DVA payment %s ingested as school BankPayment — status=%s created=%s",
+                    paystack_reference, payment.status, created,
+                )
+                return {
+                    "status": "ingested_school_account",
+                    "bank_payment_status": payment.status,
+                    "bank_payment_id": str(payment.id),
+                }
+            except AdminWallet.DoesNotExist:
+                pass
 
-    parent_user = vac.parent
-    amount = _as_decimal(amount_naira)
-    # Prefer the parent's own tenant over the Paystack metadata lookup above -
-    # metadata.school_id is only as reliable as what the frontend sent when
-    # initializing the charge, whereas the parent's tenant is always set.
-    resolved_tenant = parent_user.tenant or tenant
+            logger.error(
+                "DVA payment %s: no active ParentVirtualAccount or AdminWallet for account_number=%s",
+                paystack_reference, account_number,
+            )
+            return {"status": "error", "message": f"No active virtual account for {account_number}"}
+
+        parent_user = vac.parent
+        amount = _as_decimal(amount_naira)
+        # Prefer the parent's own tenant over the Paystack metadata lookup above -
+        # metadata.school_id is only as reliable as what the frontend sent when
+        # initializing the charge, whereas the parent's tenant is always set.
+        resolved_tenant = parent_user.tenant or tenant
+
+        # Create the parent transaction record
+        reference = generate_reference("DVA")
+        tx = Transaction.objects.create(
+            tx_type=Transaction.SPLIT_PAYMENT,
+            status=Transaction.STATUS_SUCCESS,
+            amount=amount,
+            reference=reference,
+            paystack_ref=paystack_reference,
+            provider="paystack",
+            narration=f"Virtual account payment — {parent_user.get_full_name() or parent_user.email}",
+            parent_id=parent_user.id,
+            school_id=resolved_tenant.id if resolved_tenant else None,
+            tuition_amount=amount,
+            allocation_status=Transaction.ALLOCATION_PENDING,
+            metadata=metadata or {},
+        )
 
     # Get parent's children's unpaid fees
     try:
@@ -6625,23 +6674,6 @@ def process_virtual_account_payment(
         students = parent_profile.children.all()
     except ParentProfile.DoesNotExist:
         students = []
-
-    # Create the parent transaction record
-    reference = generate_reference("DVA")
-    tx = Transaction.objects.create(
-        tx_type=Transaction.SPLIT_PAYMENT,
-        status=Transaction.STATUS_SUCCESS,
-        amount=amount,
-        reference=reference,
-        paystack_ref=paystack_reference,
-        provider="paystack",
-        narration=f"Virtual account payment — {parent_user.get_full_name() or parent_user.email}",
-        parent_id=parent_user.id,
-        school_id=resolved_tenant.id if resolved_tenant else None,
-        tuition_amount=amount,
-        allocation_status=Transaction.ALLOCATION_PENDING,
-        metadata=metadata or {},
-    )
 
     # Allocate payment to fees (oldest due first, no extra ₦400 markup for DVA payments)
     remaining = amount
@@ -6846,7 +6878,7 @@ def process_virtual_account_payment(
 
     return {
         "status": "success",
-        "reference": reference,
+        "reference": tx.reference,
         "paystack_ref": paystack_reference,
         "amount": float(amount),
         "allocated_count": len(allocations),
