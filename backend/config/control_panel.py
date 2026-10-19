@@ -948,22 +948,147 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
         }
         return render(request, "admin/generic_confirm.html", context)
 
+    # account_type -> (create view, create fake path, edit view, edit fake
+    # path template, edit URL kwarg name, password field pair). One table
+    # instead of three near-identical branches for create vs edit.
+    _PERSON_ROLE_CONFIG = {
+        "student": {
+            "id_kwarg": "student_id",
+            "password_fields": ("student_password", "confirm_student_password"),
+            "fake_path": "/api/app/students/",
+        },
+        "teacher": {
+            "id_kwarg": "teacher_id",
+            "password_fields": ("teacher_password", "confirm_teacher_password"),
+            "fake_path": "/api/app/teachers/",
+        },
+        "staff": {
+            "id_kwarg": "staff_id",
+            "password_fields": ("staff_password", "confirm_staff_password"),
+            "fake_path": "/api/hr/staff/",
+        },
+    }
+
+    def _person_role_views(self):
+        from hr import views as hr_views
+        from users import app_views as users_app_views
+
+        return {
+            "student": (users_app_views.create_student, users_app_views.student_detail),
+            "teacher": (users_app_views.create_teacher, users_app_views.teacher_detail),
+            "staff": (hr_views.create_staff, hr_views.staff_detail),
+        }
+
+    def _existing_people(self, school, role, search_query):
+        """Up to 20 existing accounts of this role at this school, newest
+        first, optionally narrowed by name/email - the list the "Edit"
+        links in add_person.html are built from."""
+        from django.db.models import Q
+
+        from hr.models import StaffProfile
+        from users.models import StudentProfile, TeacherProfile
+
+        query = search_query.strip()
+        if role == "student":
+            qs = StudentProfile.objects.select_related("user").filter(user__tenant=school)
+            if query:
+                qs = qs.filter(Q(user__first_name__icontains=query) | Q(user__last_name__icontains=query) | Q(user__email__icontains=query))
+            qs = qs.order_by("-created_at")[:20]
+            return [{"id": str(p.id), "name": p.user.get_full_name(), "email": p.user.email} for p in qs]
+        if role == "teacher":
+            qs = TeacherProfile.objects.select_related("user").filter(user__tenant=school)
+            if query:
+                qs = qs.filter(Q(user__first_name__icontains=query) | Q(user__last_name__icontains=query) | Q(user__email__icontains=query))
+            qs = qs.order_by("-created_at")[:20]
+            return [{"id": str(p.id), "name": p.user.get_full_name(), "email": p.user.email} for p in qs]
+        qs = StaffProfile.objects.filter(tenant=school)
+        if query:
+            qs = qs.filter(Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(email__icontains=query) | Q(role__icontains=query))
+        qs = qs.order_by("-created_at")[:20]
+        return [{"id": str(p.id), "name": p.full_name, "email": p.email} for p in qs]
+
+    def _person_prefill(self, school, role, edit_id):
+        """(person dict for template prefill, {current_subject_ids}, {current_class_ids})
+        for the person being edited, or (None, set(), set()) if edit_id is
+        blank or doesn't resolve to someone at this school."""
+        from hr.models import StaffProfile
+        from users.models import StudentProfile, TeacherProfile
+
+        if not edit_id:
+            return None, set(), set()
+        if role == "student":
+            profile = StudentProfile.objects.select_related("user", "current_class").filter(user__tenant=school, id=edit_id).first()
+            if not profile:
+                return None, set(), set()
+            u = profile.user
+            person = {
+                "id": str(profile.id),
+                "email": u.email, "first_name": u.first_name, "middle_name": u.middle_name, "last_name": u.last_name,
+                "gender": u.gender or "", "date_of_birth": u.date_of_birth.isoformat() if u.date_of_birth else "",
+                "class_id": str(profile.current_class_id) if profile.current_class_id else "",
+                "admission_date": profile.admission_date.isoformat() if profile.admission_date else "",
+                "student_type": profile.student_type or "", "blood_group": profile.blood_group or "",
+                "home_address": profile.home_address or "", "state_of_origin": profile.state_of_origin or "",
+                "local_government": profile.local_government or "", "medical_records": profile.medical_conditions or "",
+                "guardian_name": profile.guardian_name or "", "guardian_phone": profile.guardian_phone or "",
+                "guardian_email": profile.guardian_email or "", "guardian_relation": profile.guardian_relation or "",
+            }
+            return person, set(), set()
+        if role == "teacher":
+            profile = TeacherProfile.objects.select_related("user").prefetch_related("subjects", "assigned_classes").filter(user__tenant=school, id=edit_id).first()
+            if not profile:
+                return None, set(), set()
+            u = profile.user
+            person = {
+                "id": str(profile.id),
+                "email": u.email, "first_name": u.first_name, "middle_name": u.middle_name, "last_name": u.last_name,
+                "phone": u.phone or "", "gender": u.gender or "",
+                "employee_id": profile.employee_id, "specialization": profile.specialization or "",
+                "qualification": profile.qualification or "", "years_of_experience": profile.years_of_experience,
+                "monthly_salary": profile.monthly_salary, "hire_date": profile.hire_date.isoformat() if profile.hire_date else "",
+                "employment_type": profile.employment_type,
+                "emergency_contact_name": profile.emergency_contact_name or "",
+                "emergency_contact_phone": profile.emergency_contact_phone or "",
+                "emergency_contact_relation": profile.emergency_contact_relation or "",
+            }
+            current_subject_ids = {str(i) for i in profile.subjects.values_list("id", flat=True)}
+            current_class_ids = {str(i) for i in profile.assigned_classes.values_list("id", flat=True)}
+            return person, current_subject_ids, current_class_ids
+        profile = StaffProfile.objects.filter(tenant=school, id=edit_id).first()
+        if not profile:
+            return None, set(), set()
+        person = {
+            "id": str(profile.id),
+            "first_name": profile.first_name, "middle_name": profile.middle_name, "last_name": profile.last_name,
+            "role": profile.role, "email": profile.email, "phone": profile.phone, "gender": profile.gender,
+            "address": profile.address, "staff_type": profile.staff_type, "department": profile.department,
+            "employment_type": profile.employment_type, "employment_status": profile.employment_status,
+            "hire_date": profile.hire_date.isoformat() if profile.hire_date else "", "base_salary": profile.base_salary,
+            "bank_name": profile.bank_name, "bank_code": profile.bank_code,
+            "bank_account_name": profile.bank_account_name, "bank_account_number": profile.bank_account_number,
+            "emergency_contact_name": profile.emergency_contact_name, "emergency_contact_phone": profile.emergency_contact_phone,
+            "emergency_contact_relation": profile.emergency_contact_relation, "notes": profile.notes,
+        }
+        return person, set(), set()
+
     def add_person_view(self, request, object_id):
-        """Create a student, teacher, or non-teaching staff account directly
-        into this school, without needing that school's own admin to sign in
-        and do it themselves. Dispatches into the exact same validated
-        creation views a school's own admin uses (users.app_views.
-        create_student/create_teacher, hr.views.create_staff) by building a
-        real DRF request and force-authenticating it as one of this
-        school's own admins - so this can never drift from "the right
-        form": any field those screens require or reject behaves
-        identically here, with zero duplicated validation logic."""
+        """Create OR edit a student, teacher, or non-teaching staff account
+        directly in this school, without needing that school's own admin to
+        sign in and do it themselves. Dispatches into the exact same
+        validated views a school's own admin uses (users.app_views.
+        create_student/student_detail, create_teacher/teacher_detail,
+        hr.views.create_staff/staff_detail) by building a real DRF request
+        and force-authenticating it as one of this school's own admins - so
+        this can never drift from "the right form": any field those screens
+        require or reject behaves identically here, with zero duplicated
+        validation logic. There is deliberately no way to view an existing
+        password here - it's stored as a one-way hash (same as every real
+        account), so the only thing even the platform can do is set a new
+        one, which the edit form already does."""
         from rest_framework.test import APIRequestFactory, force_authenticate
 
         from academic.models import Class, Subject
-        from hr import views as hr_views
         from hr.models import StaffProfile
-        from users import app_views as users_app_views
         from users.models import User, resolve_legacy_tenant_for_school
 
         school = self.get_object(request, object_id)
@@ -973,9 +1098,14 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
             raise PermissionDenied
 
         role = (request.POST.get("account_type") or request.GET.get("role") or "student").strip()
-        if role not in ("student", "teacher", "staff"):
+        if role not in self._PERSON_ROLE_CONFIG:
             role = "student"
-        redirect_url = f"{reverse(f'{self.admin_site.name}:core_schooltenant_add_person', args=[object_id])}?role={role}"
+        edit_id = (request.POST.get("edit_id") or request.GET.get("edit_id") or "").strip()
+        search_query = request.GET.get("q", "")
+        role_config = self._PERSON_ROLE_CONFIG[role]
+
+        base_url = reverse(f"{self.admin_site.name}:core_schooltenant_add_person", args=[object_id])
+        redirect_url = f"{base_url}?role={role}" + (f"&edit_id={edit_id}" if edit_id else "")
 
         if request.method == "POST":
             acting_admin = (
@@ -998,39 +1128,64 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
             # send it.
             combined = {}
             for key in request.POST:
-                if key in ("csrfmiddlewaretoken", "account_type"):
+                if key in ("csrfmiddlewaretoken", "account_type", "edit_id"):
                     continue
                 values = request.POST.getlist(key)
                 combined[key] = values if len(values) > 1 else (values[0] if values else "")
             for key in request.FILES:
                 combined[key] = request.FILES[key]
 
-            view_by_role = {
-                "student": (users_app_views.create_student, "/api/app/students/create/"),
-                "teacher": (users_app_views.create_teacher, "/api/app/teachers/create/"),
-                "staff": (hr_views.create_staff, "/api/hr/staff/create/"),
-            }
-            view_func, fake_path = view_by_role[role]
-            drf_request = APIRequestFactory().post(fake_path, data=combined, format="multipart")
-            force_authenticate(drf_request, user=acting_admin)
-            response = view_func(drf_request)
+            create_view, edit_view = self._person_role_views()[role]
+
+            if edit_id:
+                # Leaving both password boxes blank means "keep the current
+                # password" - but an HTML form always submits the field, just
+                # empty, and the real PATCH views treat a *present* password
+                # key as "a change was requested" (empty = validation error,
+                # not "no change"). Drop the pair entirely when both are
+                # blank so it reads as untouched, exactly like the real Edit
+                # Student/Teacher/Staff screens already behave.
+                pw_field, confirm_field = role_config["password_fields"]
+                if not combined.get(pw_field) and not combined.get(confirm_field):
+                    combined.pop(pw_field, None)
+                    combined.pop(confirm_field, None)
+
+                fake_path = f"{role_config['fake_path']}{edit_id}/"
+                drf_request = APIRequestFactory().patch(fake_path, data=combined, format="multipart")
+                force_authenticate(drf_request, user=acting_admin)
+                response = edit_view(drf_request, **{role_config["id_kwarg"]: edit_id})
+                verb, default_message = "updated", f"{role.capitalize()} updated."
+            else:
+                fake_path = f"{role_config['fake_path']}create/"
+                drf_request = APIRequestFactory().post(fake_path, data=combined, format="multipart")
+                force_authenticate(drf_request, user=acting_admin)
+                response = create_view(drf_request)
+                verb, default_message = "added", f"{role.capitalize()} created."
+
             response_data = getattr(response, "data", None) or {}
             if response.status_code in (200, 201):
                 logger.info(
-                    "control_panel: %s added a %s to %r (id=%s) on behalf of %s",
-                    request.user, role, school.name, object_id, acting_admin,
+                    "control_panel: %s %s a %s at %r (id=%s) on behalf of %s",
+                    request.user, verb, role, school.name, object_id, acting_admin,
                 )
-                messages.success(request, response_data.get("message") or f"{role.capitalize()} created.")
+                messages.success(request, response_data.get("message") or default_message)
             else:
-                messages.error(request, response_data.get("message") or f"Could not create this {role} record.")
+                messages.error(request, response_data.get("message") or f"Could not save this {role} record.")
             return redirect(redirect_url)
 
         legacy_tenant = resolve_legacy_tenant_for_school(school)
+        person, current_subject_ids, current_class_ids = self._person_prefill(school, role, edit_id)
         context = {
             **self.admin_site.each_context(request),
-            "title": f"Add a person to {school.name}",
+            "title": f"{'Edit' if person else 'Add'} a person at {school.name}",
             "school": school,
             "role": role,
+            "edit_id": edit_id,
+            "person": person,
+            "current_subject_ids": current_subject_ids,
+            "current_class_ids": current_class_ids,
+            "existing_people": self._existing_people(school, role, search_query),
+            "search_query": search_query,
             "class_options": Class.objects.filter(tenant=legacy_tenant).order_by("name") if legacy_tenant else [],
             "subject_options": Subject.objects.filter(tenant=legacy_tenant).order_by("name") if legacy_tenant else [],
             "staff_type_choices": StaffProfile.STAFF_TYPE_CHOICES,
