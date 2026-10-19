@@ -236,6 +236,15 @@ object ApiClient {
     fun rawPost(path: String, body: JSONObject, timeoutMs: Int = 15_000): Pair<Int, String> =
         send("POST", "${Config.API_BASE_URL}$path", mapOf("Content-Type" to "application/json"), body.toString(), timeoutMs)
 
+    // Status codes the server will keep returning identically no matter how
+    // many more times a queued item is replayed - the card/record itself is
+    // invalid (already recorded, card not recognized, duplicate), not a
+    // connectivity blip. Without this, one bad queued scan sits in the
+    // queue forever, retried every heartbeat cycle for the rest of the
+    // device's life (traced from a real incident: a scan rejected with 400
+    // kept firing every ~5 minutes indefinitely).
+    private val PERMANENT_FAILURE_CODES = setOf(400, 404, 409)
+
     /** Mirrors replayOfflineQueue in client.dart exactly, including the
      * same guard against overlapping concurrent passes and the same
      * short-circuit on SessionExpiredException (every remaining item would
@@ -268,6 +277,8 @@ object ApiClient {
                     failed.addAll(queue.subList(index, queue.size))
                     OfflineQueue.writeQueue(context, failed)
                     return ReplayResult(synced, failed.size, sessionExpired = true)
+                } catch (e: ApiException) {
+                    if (e.statusCode !in PERMANENT_FAILURE_CODES) failed.add(item)
                 } catch (e: Exception) {
                     failed.add(item)
                 }

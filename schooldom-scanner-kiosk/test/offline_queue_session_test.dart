@@ -96,6 +96,30 @@ void main() {
     expect(await readQueue(), isEmpty);
   }, skip: skipReason);
 
+  test('a permanently-rejected scan (400) is dropped instead of retried forever', () async {
+    await queueTwoScans();
+    routes['/scan'] = (req) => answer(req, 400, {'detail': 'Card not recognized'});
+
+    final result = await replayOfflineQueue();
+
+    expect(result.sessionExpired, isFalse);
+    expect(result.synced, 0);
+    expect(result.remaining, 0);
+    expect(await readQueue(), isEmpty);
+  }, skip: skipReason);
+
+  test('a server error keeps a scan queued for a later retry', () async {
+    await queueTwoScans();
+    routes['/scan'] = (req) => answer(req, 500, {'detail': 'boom'});
+
+    final result = await replayOfflineQueue();
+
+    expect(result.sessionExpired, isFalse);
+    expect(result.synced, 0);
+    expect(result.remaining, 2);
+    expect(await readQueue(), hasLength(2));
+  }, skip: skipReason);
+
   test('the item ahead of the dead session still syncs before the stop', () async {
     await queueTwoScans();
     var calls = 0;

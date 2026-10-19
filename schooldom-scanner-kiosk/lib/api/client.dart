@@ -195,6 +195,15 @@ bool _replayInProgress = false;
 // tell whoever is looking at it that the fix is the key icon in the status
 // bar, not "wait for a better connection". See kiosk_home_screen.dart's
 // _sessionExpired.
+// Status codes the server will keep returning identically no matter how
+// many more times a queued item is replayed - the card/record itself is
+// invalid (already recorded, card not recognized, duplicate), not a
+// connectivity blip. Without this, one bad queued scan sits in the queue
+// forever, retried every heartbeat cycle for the rest of the device's life
+// (traced from a real incident: a scan rejected with 400 kept firing every
+// ~5 minutes indefinitely).
+const _permanentFailureCodes = {400, 404, 409};
+
 Future<({int synced, int remaining, bool sessionExpired})> replayOfflineQueue() async {
   if (_replayInProgress) {
     return (synced: 0, remaining: (await readQueue()).length, sessionExpired: false);
@@ -225,6 +234,8 @@ Future<({int synced, int remaining, bool sessionExpired})> replayOfflineQueue() 
         failed.addAll(queue.sublist(index));
         await writeQueue(failed);
         return (synced: synced, remaining: failed.length, sessionExpired: true);
+      } on ApiException catch (e) {
+        if (!_permanentFailureCodes.contains(e.statusCode)) failed.add(item);
       } catch (_) {
         failed.add(item);
       }
