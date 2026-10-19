@@ -8963,6 +8963,7 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
             <MetricCard label="Students" value={summary.students ?? 0} trend="Learner cards" />
             <MetricCard label="Teaching Staff" value={summary.teaching_staff ?? 0} trend="Teacher cards" />
             <MetricCard label="Other Staff" value={summary.other_staff ?? 0} trend="Support staff cards" />
+            <MetricCard label="Administrators" value={summary.admins ?? 0} trend="Admin cards" />
           </section>
 
           <section className="id-card-layout">
@@ -8985,6 +8986,7 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
                     <option value="student">Students</option>
                     <option value="teacher">Teaching staff</option>
                     <option value="staff">Other staff</option>
+                    <option value="admin">Administrators</option>
                   </select>
                 </label>
                 {filterType === "student" && classOptions.length ? (

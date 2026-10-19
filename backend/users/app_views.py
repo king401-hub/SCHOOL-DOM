@@ -1739,6 +1739,28 @@ def _id_card_staff_payload(staff, request=None):
     }
 
 
+def _id_card_admin_payload(user, request=None):
+    role_label = "Principal" if user.role == "principal" else "Administrator"
+    return {
+        "id": str(user.id),
+        "person_type": "admin",
+        "display_type": role_label,
+        "name": user.get_full_name(),
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "unique_id": f"ADM-{str(user.id)[:8].upper()}",
+        "profile_picture": _profile_picture_url(request, user),
+        "date_of_birth": user.date_of_birth,
+        "gender": user.gender or "",
+        "primary_label": role_label,
+        "secondary_label": "School Administration",
+        "email": user.email,
+        "phone": user.phone,
+        "department": "Administration",
+        "is_active": user.is_active,
+    }
+
+
 def _public_id_card_verification_person(person):
     return {
         "person_type": person.get("person_type"),
@@ -1785,6 +1807,12 @@ def _resolve_id_card_person(user, person_type, person_id, request=None):
     if normalized_type == "staff" and StaffProfile is not None:
         staff = get_object_or_404(StaffProfile.objects.select_related("user").filter(tenant=tenant), id=normalized_id)
         return _id_card_staff_payload(staff, request=request)
+    if normalized_type == "admin":
+        admin_user = get_object_or_404(
+            User.objects.filter(tenant=tenant, role__in=ADMIN_ROLES),
+            id=normalized_id,
+        )
+        return _id_card_admin_payload(admin_user, request=request)
     return None
 
 
@@ -1808,6 +1836,12 @@ def _resolve_id_card_person_for_tenant(tenant, person_type, person_id, request=N
     if normalized_type == "staff" and StaffProfile is not None:
         staff = get_object_or_404(StaffProfile.objects.select_related("user").filter(tenant=tenant), id=normalized_id)
         return _id_card_staff_payload(staff, request=request)
+    if normalized_type == "admin":
+        admin_user = get_object_or_404(
+            User.objects.filter(tenant=tenant, role__in=ADMIN_ROLES),
+            id=normalized_id,
+        )
+        return _id_card_admin_payload(admin_user, request=request)
     return None
 
 
@@ -7269,11 +7303,16 @@ def id_cards_snapshot(request):
             .exclude(user_id__in=teacher_user_ids)
             .order_by("first_name", "last_name")[:500]
         ]
+    admin_people = [
+        _id_card_admin_payload(item, request=request)
+        for item in User.objects.filter(tenant=user.tenant, role__in=ADMIN_ROLES).order_by("first_name", "last_name")
+    ]
 
     people = [
         *[_id_card_student_payload(item, request=request) for item in students],
         *[_id_card_teacher_payload(item, request=request) for item in teachers],
         *staff_people,
+        *admin_people,
     ]
 
     return Response(
@@ -7284,6 +7323,7 @@ def id_cards_snapshot(request):
                 "students": len([item for item in people if item["person_type"] == "student"]),
                 "teaching_staff": len([item for item in people if item["person_type"] == "teacher"]),
                 "other_staff": len([item for item in people if item["person_type"] == "staff"]),
+                "admins": len(admin_people),
                 "total": len(people),
             },
             "people": people,

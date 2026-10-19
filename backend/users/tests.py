@@ -5243,6 +5243,68 @@ class TeachersAPITests(TestCase):
         self.assertFalse(User.objects.filter(id=teacher_user.id).exists())
 
 
+class AdminIdCardTests(TestCase):
+    """The ID Cards screen used to only ever list students/teachers/other
+    staff - a school_admin/principal had no profile model of their own, so
+    they never appeared there at all and could never generate their own
+    card, even after uploading their own photo via Settings/Compliance."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Admin Card School", schema_name="admin_card_school", is_active=True,
+        )
+        self.admin = User.objects.create_user(
+            email="admin@admin-card.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def test_the_signed_in_admin_appears_in_the_id_cards_list_with_their_photo(self):
+        self.admin.profile_picture = SimpleUploadedFile("admin.jpg", b"admin-photo-bytes", content_type="image/jpeg")
+        self.admin.save(update_fields=["profile_picture"])
+
+        response = self.client.get("/api/app/id-cards/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["summary"]["admins"], 1)
+        admin_entries = [p for p in response.data["people"] if p["person_type"] == "admin"]
+        self.assertEqual(len(admin_entries), 1)
+        entry = admin_entries[0]
+        self.assertEqual(entry["name"], self.admin.get_full_name())
+        self.assertEqual(entry["display_type"], "Administrator")
+        self.assertTrue(entry["profile_picture"])
+
+    def test_admin_can_download_their_own_id_card(self):
+        response = self.client.get(
+            f"/api/app/id-cards/qr/?person_type=admin&person_id={self.admin.id}&download=true"
+        )
+        self.assertEqual(response.status_code, 200, getattr(response, "data", None))
+
+    def test_a_principal_is_labelled_distinctly_from_a_school_admin(self):
+        principal = User.objects.create_user(
+            email="principal@admin-card.edu", password="AdminPass123", first_name="Pat", last_name="Principal",
+            role="principal", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client.force_authenticate(user=principal)
+
+        response = self.client.get("/api/app/id-cards/")
+        self.assertEqual(response.status_code, 200, response.data)
+        principal_entry = next(p for p in response.data["people"] if p["email"] == "principal@admin-card.edu")
+        self.assertEqual(principal_entry["display_type"], "Principal")
+
+    def test_admin_from_another_school_cannot_be_resolved_through_this_tenants_id_card_lookup(self):
+        other_school = SchoolTenant.objects.create(name="Other Card School", schema_name="other_card_school", is_active=True)
+        other_admin = User.objects.create_user(
+            email="other.admin@admin-card.edu", password="AdminPass123", first_name="Other", last_name="Admin",
+            role="school_admin", tenant=other_school, is_active=True, is_verified=True,
+        )
+
+        response = self.client.get(
+            f"/api/app/id-cards/qr/?person_type=admin&person_id={other_admin.id}&download=true"
+        )
+        self.assertEqual(response.status_code, 404, response.data)
+
+
 class AuthSchoolScopeTests(TestCase):
     def setUp(self):
         self.client = APIClient()
