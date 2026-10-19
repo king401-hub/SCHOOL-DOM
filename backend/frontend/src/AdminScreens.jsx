@@ -11043,10 +11043,21 @@ function BranchesSettingsPanel({ session, role, schoolName }) {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
+  // Scanner terminals this school already owns (device_fleet) - lets a
+  // branch be added to/removed from one without the superadmin Control
+  // Panel. terminalChoice remembers which terminal is picked per branch
+  // when more than one has an open slot.
+  const [terminals, setTerminals] = useState([]);
+  const [terminalBusyId, setTerminalBusyId] = useState("");
+  const [terminalChoice, setTerminalChoice] = useState({});
+
   const load = useCallback(() => {
     if (!session || !eligible) return;
     requestJson(session, "GET", "/api/app/branches/")
       .then((result) => setBranches(result?.branches || []))
+      .catch(() => {});
+    requestJson(session, "GET", "/api/app/branches/terminals/")
+      .then((result) => setTerminals(result?.terminals || []))
       .catch(() => {});
   }, [session, eligible]);
 
@@ -11085,6 +11096,38 @@ function BranchesSettingsPanel({ session, role, schoolName }) {
       setError(err.message || "Could not create branch.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleAddToTerminal = async (branch, deviceId) => {
+    if (!deviceId || terminalBusyId) return;
+    setTerminalBusyId(branch.id);
+    setError("");
+    setFeedback("");
+    try {
+      const result = await requestJson(session, "POST", `/api/app/branches/${branch.id}/pair-terminal/`, { device_id: deviceId });
+      setFeedback(result?.message || "Added to terminal.");
+      load();
+    } catch (err) {
+      setError(err.message || "Could not add this branch to that terminal.");
+    } finally {
+      setTerminalBusyId("");
+    }
+  };
+
+  const handleRemoveFromTerminal = async (branch, deviceId) => {
+    if (terminalBusyId) return;
+    setTerminalBusyId(branch.id);
+    setError("");
+    setFeedback("");
+    try {
+      const result = await requestJson(session, "POST", `/api/app/branches/${branch.id}/unpair-terminal/`, { device_id: deviceId });
+      setFeedback(result?.message || "Removed from terminal.");
+      load();
+    } catch (err) {
+      setError(err.message || "Could not remove this branch from that terminal.");
+    } finally {
+      setTerminalBusyId("");
     }
   };
 
@@ -11136,20 +11179,77 @@ function BranchesSettingsPanel({ session, role, schoolName }) {
       </div>
       {branches && branches.length > 0 ? (
         <ul className="branches-settings-list">
-          {branches.map((branch) => (
-            <li key={branch.id}>
-              <span>{branch.branch_label || branch.name}</span>
-              <span className="branches-settings-list-actions">
-                {branch.is_active ? (
-                  <span className="pill">Current</span>
-                ) : (
-                  <button type="button" className="table-action danger" onClick={() => startDelete(branch)} disabled={deleteBusy}>
-                    Delete
-                  </button>
-                )}
-              </span>
-            </li>
-          ))}
+          {branches.map((branch) => {
+            const pairedDevice = terminals.find((terminal) => terminal.paired_branch_id === branch.id);
+            const homeDevice = terminals.find((terminal) => terminal.active_branch_id === branch.id);
+            const openSlotDevices = terminals.filter(
+              (terminal) => terminal.has_open_slot && terminal.active_branch_id !== branch.id,
+            );
+            const chosenDeviceId = terminalChoice[branch.id] || (openSlotDevices[0] && openSlotDevices[0].id) || "";
+            const terminalBusy = terminalBusyId === branch.id;
+
+            return (
+              <li key={branch.id}>
+                <span>{branch.branch_label || branch.name}</span>
+                <span className="branches-settings-list-actions">
+                  {pairedDevice ? (
+                    <>
+                      <span className="pill">On {pairedDevice.device_id}</span>
+                      <button
+                        type="button"
+                        className="table-action"
+                        onClick={() => handleRemoveFromTerminal(branch, pairedDevice.id)}
+                        disabled={terminalBusy}
+                      >
+                        {terminalBusy ? <Spinner size={12} /> : "Remove from terminal"}
+                      </button>
+                    </>
+                  ) : homeDevice ? (
+                    <span className="field-note">Active on {homeDevice.device_id}</span>
+                  ) : openSlotDevices.length > 1 ? (
+                    <>
+                      <select
+                        value={chosenDeviceId}
+                        onChange={(event) => setTerminalChoice((prev) => ({ ...prev, [branch.id]: event.target.value }))}
+                        disabled={terminalBusy}
+                      >
+                        {openSlotDevices.map((terminal) => (
+                          <option key={terminal.id} value={terminal.id}>
+                            {terminal.device_id}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="table-action"
+                        onClick={() => handleAddToTerminal(branch, chosenDeviceId)}
+                        disabled={terminalBusy || !chosenDeviceId}
+                      >
+                        {terminalBusy ? <Spinner size={12} /> : "Add to terminal"}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="table-action"
+                      onClick={() => handleAddToTerminal(branch, chosenDeviceId)}
+                      disabled={terminalBusy || !chosenDeviceId}
+                      title={terminals.length === 0 ? "No scanner terminal is registered to your school yet." : "All your terminals already have a paired branch."}
+                    >
+                      {terminalBusy ? <Spinner size={12} /> : "Add to terminal"}
+                    </button>
+                  )}
+                  {branch.is_active ? (
+                    <span className="pill">Current</span>
+                  ) : (
+                    <button type="button" className="table-action danger" onClick={() => startDelete(branch)} disabled={deleteBusy}>
+                      Delete
+                    </button>
+                  )}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
       <form className="panel-form-grid" onSubmit={handleCreate}>

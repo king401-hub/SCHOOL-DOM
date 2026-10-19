@@ -19,6 +19,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import SchoolGroup, SchoolTenant
+from device_fleet.models import Device
 from tenants.models import Tenant
 from users.models import User
 
@@ -560,3 +561,82 @@ class BranchSwitchingTests(TestCase):
         self._login(email="delete.teacher@greenwood.edu", password="TeacherPass123", school_code=self.school.schema_name)
         response = self.client.post(f"/api/app/branches/{secondary_id}/request-delete-otp/")
         self.assertEqual(response.status_code, 403, response.data)
+
+    # -- terminal pairing --------------------------------------------------
+
+    def test_a_branch_can_be_added_to_a_terminal_its_school_already_owns(self):
+        device = Device.objects.create(tenant=self.school, status="active", authorized=True)
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+
+        terminals = self.client.get("/api/app/branches/terminals/")
+        self.assertEqual(terminals.status_code, 200, terminals.data)
+        self.assertEqual(len(terminals.data["terminals"]), 1)
+        self.assertTrue(terminals.data["terminals"][0]["has_open_slot"])
+
+        response = self.client.post(f"/api/app/branches/{secondary_id}/pair-terminal/", {"device_id": str(device.id)})
+        self.assertEqual(response.status_code, 200, response.data)
+
+        device.refresh_from_db()
+        self.assertEqual(str(device.paired_tenant_id), secondary_id)
+
+    def test_cannot_pair_a_branch_to_a_terminal_outside_its_own_school_group(self):
+        other_school = SchoolTenant.objects.create(name="Unrelated School", schema_name="unrelated_terminal_school", is_active=True)
+        other_device = Device.objects.create(tenant=other_school, status="active", authorized=True)
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+
+        response = self.client.post(f"/api/app/branches/{secondary_id}/pair-terminal/", {"device_id": str(other_device.id)})
+        self.assertEqual(response.status_code, 404, response.data)
+        other_device.refresh_from_db()
+        self.assertIsNone(other_device.paired_tenant_id)
+
+    def test_cannot_pair_a_terminal_that_already_has_a_different_branch_in_its_open_slot(self):
+        device = Device.objects.create(tenant=self.school, status="active", authorized=True)
+        self._login()
+        self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        cache.clear()
+        third = self.client.post("/api/app/branches/create/", {"branch_label": "Boarding"})
+        third_id = third.data["branch"]["id"]
+        secondary_id = str(SchoolTenant.objects.get(branch_label="Secondary").id)
+
+        self.client.post(f"/api/app/branches/{secondary_id}/pair-terminal/", {"device_id": str(device.id)})
+        cache.clear()
+        response = self.client.post(f"/api/app/branches/{third_id}/pair-terminal/", {"device_id": str(device.id)})
+        self.assertEqual(response.status_code, 400, response.data)
+
+        device.refresh_from_db()
+        self.assertEqual(str(device.paired_tenant_id), secondary_id, "the existing pairing must be untouched")
+
+    def test_a_branch_can_be_removed_from_a_terminal(self):
+        device = Device.objects.create(tenant=self.school, status="active", authorized=True)
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+        self.client.post(f"/api/app/branches/{secondary_id}/pair-terminal/", {"device_id": str(device.id)})
+
+        cache.clear()
+        response = self.client.post(f"/api/app/branches/{secondary_id}/unpair-terminal/", {"device_id": str(device.id)})
+        self.assertEqual(response.status_code, 200, response.data)
+
+        device.refresh_from_db()
+        self.assertIsNone(device.paired_tenant_id)
+
+    def test_only_school_admin_or_principal_can_manage_terminal_pairing(self):
+        device = Device.objects.create(tenant=self.school, status="active", authorized=True)
+        User.objects.create_user(
+            email="terminal.teacher@greenwood.edu", password="TeacherPass123", first_name="Tee", last_name="Cher",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self._login()
+        create = self.client.post("/api/app/branches/create/", {"branch_label": "Secondary"})
+        secondary_id = create.data["branch"]["id"]
+
+        self._login(email="terminal.teacher@greenwood.edu", password="TeacherPass123", school_code=self.school.schema_name)
+        for response in (
+            self.client.get("/api/app/branches/terminals/"),
+            self.client.post(f"/api/app/branches/{secondary_id}/pair-terminal/", {"device_id": str(device.id)}),
+        ):
+            self.assertEqual(response.status_code, 403, response.data)

@@ -18,6 +18,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from core.models import Domain, SchoolGroup, SchoolTenant
+from device_fleet.models import Device, DeviceAuditLog
 from tenants.models import Tenant
 from users.views import generate_unique_domain, generate_unique_schema_name, get_tokens_for_user
 
@@ -55,6 +56,32 @@ def _branch_payload(tenant, active_tenant_id):
         "branch_label": tenant.branch_label,
         "school_code": tenant.schema_name,
         "is_active": str(tenant.id) == str(active_tenant_id),
+    }
+
+
+def _branch_label(tenant):
+    return tenant.branch_label or tenant.name
+
+
+def _group_devices(school_group_id):
+    """Scanner terminals this school group already owns - a device's
+    `tenant` is always set once it's assigned to a school (assign_school in
+    device_fleet.views), so filtering on it is enough to scope strictly to
+    hardware this admin's own branches already have, never another
+    school's device."""
+    return Device.objects.filter(tenant__school_group_id=school_group_id).select_related("tenant", "paired_tenant")
+
+
+def _terminal_payload(device):
+    return {
+        "id": str(device.id),
+        "device_id": device.device_id,
+        "name": device.name,
+        "active_branch_id": str(device.tenant_id) if device.tenant_id else None,
+        "active_branch_label": _branch_label(device.tenant) if device.tenant else None,
+        "paired_branch_id": str(device.paired_tenant_id) if device.paired_tenant_id else None,
+        "paired_branch_label": _branch_label(device.paired_tenant) if device.paired_tenant else None,
+        "has_open_slot": device.paired_tenant_id is None,
     }
 
 
@@ -523,3 +550,112 @@ def delete_branch(request, branch_id):
         )
 
     return Response({"success": True, "message": f"{label} was deleted."})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_branch_terminals(request):
+    """Scanner terminal(s) already serving this admin's school group, so
+    the Branches panel can offer "Add to terminal" without any superadmin
+    involvement. Pairing new hardware to a school at all still only
+    happens via the superadmin Control Panel (device_fleet) - this only
+    ever touches a device a group already has."""
+    user, error = _require_branch_manager(request)
+    if error:
+        return error
+    if not user.school_group_id:
+        return Response({"success": True, "terminals": []})
+
+    terminals = [_terminal_payload(device) for device in _group_devices(user.school_group_id)]
+    return Response({"success": True, "terminals": terminals})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def pair_branch_terminal(request, branch_id):
+    """Pair a branch onto one of this school's own scanner terminals as its
+    second school - the same tenant/paired_tenant slot device_fleet's
+    superadmin-only Control Panel pairing uses (see device_fleet.views.
+    device_switch_active_school), just reachable by the branch's own admin
+    for a device their group already owns, never new hardware or another
+    school's device."""
+    user, error = _require_branch_manager(request)
+    if error:
+        return error
+    if not user.school_group_id:
+        return Response({"success": False, "message": "Your school has no branches yet."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        target = SchoolTenant.objects.get(pk=branch_id, school_group_id=user.school_group_id)
+    except (SchoolTenant.DoesNotExist, ValueError, TypeError):
+        return Response({"success": False, "message": "That branch does not belong to your school."}, status=status.HTTP_404_NOT_FOUND)
+
+    device_id = request.data.get("device_id")
+    if not device_id:
+        return Response({"success": False, "message": "Select which terminal to add this branch to."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        device = _group_devices(user.school_group_id).get(pk=device_id)
+    except (Device.DoesNotExist, ValueError, TypeError):
+        return Response({"success": False, "message": "That terminal does not belong to your school."}, status=status.HTTP_404_NOT_FOUND)
+
+    if device.tenant_id == target.id:
+        return Response(
+            {"success": False, "message": f"{_branch_label(target)} is already this terminal's active school."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if device.paired_tenant_id and device.paired_tenant_id != target.id:
+        return Response(
+            {
+                "success": False,
+                "message": f"Terminal {device.device_id} is already paired with {_branch_label(device.paired_tenant)} - remove that pairing first.",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    device.paired_tenant = target
+    device.save(update_fields=["paired_tenant", "updated_at"])
+    DeviceAuditLog.objects.create(
+        device=device, actor=user, action="device_paired",
+        details=f"Paired with {_branch_label(target)} from the Branches settings panel.",
+    )
+
+    return Response({
+        "success": True,
+        "message": f"{_branch_label(target)} added to terminal {device.device_id}.",
+        "terminal": _terminal_payload(device),
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def unpair_branch_terminal(request, branch_id):
+    """Undo pair_branch_terminal - only ever clears a pairing that actually
+    points at this branch, never anything else a device might be doing."""
+    user, error = _require_branch_manager(request)
+    if error:
+        return error
+    if not user.school_group_id:
+        return Response({"success": False, "message": "Your school has no branches yet."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        target = SchoolTenant.objects.get(pk=branch_id, school_group_id=user.school_group_id)
+    except (SchoolTenant.DoesNotExist, ValueError, TypeError):
+        return Response({"success": False, "message": "That branch does not belong to your school."}, status=status.HTTP_404_NOT_FOUND)
+
+    device_id = request.data.get("device_id")
+    devices = _group_devices(user.school_group_id).filter(paired_tenant_id=target.id)
+    if device_id:
+        devices = devices.filter(pk=device_id)
+    device = devices.first()
+    if not device:
+        return Response({"success": False, "message": "That branch isn't paired with any of your terminals."}, status=status.HTTP_400_BAD_REQUEST)
+
+    device.paired_tenant = None
+    device.save(update_fields=["paired_tenant", "updated_at"])
+    DeviceAuditLog.objects.create(
+        device=device, actor=user, action="device_unpaired",
+        details=f"Removed {_branch_label(target)} from the Branches settings panel.",
+    )
+
+    return Response({"success": True, "message": f"{_branch_label(target)} removed from terminal {device.device_id}."})

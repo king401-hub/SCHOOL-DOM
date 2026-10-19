@@ -11523,6 +11523,13 @@ body[data-theme="dark"] .admin-notification-card.tone-danger { background: linea
   font-size: 0.88rem;
 }
 
+.branches-settings-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 body[data-theme="dark"] .branches-settings-list li {
   border-color: #1e293b;
 }
