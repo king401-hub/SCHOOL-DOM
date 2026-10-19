@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('device_fleet', '0004_apprelease_device_app_version_code_and_more'),
+        ('device_fleet', '0006_device_last_latitude_device_last_longitude_and_more'),
     ]
 
     operations = [
