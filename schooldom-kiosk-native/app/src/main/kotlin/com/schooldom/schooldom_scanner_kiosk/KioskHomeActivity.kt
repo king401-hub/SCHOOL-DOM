@@ -319,7 +319,17 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         if (isGood && name != null) {
             val detail = if (isTeacher) (roleLabel ?: role ?: "") else listOfNotNull(className, studentId).joinToString(" · ")
             val outcomeLabel = if (result.outcome == ScanOutcome.GOODBYE) "Clock-out" else "Clock-in"
-            AttendanceLogStore.record(this, name, detail, outcomeLabel)
+            val logFees = fees?.let {
+                JSONObject().apply {
+                    put("user_id", data?.optString("id", "") ?: "")
+                    put("student_id", studentId ?: "")
+                    put("class_name", className ?: "")
+                    put("paid", it.opt("paid")?.toString() ?: "0")
+                    put("outstanding", it.opt("outstanding")?.toString() ?: "0")
+                    if (studentDva != null) put("student_dva", studentDva)
+                }
+            }
+            AttendanceLogStore.record(this, name, detail, outcomeLabel, logFees)
         }
 
         val (title, colorRes, icon) = when (result.outcome) {

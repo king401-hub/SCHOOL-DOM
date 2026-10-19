@@ -7,9 +7,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 enum class ScanOutcome { WELCOME, GOODBYE, INVALID, DUPLICATE, ERROR }
 
@@ -26,8 +24,11 @@ object ScanHandler {
     // Spec section 7: a card held too long shouldn't be recorded repeatedly
     // in one tap.
     private const val DEFAULT_COOLDOWN_SECONDS = 8
+    // The budget for the whole scan-to-result round trip, online or
+    // offline - a card tap at the gate must get an answer quickly, so
+    // nothing in this file (network call, offline SMS fallback) is allowed
+    // to block longer than this.
     private val SCAN_READ_TIMEOUT_MS = 3_000L
-    private val SMS_WAIT_TIMEOUT_MS = 12_000L
 
     private val worker = Executors.newSingleThreadExecutor()
     private val recentScans = mutableMapOf<String, Long>()
@@ -177,19 +178,19 @@ object ScanHandler {
                 "late" -> "$name arrived (late) at $timeText on $dateText. -SchoolDom"
                 else -> "$name was scanned at the school gate at $timeText on $dateText. -SchoolDom"
             }
-            val latch = CountDownLatch(1)
-            var sent = false
-            smsBridge.sendSms(phone, text) { ok -> sent = ok; latch.countDown() }
-            latch.await(SMS_WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            message = if (sent) {
-                OfflineQueue.markSmsSentLocally(context, idempotencyKey)
-                "Saved - parent texted directly (offline)."
-            } else {
-                // The SIM couldn't send it (no airtime, no signal...). The
-                // scan is deliberately NOT flagged sms_sent_locally, so the
-                // server texts the parent itself once the scan syncs.
-                "Saved - SMS failed (check SIM airtime). Parent will be texted once back online."
+            // Fire-and-forget: a card tap must still show a result within
+            // SCAN_READ_TIMEOUT_MS regardless of path, offline included -
+            // waiting here for the SIM to confirm the text (previously up
+            // to SMS_WAIT_TIMEOUT_MS=12s on top of that) made a card read
+            // take far longer than that whenever offline. The queued scan
+            // already exists (OfflineQueue.enqueue, called before this
+            // branch runs), so flagging it sms-sent-locally a moment later
+            // from this background callback is still in time for whenever
+            // it actually replays.
+            smsBridge.sendSms(phone, text) { ok ->
+                if (ok) OfflineQueue.markSmsSentLocally(context, idempotencyKey)
             }
+            message = "Saved - texting parent now (offline)."
         }
         return ScanResult(outcome, message, null)
     }

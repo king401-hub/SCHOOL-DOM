@@ -37,7 +37,14 @@ object AttendanceLogStore {
         }
     }
 
-    fun record(context: Context, name: String, detail: String, outcome: String) {
+    /**
+     * [fees] is only ever non-null when this scan happened while the
+     * terminal was in Fee Tracker mode (see KioskHomeActivity.showResult) -
+     * carrying it along lets the log screen offer "Print receipt"/"Send SMS"
+     * on that same entry later, without the admin needing the student to
+     * tap their card again.
+     */
+    fun record(context: Context, name: String, detail: String, outcome: String, fees: JSONObject? = null) {
         rolloverIfNeeded(context)
         val p = prefs(context)
         val array = try {
@@ -52,6 +59,7 @@ object AttendanceLogStore {
                 put("outcome", outcome)
                 put("time", SimpleDateFormat("h:mm a", Locale.US).format(Date()))
                 put("at", System.currentTimeMillis())
+                if (fees != null) put("fees", fees)
             },
         )
         p.edit().putString(KEY_ENTRIES, array.toString()).apply()
