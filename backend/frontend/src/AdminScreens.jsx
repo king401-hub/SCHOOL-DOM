@@ -9972,12 +9972,10 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
     setAdminFirstName(director.first_name || user?.first_name || "");
     setAdminMiddleName(director.middle_name || user?.middle_name || "");
     setAdminLastName(director.last_name || user?.last_name || "");
-    setDirectorPhoneInput(director.phone || "");
   }, [
     school.cac_registered_name, school.cac_certificate, school.entrance_photo, school.proof_of_address, school.ministry_approval_number,
     director.address, director.id_type, director.proof_of_address, director.id_document, director.passport_photo, director.signature,
     director.first_name, director.middle_name, director.last_name, user?.first_name, user?.middle_name, user?.last_name,
-    director.phone,
   ]);
 
   const handleEntrancePhotoChange = (event) => {
@@ -14960,6 +14958,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
     subjects_text: "",
     subjects: [],
     classes: [],
+    profile_picture: null,
   });
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState("");
@@ -14988,6 +14987,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
     classes: [],
     teacher_password: "",
     confirm_teacher_password: "",
+    profile_picture: null,
   });
   const [isUpdating, setIsUpdating] = useState(false);
   const [editError, setEditError] = useState("");
@@ -14998,6 +14998,8 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [showEditConfirmPassword, setShowEditConfirmPassword] = useState(false);
   const [confirm, confirmDialog] = useConfirm();
+  const createTeacherPhotoRef = useRef(null);
+  const editTeacherPhotoRef = useRef(null);
 
   const toDateInputValue = (value) => {
     const raw = String(value || "");
@@ -15028,6 +15030,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
     classes: (teacher?.assigned_classes || []).map((item) => String(item.id)),
     teacher_password: "",
     confirm_teacher_password: "",
+    profile_picture: null,
   });
 
   const filteredTeachers = useMemo(() => {
@@ -15152,6 +15155,9 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
       if (!payload.hire_date) {
         delete payload.hire_date;
       }
+      if (!payload.profile_picture) {
+        delete payload.profile_picture;
+      }
       const result = await onCreate(payload);
       setFormSuccess(result?.message || "Teacher created successfully.");
       setForm({
@@ -15173,7 +15179,11 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
         subjects_text: "",
         subjects: [],
         classes: [],
+        profile_picture: null,
       });
+      if (createTeacherPhotoRef.current) {
+        createTeacherPhotoRef.current.value = "";
+      }
       setShowPassword(false);
       setShowConfirmPassword(false);
     } catch (actionError) {
@@ -15188,6 +15198,9 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
     setEditForm(buildEditForm(teacher));
     setEditError("");
     setEditSuccess("");
+    if (editTeacherPhotoRef.current) {
+      editTeacherPhotoRef.current.value = "";
+    }
   };
 
   const handleUpdateSubmit = async (event) => {
@@ -15248,9 +15261,15 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
       if (editForm.hire_date) {
         payload.hire_date = editForm.hire_date;
       }
+      if (editForm.profile_picture) {
+        payload.profile_picture = editForm.profile_picture;
+      }
       const result = await onUpdate(selectedTeacherId, payload);
       if (result?.teacher) {
         setEditForm(buildEditForm(result.teacher));
+      }
+      if (editTeacherPhotoRef.current) {
+        editTeacherPhotoRef.current.value = "";
       }
       setShowEditPassword(false);
       setShowEditConfirmPassword(false);
@@ -15338,6 +15357,17 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
                 value={form.phone}
                 onChange={(val) => setForm((prev) => ({ ...prev, phone: val }))}
                 defaultCountryCode={defaultCountryCode}
+              />
+            </label>
+            <label className="panel-field">
+              Profile Picture
+              <input
+                ref={createTeacherPhotoRef}
+                type="file"
+                accept="image/*"
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, profile_picture: event.target.files?.[0] || null }))
+                }
               />
             </label>
             <label className="panel-field">
@@ -15592,6 +15622,17 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
                   <label className="panel-field">
                     Employee ID
                     <input value={editForm.employee_id} onChange={(event) => setEditForm((prev) => ({ ...prev, employee_id: event.target.value }))} required />
+                  </label>
+                  <label className="panel-field">
+                    Profile Picture
+                    <input
+                      ref={editTeacherPhotoRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) =>
+                        setEditForm((prev) => ({ ...prev, profile_picture: event.target.files?.[0] || null }))
+                      }
+                    />
                   </label>
                   <label className="panel-field">
                     New password

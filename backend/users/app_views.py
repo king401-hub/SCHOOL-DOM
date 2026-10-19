@@ -7823,12 +7823,12 @@ def create_teacher(request):
         emergency_contact_relation=str(request.data.get("emergency_contact_relation", "")).strip() or "Not provided",
     )
 
-    subject_ids = _parse_id_list(request.data.get("subject_ids"))
+    subject_ids = _parse_id_list(_request_multi_value(request, "subject_ids"))
     if subject_ids:
         subjects = _scope_to_user_tenant(Subject.objects.all(), user).filter(id__in=subject_ids)
         teacher_profile.subjects.set(subjects)
 
-    class_ids = _parse_id_list(request.data.get("class_ids"))
+    class_ids = _parse_id_list(_request_multi_value(request, "class_ids"))
     if class_ids:
         classes = _scope_to_user_tenant(Class.objects.all(), user).filter(id__in=class_ids)
         teacher_profile.assigned_classes.set(classes)
@@ -8010,12 +8010,12 @@ def teacher_detail(request, teacher_id):
             profile_update_fields.append("subjects_text")
 
     if "subject_ids" in request.data:
-        subject_ids = _parse_id_list(request.data.get("subject_ids"))
+        subject_ids = _parse_id_list(_request_multi_value(request, "subject_ids"))
         subjects = _scope_to_user_tenant(Subject.objects.all(), user).filter(id__in=subject_ids)
         teacher_profile.subjects.set(subjects)
 
     if "class_ids" in request.data:
-        class_ids = _parse_id_list(request.data.get("class_ids"))
+        class_ids = _parse_id_list(_request_multi_value(request, "class_ids"))
         classes = _scope_to_user_tenant(Class.objects.all(), user).filter(id__in=class_ids)
         teacher_profile.assigned_classes.set(classes)
 

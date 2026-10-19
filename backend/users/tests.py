@@ -4833,6 +4833,7 @@ class TeachersAPITests(TestCase):
             is_active=True,
             is_verified=True,
         )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
         self.client.force_authenticate(user=self.admin_user)
 
     def test_create_teacher_api_creates_user_and_profile(self):
@@ -4996,6 +4997,31 @@ class TeachersAPITests(TestCase):
         self.assertTrue(bool(profile.user.profile_picture))
         self.assertIn("profiles/", profile.user.profile_picture.name)
 
+    def test_create_teacher_with_a_photo_still_assigns_every_selected_subject(self):
+        """A multipart body (anything with a file attached) is backed by a
+        QueryDict, whose plain request.data.get() silently returns only the
+        LAST of several same-named subject_ids fields - sending a photo
+        alongside more than one subject must not quietly drop all but one."""
+        math = Subject.objects.create(tenant=self.legacy_tenant, name="Mathematics", code="MATH")
+        english = Subject.objects.create(tenant=self.legacy_tenant, name="English", code="ENG")
+        photo = SimpleUploadedFile("teacher.jpg", b"teacher-photo-bytes", content_type="image/jpeg")
+
+        response = self.client.post(
+            "/api/app/teachers/create/",
+            data={
+                "teacher_email": "multi.subject.teacher@teacher-smoke.edu",
+                "first_name": "Multi",
+                "last_name": "Subject",
+                "profile_picture": photo,
+                "subject_ids": [str(math.id), str(english.id)],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        profile = TeacherProfile.objects.get(user__email="multi.subject.teacher@teacher-smoke.edu")
+        self.assertEqual(set(profile.subjects.values_list("id", flat=True)), {math.id, english.id})
+
     def test_update_teacher_profile_api_updates_user_and_profile(self):
         teacher_user = User.objects.create_user(
             email="update.teacher@teacher-smoke.edu",
@@ -5047,6 +5073,45 @@ class TeachersAPITests(TestCase):
         self.assertEqual(profile.qualification, "B.Ed")
         self.assertEqual(profile.employment_type, "part_time")
         self.assertEqual(profile.years_of_experience, 6)
+
+    def test_updating_a_teachers_photo_still_assigns_every_selected_subject(self):
+        """Same QueryDict/.get()-vs-.getlist() hazard as the create path -
+        a PATCH that includes a new photo must not silently truncate
+        subject_ids to just the last one selected."""
+        teacher_user = User.objects.create_user(
+            email="multi.subject.update@teacher-smoke.edu",
+            password="TeacherPass123",
+            first_name="Multi",
+            last_name="Update",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        profile = TeacherProfile.objects.create(
+            user=teacher_user,
+            employee_id="TCH-UPD-MULTI",
+            hire_date=timezone.now().date(),
+            employment_type="full_time",
+        )
+        math = Subject.objects.create(tenant=self.legacy_tenant, name="Mathematics", code="MATH")
+        english = Subject.objects.create(tenant=self.legacy_tenant, name="English", code="ENG")
+        photo = SimpleUploadedFile("teacher.jpg", b"teacher-photo-bytes", content_type="image/jpeg")
+
+        response = self.client.patch(
+            f"/api/app/teachers/{profile.id}/",
+            data={
+                "profile_picture": photo,
+                "subject_ids": [str(math.id), str(english.id)],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        profile.refresh_from_db()
+        teacher_user.refresh_from_db()
+        self.assertTrue(bool(teacher_user.profile_picture))
+        self.assertEqual(set(profile.subjects.values_list("id", flat=True)), {math.id, english.id})
 
     def test_update_teacher_profile_api_can_reset_password(self):
         teacher_user = User.objects.create_user(
