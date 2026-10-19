@@ -60,7 +60,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='device',
-            constraint=models.CheckConstraint(condition=models.Q(('paired_tenant__isnull', True), models.Q(('tenant', models.F('paired_tenant')), _negated=True), _connector='OR'), name='device_tenant_not_equal_paired_tenant'),
+            constraint=models.CheckConstraint(check=models.Q(('paired_tenant__isnull', True), models.Q(('tenant', models.F('paired_tenant')), _negated=True), _connector='OR'), name='device_tenant_not_equal_paired_tenant'),
         ),
         migrations.AddField(
             model_name='apprelease',
