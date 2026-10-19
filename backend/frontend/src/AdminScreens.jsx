@@ -9948,6 +9948,8 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
   const [adminFirstName, setAdminFirstName] = useState("");
   const [adminMiddleName, setAdminMiddleName] = useState("");
   const [adminLastName, setAdminLastName] = useState("");
+  const [adminGender, setAdminGender] = useState("");
+  const [adminDateOfBirth, setAdminDateOfBirth] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
@@ -9974,10 +9976,13 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
     setAdminFirstName(director.first_name || user?.first_name || "");
     setAdminMiddleName(director.middle_name || user?.middle_name || "");
     setAdminLastName(director.last_name || user?.last_name || "");
+    setAdminGender(director.gender || user?.gender || "");
+    setAdminDateOfBirth(String(director.date_of_birth || user?.date_of_birth || "").slice(0, 10));
   }, [
     school.cac_registered_name, school.cac_certificate, school.entrance_photo, school.proof_of_address, school.ministry_approval_number,
     director.address, director.id_type, director.proof_of_address, director.id_document, director.passport_photo, director.signature,
     director.first_name, director.middle_name, director.last_name, user?.first_name, user?.middle_name, user?.last_name,
+    director.gender, director.date_of_birth, user?.gender, user?.date_of_birth,
   ]);
 
   const handleEntrancePhotoChange = (event) => {
@@ -10007,6 +10012,8 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
     admin_first_name: adminFirstName.trim(),
     admin_middle_name: adminMiddleName.trim(),
     admin_last_name: adminLastName.trim(),
+    admin_gender: adminGender,
+    admin_date_of_birth: adminDateOfBirth,
     director_address: directorAddress.trim(),
     director_id_type: directorIdType,
     director_proof_of_address: directorProofOfAddressFile,
@@ -10132,6 +10139,24 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
                 <label className="panel-field">
                   Last Name
                   <input value={adminLastName} onChange={(event) => setAdminLastName(event.target.value)} disabled={!canEdit || isSaving} />
+                </label>
+                <label className="panel-field">
+                  Gender
+                  <select value={adminGender} onChange={(event) => setAdminGender(event.target.value)} disabled={!canEdit || isSaving}>
+                    <option value="">Select gender</option>
+                    <option value="M">Male</option>
+                    <option value="F">Female</option>
+                    <option value="O">Other</option>
+                    <option value="N">Prefer not to say</option>
+                  </select>
+                </label>
+                <label className="panel-field">
+                  Date of Birth
+                  <DateOfBirthInput value={adminDateOfBirth} onChange={setAdminDateOfBirth} disabled={!canEdit || isSaving} />
+                </label>
+                <label className="panel-field">
+                  Employment Date
+                  <input value={director.employment_date ? formatDate(director.employment_date) : ""} disabled />
                 </label>
                 <label className="panel-field">
                   Email

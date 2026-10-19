@@ -3081,6 +3081,28 @@ class MiddleNameTests(TestCase):
         self.admin.refresh_from_db()
         self.assertEqual(self.admin.middle_name, "Chidi")
 
+    def test_a_school_admin_can_set_their_own_gender_and_date_of_birth(self):
+        response = self.client.patch(
+            "/api/app/school/settings/",
+            data={"admin_gender": "F", "admin_date_of_birth": "1988-05-20"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["director"]["gender"], "F")
+        self.assertEqual(response.data["director"]["date_of_birth"].isoformat(), "1988-05-20")
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.gender, "F")
+        self.assertEqual(str(self.admin.date_of_birth), "1988-05-20")
+
+    def test_an_invalid_gender_is_rejected(self):
+        gender_before = self.admin.gender
+        response = self.client.patch("/api/app/school/settings/", data={"admin_gender": "X"}, format="json")
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.gender, gender_before)
+
     def test_the_login_user_payload_carries_the_middle_name(self):
         from users.serializers import UserSerializer
         self.admin.middle_name = "Chidi"

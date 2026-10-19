@@ -1039,6 +1039,9 @@ def _director_payload(user, request=None):
         "email": user.email or "",
         "phone": user.phone or "",
         "phone_verified_at": user.phone_verified_at.isoformat() if user.phone_verified_at else None,
+        "gender": user.gender or "",
+        "date_of_birth": user.date_of_birth,
+        "employment_date": user.created_at,
         "address": user.director_address or "",
         "proof_of_address": _media_url(request, user.director_proof_of_address),
         "id_type": user.director_id_type or "",
@@ -1754,6 +1757,7 @@ def _id_card_admin_payload(user, request=None):
         "gender": user.gender or "",
         "primary_label": role_label,
         "secondary_label": "School Administration",
+        "admission_or_employment_date": user.created_at,
         "email": user.email,
         "phone": user.phone,
         "department": "Administration",
@@ -8367,6 +8371,32 @@ def school_settings(request):
                 if getattr(user, attr) != new_value:
                     setattr(user, attr, new_value)
                     user_update_fields.append(attr)
+
+        raw_admin_gender = request.data.get("admin_gender")
+        if raw_admin_gender is not None:
+            new_gender = str(raw_admin_gender or "").strip()
+            allowed_genders = {value for value, _label in User.GENDER_CHOICES}
+            if new_gender and new_gender not in allowed_genders:
+                return Response(
+                    {"success": False, "message": "gender must be one of M, F, O, or N."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if (user.gender or "") != new_gender:
+                user.gender = new_gender
+                user_update_fields.append("gender")
+
+        raw_admin_date_of_birth = request.data.get("admin_date_of_birth")
+        if raw_admin_date_of_birth is not None:
+            cleaned_date_of_birth = str(raw_admin_date_of_birth or "").strip()
+            new_date_of_birth = parse_date(cleaned_date_of_birth) if cleaned_date_of_birth else None
+            if cleaned_date_of_birth and not new_date_of_birth:
+                return Response(
+                    {"success": False, "message": "admin_date_of_birth must be in YYYY-MM-DD format."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if user.date_of_birth != new_date_of_birth:
+                user.date_of_birth = new_date_of_birth
+                user_update_fields.append("date_of_birth")
 
         raw_director_address = request.data.get("director_address")
         if raw_director_address is not None:
