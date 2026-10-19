@@ -728,6 +728,17 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
     def _ops_can_edit(self, profile):
         return any(has_permission(profile, m) for m in self._edit_modules)
 
+    def has_add_person_permission(self, request):
+        """Separate from has_add_permission (gated by _edit_modules, i.e.
+        school_onboarding/compliance_verification) - adding a student/
+        teacher/staff member is the students_staff_data module's job (see
+        MODULE_MODEL_MAP), the same module that already gates those models
+        directly."""
+        profile = self._ops_profile(request)
+        if profile is not None:
+            return has_permission(profile, "students_staff_data")
+        return request.user.is_superuser or getattr(request.user, "role", "") == "super_admin"
+
     def has_module_permission(self, request):
         profile = self._ops_profile(request)
         if profile is not None:
@@ -784,6 +795,8 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
         if getattr(obj, "is_schoolgate", False):
             sg_url = reverse(f"{ns}:core_schooltenant_schoolgate_activate", args=[obj.pk])
             buttons.append(("cp-row-btn cp-row-btn-ok", sg_url, "Activate SchoolGate"))
+        add_person_url = reverse(f"{ns}:core_schooltenant_add_person", args=[obj.pk])
+        buttons.append(("cp-row-btn cp-row-btn-ok", add_person_url, "Add Person"))
         delete_url = reverse(f"{ns}:core_schooltenant_delete", args=[obj.pk])
         buttons.append(("cp-row-btn cp-row-btn-danger", delete_url, "Delete"))
         # Not permission-gated here (list_display callables don't receive
@@ -818,6 +831,11 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
                 "<path:object_id>/force-delete/",
                 self.admin_site.admin_view(self.force_delete_view),
                 name="core_schooltenant_force_delete",
+            ),
+            path(
+                "<path:object_id>/add-person/",
+                self.admin_site.admin_view(self.add_person_view),
+                name="core_schooltenant_add_person",
             ),
         ]
         return custom + super().get_urls()
@@ -929,6 +947,96 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
             "submit_class": "cp-btn-ok",
         }
         return render(request, "admin/generic_confirm.html", context)
+
+    def add_person_view(self, request, object_id):
+        """Create a student, teacher, or non-teaching staff account directly
+        into this school, without needing that school's own admin to sign in
+        and do it themselves. Dispatches into the exact same validated
+        creation views a school's own admin uses (users.app_views.
+        create_student/create_teacher, hr.views.create_staff) by building a
+        real DRF request and force-authenticating it as one of this
+        school's own admins - so this can never drift from "the right
+        form": any field those screens require or reject behaves
+        identically here, with zero duplicated validation logic."""
+        from rest_framework.test import APIRequestFactory, force_authenticate
+
+        from academic.models import Class, Subject
+        from hr import views as hr_views
+        from hr.models import StaffProfile
+        from users import app_views as users_app_views
+        from users.models import User, resolve_legacy_tenant_for_school
+
+        school = self.get_object(request, object_id)
+        if school is None:
+            raise Http404
+        if not self.has_add_person_permission(request):
+            raise PermissionDenied
+
+        role = (request.POST.get("account_type") or request.GET.get("role") or "student").strip()
+        if role not in ("student", "teacher", "staff"):
+            role = "student"
+        redirect_url = f"{reverse(f'{self.admin_site.name}:core_schooltenant_add_person', args=[object_id])}?role={role}"
+
+        if request.method == "POST":
+            acting_admin = (
+                User.objects.filter(tenant=school, role__in=("school_admin", "principal"), is_active=True)
+                .order_by("created_at")
+                .first()
+            )
+            if not acting_admin:
+                messages.error(
+                    request,
+                    "This school has no active admin account yet - it needs one (via registration or "
+                    "the proprietor flow) before people can be added here.",
+                )
+                return redirect(redirect_url)
+
+            # request.POST.dict()/request.FILES would silently keep only the
+            # LAST value of a repeated key (e.g. teacher subject_ids) - build
+            # the combined payload with getlist() so a multi-select survives
+            # the trip into the real view exactly as a browser form would
+            # send it.
+            combined = {}
+            for key in request.POST:
+                if key in ("csrfmiddlewaretoken", "account_type"):
+                    continue
+                values = request.POST.getlist(key)
+                combined[key] = values if len(values) > 1 else (values[0] if values else "")
+            for key in request.FILES:
+                combined[key] = request.FILES[key]
+
+            view_by_role = {
+                "student": (users_app_views.create_student, "/api/app/students/create/"),
+                "teacher": (users_app_views.create_teacher, "/api/app/teachers/create/"),
+                "staff": (hr_views.create_staff, "/api/hr/staff/create/"),
+            }
+            view_func, fake_path = view_by_role[role]
+            drf_request = APIRequestFactory().post(fake_path, data=combined, format="multipart")
+            force_authenticate(drf_request, user=acting_admin)
+            response = view_func(drf_request)
+            response_data = getattr(response, "data", None) or {}
+            if response.status_code in (200, 201):
+                logger.info(
+                    "control_panel: %s added a %s to %r (id=%s) on behalf of %s",
+                    request.user, role, school.name, object_id, acting_admin,
+                )
+                messages.success(request, response_data.get("message") or f"{role.capitalize()} created.")
+            else:
+                messages.error(request, response_data.get("message") or f"Could not create this {role} record.")
+            return redirect(redirect_url)
+
+        legacy_tenant = resolve_legacy_tenant_for_school(school)
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Add a person to {school.name}",
+            "school": school,
+            "role": role,
+            "class_options": Class.objects.filter(tenant=legacy_tenant).order_by("name") if legacy_tenant else [],
+            "subject_options": Subject.objects.filter(tenant=legacy_tenant).order_by("name") if legacy_tenant else [],
+            "staff_type_choices": StaffProfile.STAFF_TYPE_CHOICES,
+            "staff_status_choices": StaffProfile.STATUS_CHOICES,
+        }
+        return render(request, "admin/core/schooltenant/add_person.html", context)
 
     def _toggle_view(self, make_active):
         def view(request, object_id):

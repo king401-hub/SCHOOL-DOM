@@ -1,0 +1,198 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="module cp-confirm-card">
+  <h1>{{ title }}</h1>
+  <p class="cp-confirm-copy">
+    Creates the account directly in <strong>{{ school.name }}</strong>, through the exact same
+    validation the school's own admin would hit on their own Add Student/Teacher/Staff screen -
+    nothing here skips a required field or a check that screen would also enforce.
+  </p>
+
+  <label style="display:block;margin-bottom:16px;">
+    <span style="display:block;font-size:12.5px;font-weight:600;margin-bottom:5px;">Account type</span>
+    <select onchange="window.location.search = '?role=' + this.value;">
+      <option value="student" {% if role == "student" %}selected{% endif %}>Student</option>
+      <option value="teacher" {% if role == "teacher" %}selected{% endif %}>Teacher</option>
+      <option value="staff" {% if role == "staff" %}selected{% endif %}>Non-teaching staff</option>
+    </select>
+  </label>
+
+  <form method="post" enctype="multipart/form-data" class="stacked-form">
+    {% csrf_token %}
+    <input type="hidden" name="account_type" value="{{ role }}">
+
+    {% if role == "student" %}
+      <fieldset>
+        <legend>Student</legend>
+        <label class="cp-field">Email <input type="email" name="student_email" required></label>
+        <label class="cp-field">First name <input type="text" name="first_name" required></label>
+        <label class="cp-field">Middle name <input type="text" name="middle_name"></label>
+        <label class="cp-field">Last name <input type="text" name="last_name" required></label>
+        <label class="cp-field">Password <input type="password" name="student_password" required></label>
+        <label class="cp-field">Confirm password <input type="password" name="confirm_student_password" required></label>
+        <label class="cp-field">
+          Class
+          <select name="class_id">
+            <option value="">Unassigned</option>
+            {% for class_obj in class_options %}
+            <option value="{{ class_obj.id }}">{{ class_obj.name }}{% if class_obj.section %} - {{ class_obj.section }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="cp-field">
+          Gender
+          <select name="gender">
+            <option value="">Select gender</option>
+            <option value="M">Male</option>
+            <option value="F">Female</option>
+            <option value="O">Other</option>
+            <option value="N">Prefer not to say</option>
+          </select>
+        </label>
+        <label class="cp-field">Date of birth <input type="date" name="date_of_birth"></label>
+        <label class="cp-field">Admission date <input type="date" name="admission_date"></label>
+        <label class="cp-field">Student type <input type="text" name="student_type" placeholder="e.g. Boarding"></label>
+        <label class="cp-field">Home address <input type="text" name="home_address"></label>
+        <label class="cp-field">State of origin <input type="text" name="state_of_origin"></label>
+        <label class="cp-field">Local government <input type="text" name="local_government"></label>
+        <label class="cp-field">Blood group <input type="text" name="blood_group" placeholder="e.g. O+"></label>
+        <label class="cp-field">Medical records <input type="text" name="medical_records"></label>
+        <label class="cp-field">
+          Guardian name <input type="text" name="guardian_name" required>
+        </label>
+        <label class="cp-field">Guardian phone <input type="text" name="guardian_phone" required></label>
+        <label class="cp-field">Guardian email <input type="email" name="guardian_email"></label>
+        <label class="cp-field">Guardian relation <input type="text" name="guardian_relation" placeholder="Guardian"></label>
+        <label class="cp-field">Profile picture <input type="file" name="profile_picture" accept="image/*"></label>
+      </fieldset>
+    {% elif role == "teacher" %}
+      <fieldset>
+        <legend>Teacher</legend>
+        <label class="cp-field">Email <input type="email" name="teacher_email" required></label>
+        <label class="cp-field">First name <input type="text" name="first_name" required></label>
+        <label class="cp-field">Middle name <input type="text" name="middle_name"></label>
+        <label class="cp-field">Last name <input type="text" name="last_name" required></label>
+        <label class="cp-field">Password <input type="password" name="teacher_password" required></label>
+        <label class="cp-field">Confirm password <input type="password" name="confirm_teacher_password" required></label>
+        <label class="cp-field">Phone <input type="text" name="phone"></label>
+        <label class="cp-field">
+          Gender
+          <select name="gender">
+            <option value="">Select gender</option>
+            <option value="M">Male</option>
+            <option value="F">Female</option>
+            <option value="O">Other</option>
+            <option value="N">Prefer not to say</option>
+          </select>
+        </label>
+        <label class="cp-field">Employee ID <input type="text" name="employee_id" placeholder="Auto-generated if left blank"></label>
+        <label class="cp-field">Specialization <input type="text" name="specialization"></label>
+        <label class="cp-field">Qualification <input type="text" name="qualification"></label>
+        <label class="cp-field">Years of experience <input type="number" name="years_of_experience" value="0" min="0"></label>
+        <label class="cp-field">Monthly salary <input type="number" name="monthly_salary" value="0" min="0" step="0.01"></label>
+        <label class="cp-field">Hire date <input type="date" name="hire_date"></label>
+        <label class="cp-field">
+          Employment type
+          <select name="employment_type">
+            <option value="full_time">Full time</option>
+            <option value="part_time">Part time</option>
+            <option value="contract">Contract</option>
+          </select>
+        </label>
+        <label class="cp-field">
+          Subjects
+          <select name="subject_ids" multiple size="5">
+            {% for subject in subject_options %}
+            <option value="{{ subject.id }}">{{ subject.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="cp-field">
+          Assigned classes
+          <select name="class_ids" multiple size="5">
+            {% for class_obj in class_options %}
+            <option value="{{ class_obj.id }}">{{ class_obj.name }}{% if class_obj.section %} - {{ class_obj.section }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="cp-field">Emergency contact name <input type="text" name="emergency_contact_name"></label>
+        <label class="cp-field">Emergency contact phone <input type="text" name="emergency_contact_phone"></label>
+        <label class="cp-field">Emergency contact relation <input type="text" name="emergency_contact_relation"></label>
+        <label class="cp-field">Profile picture <input type="file" name="profile_picture" accept="image/*"></label>
+      </fieldset>
+    {% else %}
+      <fieldset>
+        <legend>Non-teaching staff</legend>
+        <label class="cp-field">First name <input type="text" name="first_name" required></label>
+        <label class="cp-field">Middle name <input type="text" name="middle_name"></label>
+        <label class="cp-field">Last name <input type="text" name="last_name" required></label>
+        <label class="cp-field">Role / job title <input type="text" name="role" placeholder="e.g. Accountant, Cleaner, Security" required></label>
+        <label class="cp-field">Email <input type="email" name="email"></label>
+        <label class="cp-field">Password <small>(only if this person needs to log in)</small> <input type="password" name="staff_password"></label>
+        <label class="cp-field">Confirm password <input type="password" name="confirm_staff_password"></label>
+        <label class="cp-field">Phone <input type="text" name="phone"></label>
+        <label class="cp-field">
+          Gender
+          <select name="gender">
+            <option value="">Select gender</option>
+            <option value="M">Male</option>
+            <option value="F">Female</option>
+            <option value="O">Other</option>
+            <option value="N">Prefer not to say</option>
+          </select>
+        </label>
+        <label class="cp-field">Address <input type="text" name="address"></label>
+        <label class="cp-field">
+          Staff type
+          <select name="staff_type">
+            {% for value, label in staff_type_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="cp-field">Department <input type="text" name="department"></label>
+        <label class="cp-field">
+          Employment type
+          <select name="employment_type">
+            <option value="full_time">Full time</option>
+            <option value="part_time">Part time</option>
+            <option value="contract">Contract</option>
+          </select>
+        </label>
+        <label class="cp-field">
+          Employment status
+          <select name="employment_status">
+            {% for value, label in staff_status_choices %}
+            <option value="{{ value }}" {% if value == "active" %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="cp-field">Hire date <input type="date" name="hire_date"></label>
+        <label class="cp-field">Base salary <input type="number" name="base_salary" value="0" min="0" step="0.01" required></label>
+        <label class="cp-field">Bank name <input type="text" name="bank_name"></label>
+        <label class="cp-field">Bank code <input type="text" name="bank_code"></label>
+        <label class="cp-field">Bank account name <input type="text" name="bank_account_name"></label>
+        <label class="cp-field">Bank account number <input type="text" name="bank_account_number"></label>
+        <label class="cp-field">Emergency contact name <input type="text" name="emergency_contact_name"></label>
+        <label class="cp-field">Emergency contact phone <input type="text" name="emergency_contact_phone"></label>
+        <label class="cp-field">Emergency contact relation <input type="text" name="emergency_contact_relation"></label>
+        <label class="cp-field">Notes <input type="text" name="notes"></label>
+      </fieldset>
+    {% endif %}
+
+    <div class="submit-row cp-confirm-actions">
+      <input type="submit" value="Create" class="cp-btn-ok">
+      <a class="button cp-btn-cancel" href="../">Back to schools</a>
+    </div>
+  </form>
+</div>
+
+<style>
+  .cp-field { display: block; margin-bottom: 10px; font-size: 12.5px; font-weight: 600; }
+  .cp-field input, .cp-field select { display: block; width: 100%; max-width: 420px; margin-top: 4px; font-weight: 400; font-size: 13px; }
+  fieldset { border: 1px solid var(--border-color, #444); border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; }
+  legend { font-weight: 700; padding: 0 6px; }
+</style>
+{% endblock %}
