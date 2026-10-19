@@ -24,6 +24,7 @@ object AttendanceLogStore {
     private const val PREFS_NAME = "schooldom_attendance_log_store"
     private const val KEY_DATE = "log_date"
     private const val KEY_ENTRIES = "log_entries"
+    private const val KEY_SERVER_CLEAR_ACK = "server_clear_ack"
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -81,5 +82,24 @@ object AttendanceLogStore {
 
     fun clear(context: Context) {
         prefs(context).edit().putString(KEY_ENTRIES, "[]").apply()
+    }
+
+    /**
+     * Mirrors a server-side clear (an admin deleting AttendanceRecord rows
+     * in the Control Panel - see academic.admin.AttendanceRecordAdmin) onto
+     * this on-device log, which otherwise has no relationship to the real
+     * records at all - see this class's own doc. [serverTimestamp] is
+     * Device.attendance_cleared_at's ISO string from the heartbeat
+     * response (Heartbeat.kt); null/empty means the server has never
+     * signalled a clear. Compared as a plain string against the last value
+     * this device already acted on, so any change (not just newer) is
+     * treated as a fresh signal.
+     */
+    fun applyServerClearSignal(context: Context, serverTimestamp: String?) {
+        if (serverTimestamp.isNullOrEmpty()) return
+        val p = prefs(context)
+        if (p.getString(KEY_SERVER_CLEAR_ACK, null) == serverTimestamp) return
+        p.edit().putString(KEY_SERVER_CLEAR_ACK, serverTimestamp).apply()
+        clear(context)
     }
 }

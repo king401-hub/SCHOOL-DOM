@@ -27,6 +27,7 @@ data class HeartbeatOutcome(
     val latestVersionName: String? = null,
     val apkUrl: String? = null,
     val releaseNotes: String? = null,
+    val attendanceClearedAt: String? = null,
 )
 
 /**
@@ -96,6 +97,7 @@ object Heartbeat {
                 latestVersionName = if (updateAvailable) data.optString("latest_version_name", "").takeIf { it.isNotEmpty() } else null,
                 apkUrl = if (updateAvailable) data.optString("apk_url", "").takeIf { it.isNotEmpty() } else null,
                 releaseNotes = if (updateAvailable) data.optString("release_notes", "") else null,
+                attendanceClearedAt = data.optString("attendance_cleared_at", "").takeIf { it.isNotEmpty() },
             )
         } catch (e: Throwable) {
             HeartbeatOutcome(online = false, authorized = true, schoolName = null, pairedSchoolName = null)

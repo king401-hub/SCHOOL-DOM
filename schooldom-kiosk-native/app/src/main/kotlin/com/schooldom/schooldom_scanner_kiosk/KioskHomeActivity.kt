@@ -522,6 +522,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
                 }
                 if (outcome.online) refreshContactsIfStale()
                 if (outcome.updateAvailable) maybePromptForUpdate(outcome)
+                AttendanceLogStore.applyServerClearSignal(this, outcome.attendanceClearedAt)
             }
             refreshPendingCount()
         }
