@@ -76,7 +76,7 @@ class SmsInboxActivity : Activity() {
         } else {
             emptyText.visibility = View.GONE
             listView.visibility = View.VISIBLE
-            listView.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, items)
+            listView.adapter = ArrayAdapter(this, R.layout.list_item_light_text, items)
         }
     }
 

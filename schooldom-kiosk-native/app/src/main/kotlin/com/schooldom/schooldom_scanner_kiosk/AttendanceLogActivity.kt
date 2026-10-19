@@ -64,7 +64,7 @@ class AttendanceLogActivity : Activity() {
             val hint = if (hasFees) "\nTap for receipt/SMS options" else ""
             "$name  •  $time\n$subtitle$hint"
         }
-        listView.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, items)
+        listView.adapter = ArrayAdapter(this, R.layout.list_item_light_text, items)
         listView.setOnItemClickListener { _, _, position, _ ->
             val entry = entries.getOrNull(position) ?: return@setOnItemClickListener
             val fees = entry.optJSONObject("fees")
