@@ -98,6 +98,9 @@
             <label class="cp-field">Date of birth <input type="date" name="date_of_birth" value="{{ person.date_of_birth|default:'' }}"></label>
             <label class="cp-field">
               Profile picture
+              {% if person.profile_picture %}
+              <span class="cp-current-photo"><img src="{{ person.profile_picture }}" alt=""> <small>Current photo - choose a file to replace it</small></span>
+              {% endif %}
               <input type="file" name="profile_picture" accept="image/*">
             </label>
           </div>
@@ -160,6 +163,9 @@
             </label>
             <label class="cp-field">
               Profile picture
+              {% if person.profile_picture %}
+              <span class="cp-current-photo"><img src="{{ person.profile_picture }}" alt=""> <small>Current photo - choose a file to replace it</small></span>
+              {% endif %}
               <input type="file" name="profile_picture" accept="image/*">
             </label>
           </div>
@@ -237,6 +243,12 @@
               </select>
             </label>
             <label class="cp-field cp-field-wide">Address <input type="text" name="address" value="{{ person.address|default:'' }}"></label>
+            {% if person.profile_picture %}
+            <div class="cp-field cp-field-wide">
+              Profile picture
+              <span class="cp-current-photo"><img src="{{ person.profile_picture }}" alt=""> <small>Set by this person themselves - there's no admin upload for staff photos.</small></span>
+            </div>
+            {% endif %}
           </div>
         </div>
 
@@ -491,6 +503,23 @@
   }
   .cp-field select[multiple] { padding: 6px; }
   .cp-hint { font-weight: 400; color: var(--cp-text-muted); font-size: 11.5px; }
+
+  .cp-current-photo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-weight: 400;
+  }
+  .cp-current-photo img {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 1px solid var(--cp-border);
+    background: var(--cp-page-bg);
+  }
+  .cp-current-photo small { color: var(--cp-text-muted); font-size: 11px; }
 
   .cp-confirm-copy { color: var(--cp-text-muted); line-height: 1.6; }
   .cp-confirm-actions {

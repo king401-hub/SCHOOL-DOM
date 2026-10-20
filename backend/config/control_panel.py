@@ -1012,11 +1012,12 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
         qs = qs.order_by("-created_at")[:20]
         return [{"id": str(p.id), "name": p.full_name, "email": p.email} for p in qs]
 
-    def _person_prefill(self, school, role, edit_id):
+    def _person_prefill(self, request, school, role, edit_id):
         """(person dict for template prefill, {current_subject_ids}, {current_class_ids})
         for the person being edited, or (None, set(), set()) if edit_id is
         blank or doesn't resolve to someone at this school."""
         from hr.models import StaffProfile
+        from users.app_views import _profile_picture_url
         from users.models import StudentProfile, TeacherProfile
 
         if not edit_id:
@@ -1037,6 +1038,7 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
                 "local_government": profile.local_government or "", "medical_records": profile.medical_conditions or "",
                 "guardian_name": profile.guardian_name or "", "guardian_phone": profile.guardian_phone or "",
                 "guardian_email": profile.guardian_email or "", "guardian_relation": profile.guardian_relation or "",
+                "profile_picture": _profile_picture_url(request, u),
             }
             return person, set(), set()
         if role == "teacher":
@@ -1055,11 +1057,12 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
                 "emergency_contact_name": profile.emergency_contact_name or "",
                 "emergency_contact_phone": profile.emergency_contact_phone or "",
                 "emergency_contact_relation": profile.emergency_contact_relation or "",
+                "profile_picture": _profile_picture_url(request, u),
             }
             current_subject_ids = {str(i) for i in profile.subjects.values_list("id", flat=True)}
             current_class_ids = {str(i) for i in profile.assigned_classes.values_list("id", flat=True)}
             return person, current_subject_ids, current_class_ids
-        profile = StaffProfile.objects.filter(tenant=school, id=edit_id).first()
+        profile = StaffProfile.objects.select_related("user").filter(tenant=school, id=edit_id).first()
         if not profile:
             return None, set(), set()
         person = {
@@ -1071,6 +1074,11 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
             "hire_date": profile.hire_date.isoformat() if profile.hire_date else "", "base_salary": profile.base_salary,
             "bank_name": profile.bank_name, "bank_code": profile.bank_code,
             "bank_account_name": profile.bank_account_name, "bank_account_number": profile.bank_account_number,
+            # Staff have no admin-facing photo upload (hr.views.staff_detail
+            # doesn't accept one) - this is read-only, picked up only if the
+            # person ever set one themselves via their own self-service
+            # profile (hr.views._update_self_biodata).
+            "profile_picture": _profile_picture_url(request, profile.user) if profile.user_id else "",
             "emergency_contact_name": profile.emergency_contact_name, "emergency_contact_phone": profile.emergency_contact_phone,
             "emergency_contact_relation": profile.emergency_contact_relation, "notes": profile.notes,
         }
@@ -1247,7 +1255,7 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
             return redirect(redirect_url)
 
         legacy_tenant = resolve_legacy_tenant_for_school(school)
-        person, current_subject_ids, current_class_ids = self._person_prefill(school, role, edit_id)
+        person, current_subject_ids, current_class_ids = self._person_prefill(request, school, role, edit_id)
         context = {
             **self.admin_site.each_context(request),
             "title": f"{'Edit' if person else 'Add'} a person at {school.name}",

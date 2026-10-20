@@ -144,6 +144,25 @@ class EditPersonFromControlPanelTests(TestCase):
             admission_date="2024-01-01", guardian_name="Old Guardian", guardian_phone="08010000001",
         )
 
+    def test_editing_a_student_with_an_existing_photo_shows_a_preview_of_it(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        profile = self._make_student()
+        profile.user.profile_picture = SimpleUploadedFile("student.jpg", b"student-photo-bytes", content_type="image/jpeg")
+        profile.user.save(update_fields=["profile_picture"])
+
+        response = self.client.get(f"{self.url}?role=student&edit_id={profile.id}")
+
+        self.assertContains(response, "cp-current-photo")
+        self.assertContains(response, profile.user.profile_picture.url)
+
+    def test_adding_a_new_student_shows_no_photo_preview(self):
+        # "cp-current-photo" alone also matches the page's own <style> block
+        # (the CSS selector renders unconditionally) - check for the actual
+        # conditional HTML element instead.
+        response = self.client.get(f"{self.url}?role=student")
+        self.assertNotContains(response, '<span class="cp-current-photo">')
+
     def test_editing_a_student_updates_their_record_and_shows_up_in_the_list(self):
         profile = self._make_student()
 
