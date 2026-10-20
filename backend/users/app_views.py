@@ -15180,6 +15180,7 @@ def _record_attendance_clock(
     school_name="",
     status_value="present",
     occurred_at=None,
+    allow_clock_out_without_clock_in=False,
 ):
     """Clock a student in or out for one day.
 
@@ -15193,6 +15194,14 @@ def _record_attendance_clock(
     online, possibly a day or more later (see rfid_attendance.views
     attendance_scan_create's scanned_at handling). Left as None, every
     timestamp/comparison below is "now" exactly as before.
+
+    `allow_clock_out_without_clock_in`: the gate scanner forces a direction
+    from its configured time windows (see rfid_attendance.views.
+    _record_student_scan) rather than this function's own toggle-inference,
+    so a student who never tapped in that morning still gets clocked OUT
+    during the clock-out window instead of erroring or being clocked in for
+    the first time at 3pm. Every other caller leaves this False and keeps
+    requiring a same-day clock-in first.
 
     Raises AttendanceClockError when the action cannot apply, so callers can turn
     it straight into a 400 rather than silently recording the wrong thing.
@@ -15216,15 +15225,18 @@ def _record_attendance_clock(
 
     if action == ATTENDANCE_EVENT_CLOCK_OUT:
         if existing is None or existing.clock_in_at is None:
-            raise AttendanceClockError(f"{student_name} has not clocked in today.")
-        if existing.clock_out_at is not None:
-            raise AttendanceClockError(f"{student_name} has already clocked out today.")
-        # An accidental second scan at the gate would otherwise clock the child
-        # straight back out and fire a "left school" SMS seconds after arrival.
-        if (now - existing.clock_in_at).total_seconds() < ATTENDANCE_DOUBLE_SCAN_SECONDS:
-            raise AttendanceClockError(
-                f"{student_name} just clocked in. Wait a moment before clocking out."
-            )
+            if not allow_clock_out_without_clock_in:
+                raise AttendanceClockError(f"{student_name} has not clocked in today.")
+        else:
+            if existing.clock_out_at is not None:
+                raise AttendanceClockError(f"{student_name} has already clocked out today.")
+            # An accidental second scan at the gate would otherwise clock the
+            # child straight back out and fire a "left school" SMS seconds
+            # after arrival.
+            if (now - existing.clock_in_at).total_seconds() < ATTENDANCE_DOUBLE_SCAN_SECONDS:
+                raise AttendanceClockError(
+                    f"{student_name} just clocked in. Wait a moment before clocking out."
+                )
 
     with db_transaction.atomic():
         if action == ATTENDANCE_EVENT_CLOCK_IN:
@@ -15251,9 +15263,25 @@ def _record_attendance_clock(
             event_time = attendance.clock_in_at
             message = f"{student_name} clocked in at {timezone.localtime(event_time).strftime('%I:%M %p').lstrip('0')}."
         else:
-            attendance = AttendanceRecord.objects.select_for_update().get(pk=existing.pk)
-            if attendance.clock_out_at is not None:
-                raise AttendanceClockError(f"{student_name} has already clocked out today.")
+            if existing is not None:
+                attendance = AttendanceRecord.objects.select_for_update().get(pk=existing.pk)
+                if attendance.clock_out_at is not None:
+                    raise AttendanceClockError(f"{student_name} has already clocked out today.")
+            else:
+                # allow_clock_out_without_clock_in: a clock-out with no
+                # same-day clock-in record at all yet - create one outright
+                # rather than updating a row that doesn't exist.
+                attendance = AttendanceRecord.objects.create(
+                    student=student_user,
+                    date=attendance_date,
+                    status=status_value,
+                    class_group=getattr(student_profile, "current_class", None),
+                    noted_by=actor,
+                    tenant=tenant_obj,
+                )
+                attendance.term = _active_term(actor)
+                attendance.academic_year = _active_academic_year(actor)
+                attendance.save(update_fields=["term", "academic_year"])
             attendance.clock_out_at = now
             attendance.clock_out_latitude = location["latitude"]
             attendance.clock_out_longitude = location["longitude"]

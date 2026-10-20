@@ -605,6 +605,20 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
     except ValueError as exc:
         return _bad_request(str(exc))
 
+    gate_settings = get_or_create_gate_settings(school)
+    event = gate_settings.classify_event(timezone.localtime(scanned_at or timezone.now()).time())
+    # Only the clock-out window forces a direction - a student with no
+    # clock-in record yet still needs to be clocked OUT (not in, for the
+    # first time, at 3pm) once the clock-out window opens, regardless of
+    # whether they ever tapped in that morning. early/late/other are left
+    # to _record_attendance_clock's own toggle inference (first tap today
+    # -> clock_in, second -> clock_out): forcing clock_in here too would
+    # let a student who already completed their whole day silently get a
+    # fresh clock_in_at stamped over their finished record just by tapping
+    # again during the morning window, instead of the "already clocked out
+    # today" error that should stop them.
+    requested_action = 'clock_out' if event == 'clockout' else ''
+
     try:
         attendance, action, message = _record_attendance_clock(
             student_user=student,
@@ -615,6 +629,8 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
             attendance_date=today,
             school_name=school.name,
             occurred_at=scanned_at,
+            requested_action=requested_action,
+            allow_clock_out_without_clock_in=(event == 'clockout'),
         )
     except AttendanceClockError as exc:
         return _bad_request(str(exc))
@@ -623,9 +639,6 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
         idempotency_key=idempotency_key,
         card_uid=card_uid,
     )
-
-    gate_settings = get_or_create_gate_settings(school)
-    event = gate_settings.classify_event(timezone.localtime(scanned_at or timezone.now()).time())
 
     # SchoolGate spec section 3: "No fee information should be displayed
     # during clock-out" - and section 2A (Attendance Only mode) never shows

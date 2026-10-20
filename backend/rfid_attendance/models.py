@@ -135,13 +135,24 @@ class GateSettings(models.Model):
 
     def classify_event(self, check_time):
         """Early/Late/Clockout/other, from a plain datetime.time - spec
-        section 5's configured windows, never a hardcoded time comparison."""
+        section 5's configured windows, never a hardcoded time comparison.
+
+        "Late" is derived (anything strictly between the clock-in window's
+        end and the clock-out window's start) rather than read from
+        late_start/late_end - the terminal's own Settings screen only ever
+        lets an admin edit the clock-in and clock-out windows (see
+        GateSettingsActivity.kt), so late_start/late_end sit frozen at
+        their original defaults forever and drift out of sync with
+        whatever clock-in window the school actually configured. A tap
+        after that configured clock-in window, and before clock-out opens,
+        should read as "late" regardless of where the old fixed window
+        happened to fall."""
         if self.early_start <= check_time <= self.early_end:
             return 'early'
-        if self.late_start <= check_time <= self.late_end:
-            return 'late'
         if self.clockout_start <= check_time <= self.clockout_end:
             return 'clockout'
+        if self.early_end < check_time < self.clockout_start:
+            return 'late'
         return 'other'
 
     def __str__(self):
