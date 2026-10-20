@@ -40,7 +40,14 @@ object GateSettingsCache {
         }
     }
 
-    /** Mirrors GateSettings.classify_event: "early" | "late" | "clockout" | "other". */
+    /** Mirrors GateSettings.classify_event: "early" | "late" | "clockout" | "other".
+     * "late" is derived (strictly between the clock-in window's end and the
+     * clock-out window's start), not read from late_start/late_end - the
+     * terminal's Settings screen only lets an admin edit the clock-in and
+     * clock-out windows, so those two fields sit frozen at whatever default
+     * the backend created them with and drift out of sync with the actual
+     * configured clock-in window. See the matching comment on
+     * GateSettings.classify_event in the backend. */
     fun classifyEvent(context: Context, nowMillis: Long): String {
         val raw = prefs(context).getString(KEY, null) ?: return "other"
         return try {
@@ -54,10 +61,13 @@ object GateSettingsCache {
                 return minutes in start..end
             }
 
+            val earlyEnd = parseMinutes(data.optString("early_end", ""))
+            val clockoutStart = parseMinutes(data.optString("clockout_start", ""))
+
             when {
                 between("early_start", "early_end") -> "early"
-                between("late_start", "late_end") -> "late"
                 between("clockout_start", "clockout_end") -> "clockout"
+                earlyEnd != null && clockoutStart != null && minutes > earlyEnd && minutes < clockoutStart -> "late"
                 else -> "other"
             }
         } catch (e: Throwable) {

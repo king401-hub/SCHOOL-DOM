@@ -334,8 +334,18 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
             AttendanceLogStore.record(this, name, detail, outcomeLabel, logFees)
         }
 
+        // attendance_event ("early"/"late"/"clockout"/"other") only ever
+        // changes the parent SMS wording server-side (see _gate_sms_text) -
+        // on screen, a late clock-in still showed the same generic
+        // "Welcome!" as an on-time one, giving the admin/student at the
+        // gate no visible sign they were marked late.
+        val attendanceEvent = data?.optString("attendance_event", "") ?: ""
         val (title, colorRes, icon) = when (result.outcome) {
-            ScanOutcome.WELCOME -> Triple("Welcome!", 0xFF4ADE80.toInt(), "✓")
+            ScanOutcome.WELCOME -> if (attendanceEvent == "late") {
+                Triple("Late!", 0xFFFBBF24.toInt(), "⚠")
+            } else {
+                Triple("Welcome!", 0xFF4ADE80.toInt(), "✓")
+            }
             ScanOutcome.GOODBYE -> Triple("Goodbye!", 0xFF60A5FA.toInt(), "✓")
             ScanOutcome.INVALID -> Triple("Card Not Recognized", 0xFFF87171.toInt(), "✕")
             ScanOutcome.DUPLICATE -> Triple("Already Recorded", 0xFFFBBF24.toInt(), "⚠")
