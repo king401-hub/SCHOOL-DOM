@@ -1,0 +1,28 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Login, school/student lookup, card assignment -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- NFC card reading - the entire point of this app -->
+    <uses-permission android:name="android.permission.NFC"/>
+    <uses-feature android:name="android.hardware.nfc" android:required="true"/>
+
+    <application
+        android:label="SchoolDom Card Assign"
+        android:usesCleartextTraffic="true"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/AppTheme">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <activity android:name=".LoginActivity" android:exported="false" android:theme="@style/AppTheme" android:windowSoftInputMode="adjustResize"/>
+        <activity android:name=".SchoolPickerActivity" android:exported="false" android:theme="@style/AppTheme" android:windowSoftInputMode="adjustResize"/>
+        <activity android:name=".StudentPickerActivity" android:exported="false" android:theme="@style/AppTheme" android:windowSoftInputMode="adjustResize"/>
+        <activity android:name=".TapAssignActivity" android:exported="false" android:theme="@style/AppTheme"/>
+    </application>
+</manifest>

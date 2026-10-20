@@ -1,0 +1,7 @@
+<resources>
+    <!-- No AppCompat/Material - plain platform theme, same reasoning as
+         schooldom-kiosk-native (zero external dependencies). -->
+    <style name="AppTheme" parent="android:Theme.DeviceDefault.Light.NoActionBar">
+        <item name="android:windowBackground">@color/bg_bottom</item>
+    </style>
+</resources>

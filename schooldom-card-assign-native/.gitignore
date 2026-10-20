@@ -1,0 +1,15 @@
+/local.properties
+/.gradle
+/build
+/app/build
+.cxx/
+
+# Never commit the signing key or its passwords.
+key.properties
+**/*.keystore
+**/*.jks
+
+# The root .gitignore blanket-excludes *.pem (meant for private keys), but
+# these are public Let's Encrypt root/intermediate certs bundled into the APK
+# for TlsConfig's trust manager - not secrets, and required to build.
+!app/src/main/res/raw/*.pem
