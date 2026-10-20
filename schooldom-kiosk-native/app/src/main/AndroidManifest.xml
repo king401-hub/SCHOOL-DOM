@@ -88,5 +88,14 @@
             android:name=".AttendanceLogActivity"
             android:exported="false"
             android:theme="@style/AppTheme"/>
+
+        <!-- Hands a downloaded self-update APK to the system Package
+             Installer - see UpdateApkProvider.kt for why a plain file://
+             Uri into this app's private cache dir doesn't work. -->
+        <provider
+            android:name=".UpdateApkProvider"
+            android:authorities="com.schooldom.schooldom_scanner_kiosk.updateapk"
+            android:exported="true"
+            android:grantUriPermissions="true"/>
     </application>
 </manifest>

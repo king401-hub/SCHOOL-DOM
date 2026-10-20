@@ -649,14 +649,17 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
     /** Hands the APK to Android's own package installer - the OS shows its
      * standard "install this app?" prompt (and, the very first time, an
      * "allow installs from this app" permission screen). Never installs
-     * anything silently. Uses a plain file:// Uri (no AndroidX, so no
-     * FileProvider available - see app/build.gradle.kts) with the matching
-     * StrictMode exemption; acceptable for a closed kiosk fleet we control. */
+     * anything silently. Goes through UpdateApkProvider (a hand-rolled
+     * equivalent of AndroidX's FileProvider, since that library isn't
+     * available here - see app/build.gradle.kts) rather than a raw
+     * file:// Uri, which the Package Installer can't actually open (it
+     * runs as a different app with no access to this app's private cache
+     * dir) - that previously surfaced as "No Activity found to handle
+     * Intent" on every real device tested. */
     private fun openInstaller(file: File) {
         try {
-            android.os.StrictMode.setVmPolicy(android.os.StrictMode.VmPolicy.Builder().build())
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(android.net.Uri.fromFile(file), "application/vnd.android.package-archive")
+                setDataAndType(UpdateApkProvider.uriForFile(file), "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             startActivity(intent)
