@@ -2,9 +2,11 @@
 attendance record from one paired school into the other."""
 import datetime
 from unittest.mock import patch
+from urllib.parse import quote
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from academic.models import AttendanceRecord
@@ -380,3 +382,121 @@ class SendWeeklyReportsCommandTests(TestCase):
     def test_an_unknown_school_reports_nothing_found(self):
         out = self._run(school="no_such_school")
         self.assertIn("No active SchoolGate school matches", out)
+
+
+class PendingCardScanTapToCaptureTests(TestCase):
+    """An admin can tap an unassigned card on any terminal already in the
+    field and have its UID appear in the "Assign Student Card" wizard on
+    its own, instead of reading it off the terminal's screen and typing it
+    in by hand - see pending_card_scan and the unregistered-card branch of
+    attendance_scan_create."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()  # LocMemCache isn't rolled back between tests like the DB is
+
+        self.school = SchoolTenant.objects.create(name="Tap School", schema_name="tap_school")
+        self.admin = User.objects.create_user(
+            email="admin@tap-school.edu", password="AdminPass123", role="school_admin", tenant=self.school,
+        )
+        self.scanner_user = User.objects.create_user(
+            email="scanner@tap-school.edu", password="ScannerPass123", role="staff", tenant=self.school,
+        )
+        self.client = APIClient()
+
+    def _tap_unknown_card(self, card_uid, idempotency_key="tap-key-1"):
+        self.client.force_authenticate(user=self.scanner_user)
+        response = self.client.post(
+            "/api/rfid/attendance/scan/",
+            {"card_uid": card_uid, "idempotency_key": idempotency_key},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404, response.data)
+        self.assertTrue(response.data["unregistered"])
+
+    def _poll(self, since=""):
+        self.client.force_authenticate(user=self.admin)
+        # The "+" UTC-offset in an ISO timestamp is URL-unsafe (it decodes
+        # as a space) - quote() it exactly like the real wizard's
+        # encodeURIComponent(since) already does.
+        suffix = f"&since={quote(since)}" if since else ""
+        return self.client.get(f"/api/rfid/card-assignments/pending-scan/?school_code={self.school.schema_name}{suffix}")
+
+    def test_tapping_an_unregistered_card_makes_it_available_to_poll_for(self):
+        self._tap_unknown_card("NEWCARD1")
+
+        response = self._poll()
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["found"])
+        self.assertEqual(response.data["card_uid"], "NEWCARD1")
+
+    def test_since_excludes_a_tap_that_happened_before_it(self):
+        from django.core.cache import cache
+
+        self._tap_unknown_card("OLDCARD1")
+        # Derived from the actual recorded tap time, not a second
+        # independent timezone.now() call - back-to-back in a fast test
+        # run, two real clock reads can land in the same microsecond,
+        # which made a strict "<" comparison flaky. A human tapping a card
+        # and then separately clicking "wait for tap" never has this
+        # problem in practice.
+        tapped_at = timezone.datetime.fromisoformat(cache.get("pending_card_scan:tap_school")["scanned_at"])
+        since = (tapped_at + datetime.timedelta(milliseconds=1)).isoformat()
+
+        response = self._poll(since)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data["found"])
+
+    def test_a_tap_after_since_is_included(self):
+        from django.core.cache import cache
+
+        self._tap_unknown_card("NEWCARD2")
+        tapped_at = timezone.datetime.fromisoformat(cache.get("pending_card_scan:tap_school")["scanned_at"])
+        since = (tapped_at - datetime.timedelta(milliseconds=1)).isoformat()
+
+        response = self._poll(since)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["found"])
+        self.assertEqual(response.data["card_uid"], "NEWCARD2")
+
+    def test_with_no_pending_tap_nothing_is_found(self):
+        response = self._poll()
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data["found"])
+
+    def test_a_non_admin_cannot_poll_for_pending_scans(self):
+        self._tap_unknown_card("NEWCARD3")
+
+        self.client.force_authenticate(user=self.scanner_user)
+        response = self.client.get(f"/api/rfid/card-assignments/pending-scan/?school_code={self.school.schema_name}")
+
+        self.assertEqual(response.status_code, 403, response.data)
+
+    def test_assigning_the_tapped_card_clears_the_pending_entry(self):
+        self._tap_unknown_card("NEWCARD4")
+
+        student_user = User.objects.create_user(
+            email="student@tap-school.edu", password="StudentPass123", role="student", tenant=self.school,
+            first_name="Stu", last_name="Dent",
+        )
+        from users.models import StudentProfile
+        StudentProfile.objects.create(
+            user=student_user, student_id="STU-TAP-1", admission_number="ADM-TAP-1",
+            admission_date=datetime.date(2024, 1, 1), guardian_name="Guardian", guardian_phone="08010000001",
+            guardian_relation="Parent",
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        assign = self.client.post(
+            "/api/rfid/card-assignments/assign/",
+            {"school_code": self.school.schema_name, "person_id": str(student_user.id), "card_uid": "NEWCARD4"},
+            format="json",
+        )
+        self.assertEqual(assign.status_code, 201, assign.data)
+
+        response = self._poll()
+        self.assertFalse(response.data["found"])

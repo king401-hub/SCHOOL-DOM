@@ -18,6 +18,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -362,10 +363,60 @@ def card_assignment_create(request):
             assigned_by=request.user,
         )
 
+    # Only clears it if it's still this exact card - an admin who tapped
+    # and assigned card A shouldn't wipe out a genuinely newer pending tap
+    # of card B that arrived in the meantime.
+    pending = cache.get(f'pending_card_scan:{school.schema_name}')
+    if pending and pending.get('card_uid') == card_uid:
+        cache.delete(f'pending_card_scan:{school.schema_name}')
+
     return Response(
         {'success': True, 'message': 'Card assigned.', 'data': CardAssignmentSerializer(assignment).data},
         status=status.HTTP_201_CREATED,
     )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pending_card_scan(request):
+    """Polled by the "Assign Student Card" wizard's tap-to-capture mode -
+    the most recent card a kiosk/desktop app saw that wasn't linked to
+    anyone yet (see the unregistered-card branch of attendance_scan_create
+    above), so an admin can walk up to a terminal already in the field,
+    tap the new card, and have its UID appear in the wizard instead of
+    reading it off the terminal's screen and typing it in by hand.
+
+    `since` (ISO datetime, required) scopes this to a tap that happened
+    after the admin started waiting, so a stray unrelated tap from
+    minutes earlier - e.g. a lost/expired card someone tried at the gate -
+    is never mistaken for the one just made for this assignment.
+    """
+    if request.user.role not in ADMIN_ROLES:
+        return _forbidden('Only school administrators can look up pending card scans.')
+
+    school, error = _require_school(request.user, _school_code_from_request(request))
+    if error:
+        return error
+
+    since_raw = str(request.query_params.get('since') or '').strip()
+    since = parse_datetime(since_raw) if since_raw else None
+    if since_raw and not since:
+        return _bad_request('since must be a valid ISO datetime.')
+
+    entry = cache.get(f'pending_card_scan:{school.schema_name}')
+    if not entry:
+        return Response({'success': True, 'found': False})
+
+    scanned_at = parse_datetime(entry.get('scanned_at') or '')
+    if since and (not scanned_at or scanned_at < since):
+        return Response({'success': True, 'found': False})
+
+    return Response({
+        'success': True,
+        'found': True,
+        'card_uid': entry.get('card_uid'),
+        'scanned_at': entry.get('scanned_at'),
+    })
 
 
 @api_view(['POST'])
@@ -499,6 +550,16 @@ def attendance_scan_create(request):
         tenant=school, card_uid=card_uid, status='active',
     ).first()
     if not assignment:
+        # Remembered briefly so the "Assign Student Card" wizard's
+        # tap-to-capture mode (see pending_card_scan below) can pick this
+        # UID up on its own - an admin taps the new card on a terminal
+        # already in the field exactly like a student would, instead of
+        # reading the UID off its screen and typing it in by hand.
+        cache.set(
+            f'pending_card_scan:{school.schema_name}',
+            {'card_uid': card_uid, 'scanned_at': timezone.now().isoformat()},
+            timeout=120,
+        )
         return Response(
             {'success': False, 'unregistered': True, 'message': f'Card {card_uid} is not linked to anyone.'},
             status=status.HTTP_404_NOT_FOUND,

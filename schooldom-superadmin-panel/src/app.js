@@ -1039,12 +1039,72 @@ function updateWizardStepState() {
   steps[0]?.classList.toggle('done', !!$('#wiz-school').value);
   steps[1]?.classList.toggle('done', !!$('#wiz-student').value);
   steps[2]?.classList.toggle('done', !!$('#wiz-card-uid').value.trim());
+  $('#wiz-tap-btn').disabled = !$('#wiz-school').value && !wizTapPolling;
 }
 
-$('#wiz-school').addEventListener('change', () => { loadWizardStudents(); updateWizardStepState(); });
+$('#wiz-school').addEventListener('change', () => { stopWizardTapWait(); loadWizardStudents(); updateWizardStepState(); });
 $('#wiz-student-search').addEventListener('input', debounce(loadWizardStudents, 350));
 $('#wiz-student').addEventListener('change', updateWizardStepState);
 $('#wiz-card-uid').addEventListener('input', updateWizardStepState);
+
+// ---------------------------------------------------------------- Assign Card wizard: tap-to-capture
+//
+// Instead of reading a card's UID off a kiosk/desktop app screen and typing
+// it in here, an admin can tap "Wait for tap", then walk up to any terminal
+// already in the field and tap the new card on it like a student would -
+// the terminal's own scan reports the card as unregistered (see
+// rfid_attendance.views.attendance_scan_create), which this polls for via
+// GET /api/rfid/card-assignments/pending-scan/.
+let wizTapPolling = false;
+let wizTapInterval = null;
+let wizTapTimeout = null;
+const WIZ_TAP_POLL_MS = 2000;
+const WIZ_TAP_TIMEOUT_MS = 120000;
+
+function stopWizardTapWait(message) {
+  wizTapPolling = false;
+  clearInterval(wizTapInterval);
+  clearTimeout(wizTapTimeout);
+  wizTapInterval = null;
+  wizTapTimeout = null;
+  $('#wiz-tap-btn').textContent = '📡 Wait for tap';
+  $('#wiz-tap-status').textContent = message || '';
+  updateWizardStepState();
+}
+
+async function pollWizardTap(school, since) {
+  try {
+    const res = await API.get(`/api/rfid/card-assignments/pending-scan/?school_code=${encodeURIComponent(school)}&since=${encodeURIComponent(since)}`);
+    if (res.found) {
+      $('#wiz-card-uid').value = res.card_uid;
+      stopWizardTapWait(`Card detected: ${res.card_uid}`);
+      showToast('Card tap detected - review and assign below.');
+    }
+  } catch (err) {
+    // A transient network hiccup shouldn't end the wait - just try again
+    // on the next tick.
+  }
+}
+
+function startWizardTapWait() {
+  const school = $('#wiz-school').value;
+  if (!school || wizTapPolling) return;
+  wizTapPolling = true;
+  const since = new Date().toISOString();
+  $('#wiz-tap-btn').textContent = '⏳ Waiting... (click to cancel)';
+  $('#wiz-tap-status').textContent = 'Tap the new card on any terminal for this school now.';
+  updateWizardStepState();
+  wizTapInterval = setInterval(() => pollWizardTap(school, since), WIZ_TAP_POLL_MS);
+  wizTapTimeout = setTimeout(() => stopWizardTapWait('No tap detected within 2 minutes - try again.'), WIZ_TAP_TIMEOUT_MS);
+}
+
+$('#wiz-tap-btn').addEventListener('click', () => {
+  if (wizTapPolling) {
+    stopWizardTapWait('Cancelled.');
+  } else {
+    startWizardTapWait();
+  }
+});
 
 function debounce(fn, ms) {
   let t;
