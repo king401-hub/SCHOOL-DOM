@@ -9346,3 +9346,96 @@ class AccountPhoneVerificationEndpointTests(TestCase):
         anon = APIClient()
         response = anon.post("/api/app/phone/send-otp/", {"phone": "08031234567"}, format="json")
         self.assertEqual(response.status_code, 401)
+
+
+class ExchangeImpersonationCodeTests(TestCase):
+    """The frontend half of Control Panel impersonation - trades a one-time
+    code (minted only by config.control_panel.ControlPanelSchoolTenantAdmin.
+    login_as_view - see config.tests.LoginAsLinkFromControlPanelTests) for a
+    real signed-in session, with no password and no OTP for the target
+    account, but a permanent core.AuditLog entry every time."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+
+        self.school = SchoolTenant.objects.create(
+            name="Exchange School", schema_name="exchange_school", is_active=True,
+        )
+        self.target_user = User.objects.create_user(
+            email="target@exchange-school.edu", password="TargetPass123", first_name="Tar", last_name="Get",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.actor = User.objects.create_user(
+            email="actor@schooldom.test", password="ActorPass123", first_name="Act", last_name="Or",
+            role="super_admin", is_active=True, is_staff=True, is_superuser=True,
+        )
+        self.client = APIClient()
+
+    def _stash_code(self, code="test-impersonation-code", user_id=None):
+        from django.core.cache import cache
+        cache.set(
+            f"impersonation_code:{code}",
+            {"user_id": user_id or str(self.target_user.id), "actor_id": str(self.actor.id)},
+            timeout=60,
+        )
+        return code
+
+    def test_a_valid_code_signs_in_as_the_target_with_no_password(self):
+        code = self._stash_code()
+
+        response = self.client.post("/api/auth/exchange-impersonation/", {"code": code}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["success"])
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+        self.assertEqual(response.data["user"]["email"], self.target_user.email)
+
+    def test_the_access_token_actually_authenticates_as_the_target_user(self):
+        code = self._stash_code()
+        exchange = self.client.post("/api/auth/exchange-impersonation/", {"code": code}, format="json")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {exchange.data['access']}")
+
+        me = self.client.get("/api/auth/me/")
+
+        self.assertEqual(me.status_code, 200, me.data)
+        self.assertEqual(me.data["email"], self.target_user.email)
+
+    def test_a_code_can_only_be_used_once(self):
+        from django.core.cache import cache as django_cache
+
+        code = self._stash_code()
+        first = self.client.post("/api/auth/exchange-impersonation/", {"code": code}, format="json")
+        self.assertEqual(first.status_code, 200, first.data)
+
+        # Two back-to-back identical POSTs would otherwise just replay the
+        # first response from IdempotencyMiddleware's own (separate) cache
+        # entry - clear it so this actually exercises the real re-use
+        # rejection, not the unrelated idempotency cache.
+        django_cache.clear()
+        second = self.client.post("/api/auth/exchange-impersonation/", {"code": code}, format="json")
+        self.assertEqual(second.status_code, 400, second.data)
+
+    def test_an_unknown_code_is_rejected(self):
+        response = self.client.post("/api/auth/exchange-impersonation/", {"code": "not-a-real-code"}, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+
+    def test_a_successful_exchange_writes_an_audit_log_entry(self):
+        from core.models import AuditLog
+
+        code = self._stash_code()
+        self.client.post("/api/auth/exchange-impersonation/", {"code": code}, format="json")
+
+        entry = AuditLog.objects.get(tenant=self.school, action="LOGIN", object_id=str(self.target_user.id))
+        self.assertEqual(entry.user_id, self.actor.id)
+        self.assertTrue(entry.metadata.get("impersonation"))
+        self.assertEqual(entry.metadata.get("target_email"), self.target_user.email)
+
+    def test_no_password_is_required_anywhere_in_this_flow(self):
+        """The entire point of this endpoint - confirms the request body
+        the control panel actually sends (just a code) is sufficient, with
+        no password/OTP field accepted or required anywhere."""
+        code = self._stash_code()
+        response = self.client.post("/api/auth/exchange-impersonation/", {"code": code}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)

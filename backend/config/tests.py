@@ -238,3 +238,72 @@ class EditPersonFromControlPanelTests(TestCase):
         self.assertEqual(staff.first_name, "New")
         self.assertEqual(staff.role, "Senior Accountant")
         self.assertEqual(str(staff.base_salary), "200000.00")
+
+
+class LoginAsLinkFromControlPanelTests(TestCase):
+    """Generating a "login as" link is the Control Panel half of
+    impersonation - see users.tests.ExchangeImpersonationCodeTests for the
+    other half (trading that link's code for a real session). This half
+    only ever stashes a one-time code in the cache and redirects to the
+    frontend; it never hands out a real JWT itself."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+
+        self.school = SchoolTenant.objects.create(
+            name="Login As School", schema_name="login_as_school", is_active=True,
+        )
+        self.student_user = User.objects.create_user(
+            email="login.as.student@login-as-school.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student_profile = StudentProfile.objects.create(
+            user=self.student_user, student_id="STU-LOGIN-1", admission_number="ADM-LOGIN-1", admission_date="2024-01-01",
+            guardian_name="Guardian", guardian_phone="08010000001",
+        )
+        self.superuser = User.objects.create_user(
+            email="platform2@schooldom.test", password="SuperPass123", first_name="Platform", last_name="Super",
+            role="super_admin", is_active=True, is_staff=True, is_superuser=True,
+        )
+        self.client.force_login(self.superuser)
+        self.url = f"/control-panel/core/schooltenant/{self.school.id}/login-as/"
+
+    def test_generating_a_link_redirects_to_the_frontend_with_a_code_and_stashes_it_in_the_cache(self):
+        from django.conf import settings
+        from django.core.cache import cache
+
+        response = self.client.get(f"{self.url}?role=student&person_id={self.student_profile.id}")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.url.startswith(f"{settings.FRONTEND_BASE_URL}/app/?login_as="))
+        code = response.url.split("login_as=")[1]
+        entry = cache.get(f"impersonation_code:{code}")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["user_id"], str(self.student_user.id))
+        self.assertEqual(entry["actor_id"], str(self.superuser.id))
+
+    def test_an_unknown_person_id_is_rejected_without_generating_a_code(self):
+        response = self.client.get(f"{self.url}?role=student&person_id=00000000-0000-0000-0000-000000000000")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/add-person/", response.url)
+
+    def test_cannot_generate_a_link_for_a_student_at_a_different_school(self):
+        other_school = SchoolTenant.objects.create(name="Other Login As School", schema_name="other_login_as_school", is_active=True)
+        url = f"/control-panel/core/schooltenant/{other_school.id}/login-as/"
+
+        response = self.client.get(f"{url}?role=student&person_id={self.student_profile.id}")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/add-person/", response.url)
+
+    def test_a_non_superuser_without_permission_is_forbidden(self):
+        plain_user = User.objects.create_user(
+            email="plain2@schooldom.test", password="StaffPass123", first_name="Plain", last_name="Two",
+            role="staff", is_active=True, is_staff=True, is_superuser=False,
+        )
+        self.client.force_login(plain_user)
+
+        response = self.client.get(f"{self.url}?role=student&person_id={self.student_profile.id}")
+        self.assertEqual(response.status_code, 403)

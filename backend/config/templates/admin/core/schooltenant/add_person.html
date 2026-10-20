@@ -17,11 +17,16 @@
     {% if existing_people %}
     <ul class="cp-people-list">
       {% for item in existing_people %}
-      <li>
+      <li class="cp-people-list-row">
         <a href="?role={{ role }}&edit_id={{ item.id }}" class="{% if item.id == edit_id %}active{% endif %}">
           <strong>{{ item.name|default:"(no name)" }}</strong>
           <small>{{ item.email|default:"-" }}</small>
         </a>
+        {% if item.email %}
+        <a href="{{ login_as_url }}?role={{ role }}&person_id={{ item.id }}" class="cp-login-as" title="Open the real app signed in as {{ item.name }} - no password, no OTP">
+          Login as →
+        </a>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>
@@ -347,8 +352,17 @@
   }
   .cp-people-search button { padding: 7px 12px !important; font-size: 12px !important; }
   .cp-people-list { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto; }
-  .cp-people-list li { margin-bottom: 4px; }
-  .cp-people-list a {
+  .cp-people-list-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 4px;
+    border-radius: 8px;
+  }
+  .cp-people-list-row:hover { background: var(--cp-row-hover) !important; }
+  .cp-people-list-row > a:first-child {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 1px;
@@ -357,10 +371,26 @@
     text-decoration: none !important;
     color: var(--cp-text) !important;
   }
-  .cp-people-list a:hover { background: var(--cp-row-hover) !important; }
-  .cp-people-list a.active { background: var(--cp-success-bg) !important; color: var(--cp-success-fg) !important; }
-  .cp-people-list a small { color: var(--cp-text-muted); font-size: 11px; }
-  .cp-people-list a.active small { color: inherit; opacity: .8; }
+  .cp-people-list-row > a:first-child.active { background: var(--cp-success-bg) !important; color: var(--cp-success-fg) !important; }
+  .cp-people-list-row > a:first-child strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cp-people-list-row a small { color: var(--cp-text-muted); font-size: 11px; }
+  .cp-people-list-row > a:first-child.active small { color: inherit; opacity: .8; }
+  .cp-login-as {
+    flex: 0 0 auto;
+    padding: 6px 9px !important;
+    border-radius: 999px;
+    font-size: 10.5px !important;
+    font-weight: 700;
+    white-space: nowrap;
+    text-decoration: none !important;
+    color: var(--cp-link) !important;
+    border: 1px solid var(--cp-border);
+    opacity: 0;
+    transition: opacity .1s ease;
+  }
+  .cp-people-list-row:hover .cp-login-as,
+  .cp-login-as:focus { opacity: 1; }
+  .cp-login-as:hover { background: var(--cp-surface-alt) !important; }
   .cp-people-list-empty { color: var(--cp-text-muted); font-size: 12.5px; }
 
   .cp-person-card {

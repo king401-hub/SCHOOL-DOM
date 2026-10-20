@@ -5,6 +5,7 @@ from . import app_views, views
 
 urlpatterns = [
     path("login/", views.login_view, name="api_login"),
+    path("exchange-impersonation/", views.exchange_impersonation_code, name="api_exchange_impersonation"),
     path("register/", views.register, name="api_register"),
     path("create-school/", views.create_school, name="api_create_school"),
     path("logout/", views.logout_view, name="api_logout"),

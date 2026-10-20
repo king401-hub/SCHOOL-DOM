@@ -10923,8 +10923,111 @@ function DashboardLoader({ message = "Loading dashboard..." }) {
 
 export default function App() {
   const [session, setSession] = useState(() => readStoredSession());
+  // A Control Panel "Login as" link lands here with ?login_as=<one-time
+  // code> - this holds the normal /signin redirect off until the code is
+  // either exchanged for a real session or found to be dead, so the admin
+  // never sees a flash of the sign-in screen first. See the exchange
+  // effect below and users.views.exchange_impersonation_code.
+  const [impersonationBootstrapping, setImpersonationBootstrapping] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).has("login_as");
+    } catch {
+      return false;
+    }
+  });
   const [currentPath, setCurrentPath] = useState(() => getClientRoute(window.location.pathname || "/"));
   const [themePreference, setThemePreference] = useState(() => readStoredTheme());
+
+  useEffect(() => {
+    if (!impersonationBootstrapping) return undefined;
+    const code = new URLSearchParams(window.location.search).get("login_as");
+    if (!code) {
+      setImpersonationBootstrapping(false);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/auth/exchange-impersonation/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code }),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.message || "This login-as link has expired or already been used.");
+        }
+        if (cancelled) return;
+        const nextSession = {
+          user: data.user,
+          access: data.access,
+          refresh: data.refresh,
+          school: data.school || null,
+          school_group: data.school_group || null,
+          school_code: data.school_code || "",
+          redirectUrl: data.redirect_url || "/dashboard/",
+          requiresVerification: Boolean(data.requires_verification),
+          signedInAt: new Date().toISOString(),
+          impersonated: true,
+        };
+        // Deliberately sessionStorage only (never "remembered") - an
+        // impersonation session shouldn't outlive the tab it was opened in.
+        window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+        setSession(nextSession);
+      } catch (error) {
+        if (!cancelled) {
+          window.alert(error.message || "Could not open this account.");
+        }
+      } finally {
+        if (!cancelled) {
+          window.history.replaceState({}, "", window.location.pathname);
+          setImpersonationBootstrapping(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [impersonationBootstrapping]);
+
+  // A persistent, hard-to-miss banner for the whole life of an
+  // impersonated session - this app has many separate role-specific
+  // render trees below (admin/teacher/student/proprietor shells), so a
+  // plain DOM banner outside React's tree is the one place guaranteed to
+  // show on all of them, the same way document.title/data-dashboard-role
+  // are already set imperatively elsewhere in this component. Exists so
+  // the admin can never lose track of which account they're looking at.
+  useEffect(() => {
+    const existing = document.getElementById("schooldom-impersonation-banner");
+    if (!session?.impersonated) {
+      existing?.remove();
+      document.body.classList.remove("schooldom-impersonating");
+      return undefined;
+    }
+    if (existing) return undefined;
+    const banner = document.createElement("div");
+    banner.id = "schooldom-impersonation-banner";
+    Object.assign(banner.style, {
+      position: "fixed", top: "0", left: "0", right: "0", zIndex: "999999",
+      background: "#b91c1c", color: "#fff", fontSize: "13px", fontWeight: "600",
+      padding: "8px 16px", textAlign: "center",
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    });
+    const label = document.createElement("span");
+    label.textContent = `Viewing as ${session.user?.email || session.user?.first_name || "another account"} `;
+    const exitLink = document.createElement("a");
+    exitLink.textContent = "Exit";
+    Object.assign(exitLink.style, { color: "#fff", textDecoration: "underline", cursor: "pointer", marginLeft: "8px" });
+    exitLink.addEventListener("click", () => {
+      clearStoredSession();
+      window.location.href = "/signin";
+    });
+    banner.appendChild(label);
+    banner.appendChild(exitLink);
+    document.body.prepend(banner);
+    document.body.classList.add("schooldom-impersonating");
+    return undefined;
+  }, [session]);
 
   const navigate = useCallback((targetPath, options = {}) => {
     const { replace = false } = options;
@@ -11044,6 +11147,7 @@ useEffect(() => {
 }, []);
 
 useEffect(() => {
+  if (impersonationBootstrapping) return;
   if (!session) {
     if (currentPath !== STUDENT_CBT_DESKTOP_PATH && !PUBLIC_ROUTES.has(currentPath)) {
       if (isTeacherAttendanceScanPath(currentPath)) {
@@ -11082,7 +11186,7 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
     if (!isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && currentPath !== "/school-activities" && !STUDENT_ROUTE_SET.has(currentPath) && !isStudentExamPath(currentPath)) {
       navigate("/dashboard", { replace: true });
     }
-  }, [currentPath, navigate, session]);
+  }, [currentPath, navigate, session, impersonationBootstrapping]);
 
   const handleAuthenticated = useCallback(
     (nextSession) => {
@@ -11166,6 +11270,10 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
         <IdCardVerificationPage />
       </Suspense>
     );
+  }
+
+  if (impersonationBootstrapping) {
+    return <ScreenState loading />;
   }
 
   if (!session) {

@@ -29618,3 +29618,8 @@ body[data-theme="dark"] .receipt-preview-message {
 
 body[data-theme="dark"] .student-import-count.ok { color: #4ade80; }
 body[data-theme="dark"] .student-import-count.bad { color: #f87171; }
+
+/* Pushes the whole app down so the fixed "Viewing as X" impersonation
+   banner (injected directly into document.body - see App.jsx) never
+   overlaps the app's own top bar/nav. */
+body.schooldom-impersonating { padding-top: 34px; }

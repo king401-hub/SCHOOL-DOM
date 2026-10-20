@@ -980,6 +980,76 @@ def login_view(request):
         'errors': serializer.errors
     }, status=status.HTTP_400_BAD_REQUEST)
 
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
+def exchange_impersonation_code(request):
+    """Trades a one-time "login as" code (minted only by a platform
+    superadmin from the Control Panel - see control_panel.py's
+    login_as_view) for a real signed-in session, with the exact same
+    response shape login_view's success case returns so the frontend's
+    existing post-login handling needs no impersonation-specific branch.
+
+    This is a genuine authentication bypass by design (no password, no
+    OTP, for support/debugging) - its only guardrails are the code itself
+    (32 random bytes, works once, expires in 60s - deleted from the cache
+    the instant it's looked up here, success or not) and the permanent
+    audit trail below, which is silent to the impersonated user (no email,
+    no notification, nothing in their own activity history) but never
+    skipped.
+    """
+    from django.core.cache import cache
+
+    code = str(request.data.get('code') or '').strip()
+    if not code:
+        return Response({'success': False, 'message': 'code is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    cache_key = f'impersonation_code:{code}'
+    entry = cache.get(cache_key)
+    cache.delete(cache_key)
+    if not entry:
+        return Response({'success': False, 'message': 'This link has expired or already been used.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    target_user = User.objects.filter(id=entry.get('user_id')).first()
+    if not target_user or not target_user.is_active:
+        return Response({'success': False, 'message': 'This account is no longer available.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    tokens = get_tokens_for_user(target_user)
+
+    if target_user.tenant_id:
+        try:
+            from core.models import AuditLog
+            AuditLog.objects.create(
+                user_id=entry.get('actor_id'),
+                tenant_id=target_user.tenant_id,
+                action='LOGIN',
+                model_name='User',
+                object_id=str(target_user.id),
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')[:1000],
+                metadata={
+                    'impersonation': True,
+                    'target_email': target_user.email,
+                    'target_role': target_user.role,
+                },
+            )
+        except Exception:
+            logger.warning('Failed to write impersonation audit log for %s.', target_user.email, exc_info=True)
+
+    return Response({
+        'success': True,
+        'message': 'Signed in.',
+        'user': UserSerializer(target_user).data,
+        'school_code': target_user.tenant.schema_name if target_user.tenant else '',
+        'school': auth_school_payload(target_user),
+        'school_group': auth_school_group_payload(target_user),
+        'redirect_url': admin_redirect_url(target_user),
+        **tokens,
+    })
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):

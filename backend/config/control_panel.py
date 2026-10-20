@@ -837,6 +837,11 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.add_person_view),
                 name="core_schooltenant_add_person",
             ),
+            path(
+                "<path:object_id>/login-as/",
+                self.admin_site.admin_view(self.login_as_view),
+                name="core_schooltenant_login_as",
+            ),
         ]
         return custom + super().get_urls()
 
@@ -1071,6 +1076,74 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
         }
         return person, set(), set()
 
+    def _resolve_login_target_user_id(self, school, role, person_id):
+        """The real auth User.id behind a student/teacher/staff profile row
+        at this school, for login_as_view - never trusts a bare user id
+        from the request, only ever a (school, role, profile id) triple
+        resolved the same way _person_prefill resolves who to edit, so
+        this can never be pointed at an account outside this school."""
+        from hr.models import StaffProfile
+        from users.models import StudentProfile, TeacherProfile
+
+        if not person_id:
+            return None
+        if role == "student":
+            profile = StudentProfile.objects.filter(user__tenant=school, id=person_id).only("user_id").first()
+        elif role == "teacher":
+            profile = TeacherProfile.objects.filter(user__tenant=school, id=person_id).only("user_id").first()
+        elif role == "staff":
+            profile = StaffProfile.objects.filter(tenant=school, id=person_id).only("user_id").first()
+        else:
+            return None
+        if not profile or not getattr(profile, "user_id", None):
+            return None
+        return str(profile.user_id)
+
+    def login_as_view(self, request, object_id):
+        """One click, no password, no OTP: opens the real web app already
+        signed in as a chosen student/teacher/staff account, for support/
+        debugging - exactly what the user asked for ("silent... won't
+        require otp or something"). The target user is never notified and
+        nothing changes on their side (no forced password reset, no email).
+
+        Safety is entirely in the mechanics, not a confirmation step: this
+        never hands out a real JWT directly, only a 32-byte random,
+        single-use, 60-second exchange code stashed in the cache - the
+        actual tokens are minted later, server-side, when the frontend
+        trades the code in (see users.views.exchange_impersonation_code).
+        Every exchange is permanently written to core.AuditLog (actor,
+        target, timestamp, IP) regardless of whether this link is ever
+        used for anything else - silent to the impersonated user, never
+        silent on the backend.
+        """
+        import secrets
+
+        from django.conf import settings
+        from django.core.cache import cache
+
+        school = self.get_object(request, object_id)
+        if school is None:
+            raise Http404
+        if not self.has_add_person_permission(request):
+            raise PermissionDenied
+
+        role = (request.GET.get("role") or "").strip()
+        person_id = (request.GET.get("person_id") or "").strip()
+        user_id = self._resolve_login_target_user_id(school, role, person_id)
+        back_url = f"{reverse(f'{self.admin_site.name}:core_schooltenant_add_person', args=[object_id])}?role={role or 'student'}"
+        if not user_id:
+            messages.error(request, "Could not find that account to log in as.")
+            return redirect(back_url)
+
+        code = secrets.token_urlsafe(32)
+        cache.set(f"impersonation_code:{code}", {"user_id": user_id, "actor_id": str(request.user.id)}, timeout=60)
+        logger.info(
+            "control_panel: %s generated a login-as link for user %s (%s) at %r (id=%s)",
+            request.user, user_id, role, school.name, object_id,
+        )
+        frontend_base = getattr(settings, "FRONTEND_BASE_URL", "").rstrip("/")
+        return redirect(f"{frontend_base}/app/?login_as={code}")
+
     def add_person_view(self, request, object_id):
         """Create OR edit a student, teacher, or non-teaching staff account
         directly in this school, without needing that school's own admin to
@@ -1186,6 +1259,7 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
             "current_class_ids": current_class_ids,
             "existing_people": self._existing_people(school, role, search_query),
             "search_query": search_query,
+            "login_as_url": reverse(f"{self.admin_site.name}:core_schooltenant_login_as", args=[object_id]),
             "class_options": Class.objects.filter(tenant=legacy_tenant).order_by("name") if legacy_tenant else [],
             "subject_options": Subject.objects.filter(tenant=legacy_tenant).order_by("name") if legacy_tenant else [],
             "staff_type_choices": StaffProfile.STAFF_TYPE_CHOICES,
