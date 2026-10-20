@@ -588,8 +588,18 @@ def _too_soon_response(person, clocked_in_at):
 def _record_student_scan(request, school, student, card_uid, idempotency_key):
     scanned_at = _parse_scanned_at(request)
     today = timezone.localdate(scanned_at) if scanned_at else timezone.localdate()
+    gate_settings = get_or_create_gate_settings(school)
+    event = gate_settings.classify_event(timezone.localtime(scanned_at or timezone.now()).time())
+
     existing_today = AttendanceRecord.objects.filter(student=student, date=today).first()
-    if existing_today and existing_today.clock_in_at and not existing_today.clock_out_at:
+    # The blanket 3-hour "probably an accidental re-tap" rule doesn't apply
+    # once the terminal's own configured clock-out window has opened - that
+    # window is an explicit admin decision this scan should count as a
+    # clock-out, not a heuristic that should get second-guessed by it. A
+    # school whose clock-out window opens less than 3 hours after its
+    # clock-in window closes (a shorter day, a half-day schedule) would
+    # otherwise never be able to record a legitimate clock-out at all.
+    if event != 'clockout' and existing_today and existing_today.clock_in_at and not existing_today.clock_out_at:
         elapsed = ((scanned_at or timezone.now()) - existing_today.clock_in_at).total_seconds()
         if elapsed < MIN_SECONDS_BETWEEN_CLOCK_IN_AND_OUT:
             return _too_soon_response(student, existing_today.clock_in_at)
@@ -605,8 +615,6 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
     except ValueError as exc:
         return _bad_request(str(exc))
 
-    gate_settings = get_or_create_gate_settings(school)
-    event = gate_settings.classify_event(timezone.localtime(scanned_at or timezone.now()).time())
     # Only the clock-out window forces a direction - a student with no
     # clock-in record yet still needs to be clocked OUT (not in, for the
     # first time, at 3pm) once the clock-out window opens, regardless of
