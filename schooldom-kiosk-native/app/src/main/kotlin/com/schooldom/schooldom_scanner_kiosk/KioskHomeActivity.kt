@@ -6,11 +6,13 @@ import android.content.Intent
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.view.KeyEvent
 import android.view.View
@@ -657,6 +659,36 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
      * dir) - that previously surfaced as "No Activity found to handle
      * Intent" on every real device tested. */
     private fun openInstaller(file: File) {
+        // Android 8+ (API 26) requires this app to be explicitly allowed,
+        // per-source, before its install intent will do anything - without
+        // it the OS either silently refuses or shows a generic system
+        // dialog most admins don't recognize. Only ever needs granting
+        // once per terminal, ever; steer straight to this app's own toggle
+        // instead of leaving them to find Settings > Apps > Special access
+        // themselves.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            promptToAllowInstalls()
+            return
+        }
+        launchInstaller(file)
+    }
+
+    private fun promptToAllowInstalls() {
+        AlertDialog.Builder(this)
+            .setTitle("One-time permission needed")
+            .setMessage("This terminal needs permission to install app updates. On the next screen, turn on \"Allow from this source\", then come back here and tap Install Now again.")
+            .setCancelable(false)
+            .setPositiveButton("Continue") { _, _ ->
+                try {
+                    startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Could not open settings: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+            .show()
+    }
+
+    private fun launchInstaller(file: File) {
         try {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(UpdateApkProvider.uriForFile(file), "application/vnd.android.package-archive")
