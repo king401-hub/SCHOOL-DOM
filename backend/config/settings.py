@@ -368,6 +368,38 @@ else:
     }
     DATABASE_ROUTERS = []
 
+# Cache - deliberately the database backend, not Django's default LocMemCache.
+# LocMemCache keeps its dict inside one process's memory, so with gunicorn
+# running multiple worker processes (see the "schooldom" systemd service -
+# 3 sync workers), a value written by the worker that handles request A is
+# invisible to whichever worker happens to handle a later, related request B.
+# Every one-shot cache.set()/cache.get() pair in this codebase is exactly
+# that shape - the Control Panel's "Login as" link (config/control_panel.py
+# login_as_view writes the code, users/views.py exchange_impersonation_code
+# reads it back from a *different* incoming request), the RFID tap-to-capture
+# poll (rfid_attendance/views.py), and IdempotencyMiddleware - so under
+# LocMemCache they fail (or silently under-protect, for idempotency)
+# whenever the two requests land on different workers, which in practice is
+# most of the time. DatabaseCache reuses the same Postgres connection every
+# other part of the app already depends on being reliable, instead of adding
+# Redis/Memcached as a new service to install and keep running. Needs the
+# cache table created once via `manage.py createcachetable` - not a model,
+# so not a normal migration.
+if 'test' in sys.argv:
+    # `manage.py test` builds a fresh test database from migrations only -
+    # nothing runs `createcachetable` against it, so DatabaseCache would
+    # fail every cache.set()/get() with "no such table". A single test
+    # process has no cross-worker visibility problem to begin with, so
+    # LocMemCache is both correct and the simpler choice here.
+    CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+            'LOCATION': 'django_cache_table',
+        }
+    }
+
 # Tenant Configuration
 TENANT_MODEL = "core.SchoolTenant"
 TENANT_DOMAIN_MODEL = "core.Domain"
