@@ -49,6 +49,7 @@ class TapAssignActivity : Activity(), NfcAdapter.ReaderCallback {
         personId = intent.getStringExtra("person_id") ?: ""
         personName = intent.getStringExtra("person_name") ?: "Student"
         val className = intent.getStringExtra("class_name") ?: ""
+        val roleLabel = intent.getStringExtra("role_label") ?: ""
         val hasActiveCard = intent.getBooleanExtra("has_active_card", false)
 
         backButton = findViewById(R.id.backButton)
@@ -64,7 +65,7 @@ class TapAssignActivity : Activity(), NfcAdapter.ReaderCallback {
 
         personNameText.text = personName
         val subtitleParts = mutableListOf<String>()
-        if (className.isNotEmpty()) subtitleParts.add(className)
+        if (className.isNotEmpty()) subtitleParts.add(className) else if (roleLabel.isNotEmpty()) subtitleParts.add(roleLabel)
         if (hasActiveCard) subtitleParts.add("Already has a card - tapping a new one will replace it")
         personSubtitleText.text = subtitleParts.joinToString(" · ")
 
