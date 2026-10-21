@@ -55,6 +55,16 @@
                 android:textSize="16sp"/>
         </FrameLayout>
 
+        <Button
+            android:id="@+id/openNfcSettingsButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="12dp"
+            android:backgroundTint="@color/warning"
+            android:text="Open NFC settings"
+            android:textColor="#1A1400"
+            android:visibility="gone"/>
+
         <TextView
             android:id="@+id/cardUidText"
             android:layout_width="match_parent"

@@ -1,11 +1,13 @@
 package com.schooldom.cardassign
 
 import android.app.Activity
+import android.content.Intent
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.View
 import android.widget.Button
 import android.widget.ProgressBar
@@ -31,6 +33,7 @@ class TapAssignActivity : Activity(), NfcAdapter.ReaderCallback {
     private lateinit var personNameText: TextView
     private lateinit var personSubtitleText: TextView
     private lateinit var statusText: TextView
+    private lateinit var openNfcSettingsButton: Button
     private lateinit var cardUidText: TextView
     private lateinit var resultText: TextView
     private lateinit var forceAssignButton: Button
@@ -56,6 +59,7 @@ class TapAssignActivity : Activity(), NfcAdapter.ReaderCallback {
         personNameText = findViewById(R.id.personNameText)
         personSubtitleText = findViewById(R.id.personSubtitleText)
         statusText = findViewById(R.id.statusText)
+        openNfcSettingsButton = findViewById(R.id.openNfcSettingsButton)
         cardUidText = findViewById(R.id.cardUidText)
         resultText = findViewById(R.id.resultText)
         forceAssignButton = findViewById(R.id.forceAssignButton)
@@ -70,9 +74,6 @@ class TapAssignActivity : Activity(), NfcAdapter.ReaderCallback {
         personSubtitleText.text = subtitleParts.joinToString(" · ")
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
-        if (nfcAdapter == null) {
-            statusText.text = "This device has no NFC reader."
-        }
 
         backButton.setOnClickListener { finish() }
         tryAgainButton.setOnClickListener { resetToWaiting() }
@@ -80,11 +81,36 @@ class TapAssignActivity : Activity(), NfcAdapter.ReaderCallback {
         forceAssignButton.setOnClickListener {
             pendingUid?.let { uid -> submitAssign(uid, force = true) }
         }
+        openNfcSettingsButton.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_NFC_SETTINGS))
+        }
     }
 
+    /**
+     * enableReaderMode() requires NFC to be switched on in system Settings -
+     * when it's off, it doesn't error, it just never detects a tap, which
+     * looks identical to a broken reader from the admin's seat ("nothing
+     * happens"). Checked on every resume, not just once, since this is
+     * exactly the kind of thing an admin backgrounds the app to go fix.
+     */
     override fun onResume() {
         super.onResume()
-        nfcAdapter?.enableReaderMode(
+        val adapter = nfcAdapter
+        if (adapter == null) {
+            statusText.text = "This device has no NFC reader."
+            openNfcSettingsButton.visibility = View.GONE
+            return
+        }
+        if (!adapter.isEnabled) {
+            statusText.text = "NFC is turned off on this device - turn it on to read a card."
+            openNfcSettingsButton.visibility = View.VISIBLE
+            return
+        }
+        openNfcSettingsButton.visibility = View.GONE
+        if (pendingUid == null && resultText.visibility != View.VISIBLE) {
+            statusText.text = "Hold the card against the reader"
+        }
+        adapter.enableReaderMode(
             this, this,
             NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or
                 NfcAdapter.FLAG_READER_NFC_F or NfcAdapter.FLAG_READER_NFC_V or
