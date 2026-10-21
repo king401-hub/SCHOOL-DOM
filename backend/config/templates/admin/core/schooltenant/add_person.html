@@ -6,8 +6,8 @@
   <aside class="module cp-people-list-card">
     <h2>{{ school.name }}</h2>
     <p class="cp-confirm-copy cp-people-list-intro">
-      Existing {% if role == "student" %}students{% elif role == "teacher" %}teachers{% else %}staff{% endif %}.
-      Click one to edit it, or use the form to add a new one.
+      Existing {% if role == "student" %}students{% elif role == "teacher" %}teachers{% elif role == "admin" %}admins{% else %}staff{% endif %}.
+      {% if role == "admin" %}Use "Login as" to sign in as one.{% else %}Click one to edit it, or use the form to add a new one.{% endif %}
     </p>
     <form method="get" class="cp-people-search">
       <input type="hidden" name="role" value="{{ role }}">
@@ -45,7 +45,10 @@
     <h1>{{ title }}</h1>
     {% endif %}
     <p class="cp-confirm-copy">
-      {% if person %}
+      {% if role == "admin" %}
+        School admins/principals are created at registration, not here - this tab only looks one up so you
+        can hit "Login as" and sign in as them, same as any other role.
+      {% elif person %}
         Saves straight to <strong>{{ school.name }}</strong>'s own record for this person, through the exact
         same validation their own Edit {{ role|title }} screen would hit.
       {% else %}
@@ -64,6 +67,9 @@
       </a>
       <a href="?role=staff" role="tab" aria-selected="{% if role == 'staff' %}true{% else %}false{% endif %}" class="{% if role == 'staff' %}active{% endif %}">
         <span class="cp-role-icon">🧰</span> Non-teaching staff
+      </a>
+      <a href="?role=admin" role="tab" aria-selected="{% if role == 'admin' %}true{% else %}false{% endif %}" class="{% if role == 'admin' %}active{% endif %}">
+        <span class="cp-role-icon">🛡️</span> Admin
       </a>
     </div>
 
@@ -223,6 +229,13 @@
             <label class="cp-field">Relation <input type="text" name="emergency_contact_relation" value="{{ person.emergency_contact_relation|default:'' }}"></label>
           </div>
         </div>
+      {% elif role == "admin" %}
+        <div class="cp-section">
+          <p class="cp-confirm-copy">
+            Pick an admin from the list on the left and use its "Login as" link - there's nothing to fill
+            in here.
+          </p>
+        </div>
       {% else %}
         <div class="cp-section">
           <h3>Basic details</h3>
@@ -317,7 +330,8 @@
       {% endif %}
 
       <div class="submit-row cp-confirm-actions">
-        {% if person %}
+        {% if role == "admin" %}
+        {% elif person %}
           <input type="submit" value="Save changes" class="cp-btn-ok">
         {% else %}
           <input type="submit" value="{% if role == 'student' %}Create student{% elif role == 'teacher' %}Create teacher{% else %}Create staff member{% endif %}" class="cp-btn-ok">

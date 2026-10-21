@@ -984,6 +984,12 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
             "staff": (hr_views.create_staff, hr_views.staff_detail),
         }
 
+    # The two per-school admin roles - same set login_as_view's acting_admin
+    # lookup already uses elsewhere in this file as "this school's own
+    # admin". school_superadmin/super_admin are platform-level, not tied to
+    # one school's own login, so they're deliberately left out here.
+    _SCHOOL_ADMIN_ROLES = ("school_admin", "principal")
+
     def _existing_people(self, school, role, search_query):
         """Up to 20 existing accounts of this role at this school, newest
         first, optionally narrowed by name/email - the list the "Edit"
@@ -991,9 +997,17 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
         from django.db.models import Q
 
         from hr.models import StaffProfile
-        from users.models import StudentProfile, TeacherProfile
+        from users.models import StudentProfile, TeacherProfile, User
 
         query = search_query.strip()
+        if role == "admin":
+            # No separate profile model for an admin - the User row itself
+            # is the "person", so its own id is what login_as_view needs.
+            qs = User.objects.filter(tenant=school, role__in=self._SCHOOL_ADMIN_ROLES, is_active=True)
+            if query:
+                qs = qs.filter(Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(email__icontains=query))
+            qs = qs.order_by("-created_at")[:20]
+            return [{"id": str(u.id), "name": u.get_full_name() or u.email, "email": u.email} for u in qs]
         if role == "student":
             qs = StudentProfile.objects.select_related("user").filter(user__tenant=school)
             if query:
@@ -1020,7 +1034,10 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
         from users.app_views import _profile_picture_url
         from users.models import StudentProfile, TeacherProfile
 
-        if not edit_id:
+        if not edit_id or role == "admin":
+            # No edit form exists for "admin" (see add_person_view's POST
+            # guard) - clicking an admin's name in the sidebar is a no-op,
+            # not an edit link.
             return None, set(), set()
         if role == "student":
             profile = StudentProfile.objects.select_related("user", "current_class").filter(user__tenant=school, id=edit_id).first()
@@ -1095,6 +1112,16 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
 
         if not person_id:
             return None
+        if role == "admin":
+            # No separate profile model here - person_id IS the User id, so
+            # confirm it's still really a current admin of this exact school
+            # before trusting it, same as every other role below.
+            from users.models import User as _User
+
+            user = _User.objects.filter(
+                tenant=school, role__in=self._SCHOOL_ADMIN_ROLES, is_active=True, id=person_id,
+            ).only("id").first()
+            return str(user.id) if user else None
         if role == "student":
             profile = StudentProfile.objects.filter(user__tenant=school, id=person_id).only("user_id").first()
         elif role == "teacher":
@@ -1179,14 +1206,21 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
             raise PermissionDenied
 
         role = (request.POST.get("account_type") or request.GET.get("role") or "student").strip()
-        if role not in self._PERSON_ROLE_CONFIG:
+        if role != "admin" and role not in self._PERSON_ROLE_CONFIG:
             role = "student"
         edit_id = (request.POST.get("edit_id") or request.GET.get("edit_id") or "").strip()
         search_query = request.GET.get("q", "")
-        role_config = self._PERSON_ROLE_CONFIG[role]
+        # "admin" has no entry in _PERSON_ROLE_CONFIG - there's no create/edit
+        # form for it (see the POST guard just below), only a lookup-and-
+        # login-as list, so there's nothing here that needs a role_config.
+        role_config = self._PERSON_ROLE_CONFIG.get(role)
 
         base_url = reverse(f"{self.admin_site.name}:core_schooltenant_add_person", args=[object_id])
         redirect_url = f"{base_url}?role={role}" + (f"&edit_id={edit_id}" if edit_id else "")
+
+        if role == "admin" and request.method == "POST":
+            messages.error(request, "Admin accounts aren't created or edited here - use Login as to sign in as an existing one.")
+            return redirect(redirect_url)
 
         if request.method == "POST":
             acting_admin = (
@@ -1258,7 +1292,7 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
         person, current_subject_ids, current_class_ids = self._person_prefill(request, school, role, edit_id)
         context = {
             **self.admin_site.each_context(request),
-            "title": f"{'Edit' if person else 'Add'} a person at {school.name}",
+            "title": f"Admins at {school.name}" if role == "admin" else f"{'Edit' if person else 'Add'} a person at {school.name}",
             "school": school,
             "role": role,
             "edit_id": edit_id,

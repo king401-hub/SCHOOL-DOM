@@ -308,6 +308,46 @@ class LoginAsLinkFromControlPanelTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("/add-person/", response.url)
 
+    def test_generating_a_link_for_a_school_admin(self):
+        school_admin = User.objects.create_user(
+            email="head.admin@login-as-school.edu", password="AdminPass123", first_name="Head", last_name="Admin",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+
+        response = self.client.get(f"{self.url}?role=admin&person_id={school_admin.id}")
+
+        self.assertEqual(response.status_code, 302)
+        code = response.url.split("login_as=")[1]
+        from django.core.cache import cache
+        entry = cache.get(f"impersonation_code:{code}")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["user_id"], str(school_admin.id))
+
+    def test_an_inactive_admin_is_rejected(self):
+        inactive_admin = User.objects.create_user(
+            email="inactive.admin@login-as-school.edu", password="AdminPass123", first_name="Inactive", last_name="Admin",
+            role="school_admin", tenant=self.school, is_active=False, is_verified=True,
+        )
+
+        response = self.client.get(f"{self.url}?role=admin&person_id={inactive_admin.id}")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/add-person/", response.url)
+
+    def test_a_teacher_cannot_be_impersonated_via_the_admin_role(self):
+        """role=admin only ever resolves school_admin/principal - a student,
+        teacher or staff id passed under role=admin must not also work, or
+        the role param would just be decoration."""
+        teacher_user = User.objects.create_user(
+            email="not.an.admin@login-as-school.edu", password="TeacherPass123", first_name="Not", last_name="Admin",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
+        )
+
+        response = self.client.get(f"{self.url}?role=admin&person_id={teacher_user.id}")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/add-person/", response.url)
+
     def test_cannot_generate_a_link_for_a_student_at_a_different_school(self):
         other_school = SchoolTenant.objects.create(name="Other Login As School", schema_name="other_login_as_school", is_active=True)
         url = f"/control-panel/core/schooltenant/{other_school.id}/login-as/"
@@ -326,3 +366,40 @@ class LoginAsLinkFromControlPanelTests(TestCase):
 
         response = self.client.get(f"{self.url}?role=student&person_id={self.student_profile.id}")
         self.assertEqual(response.status_code, 403)
+
+
+class AdminTabFromControlPanelTests(TestCase):
+    """The Add Person page's "Admin" tab (control_panel.py's add_person_view/
+    _existing_people, role == "admin") is browse-and-login-as only - there's
+    no account-creation flow for admins here, unlike student/teacher/staff."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Admin Tab School", schema_name="admin_tab_school", is_active=True,
+        )
+        self.school_admin = User.objects.create_user(
+            email="principal@admin-tab-school.edu", password="AdminPass123", first_name="Pat", last_name="Principal",
+            role="principal", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.teacher = User.objects.create_user(
+            email="teacher@admin-tab-school.edu", password="TeacherPass123", first_name="Terry", last_name="Teacher",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.superuser = User.objects.create_user(
+            email="platform3@schooldom.test", password="SuperPass123", first_name="Platform", last_name="Three",
+            role="super_admin", is_active=True, is_staff=True, is_superuser=True,
+        )
+        self.client.force_login(self.superuser)
+        self.url = f"/control-panel/core/schooltenant/{self.school.id}/add-person/"
+
+    def test_the_admin_tab_lists_the_schools_admins_and_principals(self):
+        response = self.client.get(f"{self.url}?role=admin")
+
+        self.assertContains(response, self.school_admin.get_full_name())
+        self.assertNotContains(response, self.teacher.get_full_name())
+
+    def test_posting_to_the_admin_tab_is_rejected(self):
+        response = self.client.post(self.url, data={"account_type": "admin", "first_name": "Should", "last_name": "Not Save"}, follow=True)
+
+        self.assertContains(response, "Login as to sign in as an existing one")
+        self.assertFalse(User.objects.filter(first_name="Should").exists())
