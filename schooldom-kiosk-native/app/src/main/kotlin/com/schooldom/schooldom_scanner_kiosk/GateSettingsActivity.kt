@@ -63,7 +63,8 @@ class GateSettingsActivity : Activity() {
         setStatusRow(R.id.rowNetworkStatus, "Network", "Checked live on home screen", android.R.color.darker_gray)
         setStatusRow(R.id.rowNfcStatus, "NFC/RFID Reader", "Checking...", android.R.color.darker_gray)
         setStatusRow(R.id.rowPrinterStatus, "Thermal Printer", "Checking...", android.R.color.darker_gray)
-        checkDeviceStatus()
+        // onResume (always called right after onCreate too) does the actual
+        // check, so it also re-runs every time this screen is returned to.
 
         saveButton.setOnClickListener { save() }
         findViewById<Button>(R.id.ussdButton).setOnClickListener {
@@ -77,6 +78,15 @@ class GateSettingsActivity : Activity() {
         }
 
         load()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // checkDeviceStatus only ran once, in onCreate - reopening this
+        // screen after toggling NFC in the system Settings app (leave,
+        // flip the switch, come back) kept showing whatever it read the
+        // first time, not what's actually on now.
+        checkDeviceStatus()
     }
 
     private fun timeRow(containerId: Int, title: String, defaultHour: Int, defaultMinute: Int): TimeRow {
