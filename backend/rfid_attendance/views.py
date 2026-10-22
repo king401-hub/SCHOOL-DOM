@@ -585,11 +585,22 @@ def _too_soon_response(person, clocked_in_at):
     )
 
 
+def _too_early_response(gate_settings):
+    # Deliberately avoids "already"/"wait"/"recently" - ScanHandler.kt's
+    # looksLikeAlreadyHandled on the kiosk keys off exactly those words to
+    # show "Already Recorded" instead of this message, which would be a
+    # confusing title for "you're too early," not "you already scanned".
+    opens_at = gate_settings.early_start.strftime('%I:%M %p').lstrip('0')
+    return _bad_request(f"Clock-in opens at {opens_at}. Try again then.")
+
+
 def _record_student_scan(request, school, student, card_uid, idempotency_key):
     scanned_at = _parse_scanned_at(request)
     today = timezone.localdate(scanned_at) if scanned_at else timezone.localdate()
     gate_settings = get_or_create_gate_settings(school)
     event = gate_settings.classify_event(timezone.localtime(scanned_at or timezone.now()).time())
+    if event == 'too_early':
+        return _too_early_response(gate_settings)
 
     existing_today = AttendanceRecord.objects.filter(student=student, date=today).first()
     # The blanket 3-hour "probably an accidental re-tap" rule doesn't apply
@@ -701,6 +712,11 @@ def _record_staff_scan(request, school, staff, card_uid, idempotency_key):
     on TeacherAttendance already."""
     scanned_at = _parse_scanned_at(request)
     today = timezone.localdate(scanned_at) if scanned_at else timezone.localdate()
+    gate_settings = get_or_create_gate_settings(school)
+    event = gate_settings.classify_event(timezone.localtime(scanned_at or timezone.now()).time())
+    if event == 'too_early':
+        return _too_early_response(gate_settings)
+
     existing = TeacherAttendance.objects.filter(teacher=staff, attendance_date=today).first()
     # check_in_time is auto_now_add (create() always stamps the real current
     # time, ignoring any value passed in) and _apply_clock_out always sets
@@ -726,9 +742,14 @@ def _record_staff_scan(request, school, staff, card_uid, idempotency_key):
         local_event = timezone.localtime(event_time)
         message = f"{staff.get_full_name()} clocked in at {local_event.strftime('%I:%M %p').lstrip('0')} on {local_event.strftime('%b %d')}."
     elif existing.check_out_time is None:
-        elapsed = ((scanned_at or timezone.now()) - existing.check_in_time).total_seconds()
-        if elapsed < MIN_SECONDS_BETWEEN_CLOCK_IN_AND_OUT:
-            return _too_soon_response(staff, existing.check_in_time)
+        # Same override as _record_student_scan: once the terminal's own
+        # configured clock-out window has opened, that's an explicit admin
+        # decision this scan counts as a departure, not something the
+        # unrelated 3-hour accidental-re-tap heuristic should second-guess.
+        if event != 'clockout':
+            elapsed = ((scanned_at or timezone.now()) - existing.check_in_time).total_seconds()
+            if elapsed < MIN_SECONDS_BETWEEN_CLOCK_IN_AND_OUT:
+                return _too_soon_response(staff, existing.check_in_time)
 
         no_location = {'latitude': None, 'longitude': None, 'accuracy': None, 'address': '', 'device_info': 'SchoolDom RFID'}
         _apply_clock_out(existing, no_location)

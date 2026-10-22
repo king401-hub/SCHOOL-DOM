@@ -146,7 +146,14 @@ class GateSettings(models.Model):
         whatever clock-in window the school actually configured. A tap
         after that configured clock-in window, and before clock-out opens,
         should read as "late" regardless of where the old fixed window
-        happened to fall."""
+        happened to fall.
+
+        "too_early" (before the clock-in window even opens) is its own
+        value, distinct from "other" (now only "after the clock-out window
+        has closed") - callers reject too_early outright rather than
+        recording attendance that hasn't technically started yet."""
+        if check_time < self.early_start:
+            return 'too_early'
         if self.early_start <= check_time <= self.early_end:
             return 'early'
         if self.clockout_start <= check_time <= self.clockout_end:
