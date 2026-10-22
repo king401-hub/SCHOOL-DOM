@@ -138,7 +138,7 @@ def _student_dva_payload(student_profile):
     return None
 
 
-def _gate_sms_text(student, action, event, occurred_at=None):
+def _gate_sms_text(school, student, action, event, occurred_at=None):
     """Deliberately separate from users.app_views._attendance_sms_text -
     that one is gated behind a parent's paid Kids Monitor subscription
     (see _notify_parents_on_attendance); SchoolGate's parent SMS is
@@ -152,23 +152,26 @@ def _gate_sms_text(student, action, event, occurred_at=None):
     scan that actually happened yesterday (queued while offline, synced
     this morning) read as if it had just happened. The date is always
     included (not just when it differs from today) so the message never
-    depends on when the parent happens to read it."""
+    depends on when the parent happens to read it.
+
+    Signed with the school's own name, not "SchoolDom" - this message is
+    the school talking to its own parents, not a platform notification."""
     moment = timezone.localtime(occurred_at or timezone.now())
     time_str = moment.strftime('%I:%M %p').lstrip('0')
     date_str = moment.strftime('%b %d')
     name = student.get_full_name() or student.email
     if action == 'clock_out':
-        return f'{name} left school at {time_str} on {date_str}. -SchoolDom'
+        return f'{name} left school at {time_str} on {date_str}. -{school.name}'
     event_label = {'early': 'arrived (early)', 'late': 'arrived (late)'}.get(event, 'arrived')
-    return f'{name} {event_label} at {time_str} on {date_str}. -SchoolDom'
+    return f'{name} {event_label} at {time_str} on {date_str}. -{school.name}'
 
 
-def _send_gate_sms(student_user, student_profile, action, event, occurred_at=None):
+def _send_gate_sms(school, student_user, student_profile, action, event, occurred_at=None):
     from finance.services import guardian_contacts_for_student
     phone, _email = guardian_contacts_for_student(student_profile)
     if not phone:
         return
-    message = _gate_sms_text(student_user, action, event, occurred_at=occurred_at)
+    message = _gate_sms_text(school, student_user, action, event, occurred_at=occurred_at)
     threading.Thread(
         target=_send_attendance_sms_batch,
         args=([(phone, message)], settings.SCHOOLGATE_SMS_PROVIDER),
@@ -197,7 +200,7 @@ def _send_gate_sms_from_wallet(school, student_user, student_profile, action, ev
     phone, _email = guardian_contacts_for_student(student_profile)
     if not phone:
         return
-    message = _gate_sms_text(student_user, action, event, occurred_at=occurred_at)
+    message = _gate_sms_text(school, student_user, action, event, occurred_at=occurred_at)
 
     def _send():
         try:
@@ -686,7 +689,7 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
         if school.is_schoolgate and school.subscription_tier == "basic":
             _send_gate_sms_from_wallet(school, student, student_profile, action, event, occurred_at=scanned_at)
         else:
-            _send_gate_sms(student, student_profile, action, event, occurred_at=scanned_at)
+            _send_gate_sms(school, student, student_profile, action, event, occurred_at=scanned_at)
 
     return Response({
         'success': True,
@@ -900,7 +903,7 @@ def fee_reminder_send(request):
 
     fees = _fees_payload_for_student(student_profile)
     name = student_profile.user.get_full_name() or student_profile.user.email
-    message = f'Reminder: {name} has an outstanding fee balance of ₦{fees["outstanding"]}. Please make payment at your earliest convenience. -SchoolDom'
+    message = f'Reminder: {name} has an outstanding fee balance of ₦{fees["outstanding"]}. Please make payment at your earliest convenience. -{school.name}'
     threading.Thread(
         target=_send_attendance_sms_batch,
         args=([(phone, message)], settings.SCHOOLGATE_SMS_PROVIDER),
