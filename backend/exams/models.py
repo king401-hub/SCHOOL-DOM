@@ -37,6 +37,13 @@ class QuestionBank(TenantAwareModel, TimeStampedModel):
 
     name = models.CharField(max_length=200)
     subject = models.ForeignKey('academic.Subject', on_delete=models.CASCADE)
+    # Blank for a central (board-scoped) bank, and for any ordinary bank
+    # saved before this field existed - those keep mixing every class
+    # together under one subject, same as always. A teacher's own banks
+    # saved from now on get a fresh bank per (subject, class) pair instead
+    # (see _save_questions_to_teacher_bank), so a JSS1 Mathematics question
+    # and an SS3 Mathematics question never end up offered interchangeably.
+    school_class = models.ForeignKey('academic.Class', on_delete=models.SET_NULL, null=True, blank=True)
     teacher = models.ForeignKey('users.User', on_delete=models.CASCADE)
     questions = models.ManyToManyField('Question', related_name='question_banks')
     # Shares this bank with colleagues AT THE SAME SCHOOL - cbt_question_bank's

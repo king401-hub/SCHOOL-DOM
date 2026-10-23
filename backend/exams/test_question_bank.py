@@ -60,24 +60,23 @@ class QuestionBankTests(TestCase):
         profile.subjects.add(self.subject)
         return user
 
-    def _create_exam(self, teacher, questions, exam_format="objective", title="Bank Test Exam"):
+    def _create_exam(self, teacher, questions, exam_format="objective", title="Bank Test Exam", class_id=None):
         start = timezone.now() + timedelta(days=2)
         end = start + timedelta(hours=1)
         self.client.force_authenticate(user=teacher)
-        response = self.client.post(
-            "/api/app/exams/create/",
-            data={
-                "title": title,
-                "assessment_type": "test",
-                "subject_id": self.subject.id,
-                "exam_format": exam_format,
-                "start_date": start.isoformat(),
-                "end_date": end.isoformat(),
-                "duration_minutes": 30,
-                "questions": questions,
-            },
-            format="json",
-        )
+        payload = {
+            "title": title,
+            "assessment_type": "test",
+            "subject_id": self.subject.id,
+            "exam_format": exam_format,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "duration_minutes": 30,
+            "questions": questions,
+        }
+        if class_id is not None:
+            payload["class_id"] = class_id
+        response = self.client.post("/api/app/exams/create/", data=payload, format="json")
         self.assertEqual(response.status_code, 201, response.data)
         return response.data
 
@@ -213,3 +212,167 @@ class QuestionBankTests(TestCase):
         bank.refresh_from_db()
         self.assertFalse(bank.nominated_for_central_bank)
         self.assertIsNone(bank.nominated_at)
+
+
+class QuestionBankClassSeparationTests(TestCase):
+    """QuestionBank.school_class - a bank now accumulates per (subject,
+    class) pair, not just per subject, so a JSS1 and an SS1 bank for the
+    same subject stay separate."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(name="Class Bank School", schema_name="class_bank_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name="Class Bank School Legacy", slug="class_bank_school")
+        self.subject = Subject.objects.create(tenant=self.legacy_tenant, name="Mathematics", code="MTH")
+        self.jss1 = Class.objects.create(name="JSS1", section="A", tenant=self.legacy_tenant)
+        self.ss1 = Class.objects.create(name="SS1", section="A", tenant=self.legacy_tenant)
+
+        self.teacher = User.objects.create_user(
+            email="teacher@classbankschool.edu", password="TeacherPass123", first_name="Taylor", last_name="Teacher",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
+        )
+        profile = TeacherProfile.objects.create(
+            user=self.teacher, employee_id="EMP-CB-1", qualification="B.Ed", specialization="Mathematics",
+            years_of_experience=4, hire_date=timezone.now().date(), employment_type="full_time",
+            emergency_contact_name="Contact", emergency_contact_phone="+15550001111", emergency_contact_relation="Sibling",
+        )
+        profile.assigned_classes.add(self.jss1, self.ss1)
+        profile.subjects.add(self.subject)
+
+    def _create_exam(self, questions, class_id, title="Class Bank Exam"):
+        start = timezone.now() + timedelta(days=2)
+        end = start + timedelta(hours=1)
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post(
+            "/api/app/exams/create/",
+            data={
+                "title": title,
+                "assessment_type": "test",
+                "subject_id": self.subject.id,
+                "class_id": class_id,
+                "exam_format": "objective",
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "duration_minutes": 30,
+                "questions": questions,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        return response.data
+
+    def test_two_classes_in_the_same_subject_get_two_separate_banks(self):
+        self._create_exam(
+            [{"text": "JSS1 question?", "options": ["A", "B"], "correct_answer": "A", "points": 1, "save_to_bank": True}],
+            class_id=self.jss1.id, title="JSS1 Exam",
+        )
+        self._create_exam(
+            [{"text": "SS1 question?", "options": ["A", "B"], "correct_answer": "B", "points": 1, "save_to_bank": True}],
+            class_id=self.ss1.id, title="SS1 Exam",
+        )
+        self.assertEqual(QuestionBank.objects.filter(teacher=self.teacher, subject=self.subject).count(), 2)
+        jss1_bank = QuestionBank.objects.get(teacher=self.teacher, subject=self.subject, school_class=self.jss1)
+        ss1_bank = QuestionBank.objects.get(teacher=self.teacher, subject=self.subject, school_class=self.ss1)
+        self.assertEqual(jss1_bank.questions.get().text, "JSS1 question?")
+        self.assertEqual(ss1_bank.questions.get().text, "SS1 question?")
+
+    def test_the_listing_endpoint_can_filter_by_class(self):
+        self._create_exam(
+            [{"text": "JSS1 only?", "options": ["A", "B"], "correct_answer": "A", "points": 1, "save_to_bank": True}],
+            class_id=self.jss1.id,
+        )
+        self._create_exam(
+            [{"text": "SS1 only?", "options": ["A", "B"], "correct_answer": "A", "points": 1, "save_to_bank": True}],
+            class_id=self.ss1.id,
+        )
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.get(f"/api/app/exams/question-bank/?class_id={self.jss1.id}")
+        self.assertEqual(response.status_code, 200, response.data)
+        texts = {row["text"] for row in response.data["questions"]}
+        self.assertIn("JSS1 only?", texts)
+        self.assertNotIn("SS1 only?", texts)
+        for bank in response.data["banks"]:
+            self.assertEqual(bank["class_id"], self.jss1.id)
+
+
+class QuestionBankSaveOnUpdateTests(TestCase):
+    """exam_detail's PATCH path (draft saves and every auto-save tick after
+    the first) used to silently ignore save_to_bank entirely - only the
+    one-shot exam_create call ever honored it. This is the path a teacher
+    actually hits on every edit after the exam already exists."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(name="Update Bank School", schema_name="update_bank_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name="Update Bank School Legacy", slug="update_bank_school")
+        self.subject = Subject.objects.create(tenant=self.legacy_tenant, name="Chemistry", code="CHM")
+        self.teacher = User.objects.create_user(
+            email="teacher@updatebankschool.edu", password="TeacherPass123", first_name="Uma", last_name="Teacher",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
+        )
+        profile = TeacherProfile.objects.create(
+            user=self.teacher, employee_id="EMP-UB-1", qualification="B.Ed", specialization="Chemistry",
+            years_of_experience=4, hire_date=timezone.now().date(), employment_type="full_time",
+            emergency_contact_name="Contact", emergency_contact_phone="+15550001111", emergency_contact_relation="Sibling",
+        )
+        profile.subjects.add(self.subject)
+
+        start = timezone.now() + timedelta(days=2)
+        end = start + timedelta(hours=1)
+        self.client.force_authenticate(user=self.teacher)
+        create_response = self.client.post(
+            "/api/app/exams/create/",
+            data={
+                "title": "Draft Exam", "assessment_type": "test", "subject_id": self.subject.id,
+                "exam_format": "objective", "start_date": start.isoformat(), "end_date": end.isoformat(),
+                "duration_minutes": 30,
+                "questions": [{"text": "Not banked yet?", "options": ["A", "B"], "correct_answer": "A", "points": 1}],
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        self.exam_id = create_response.data["exam"]["id"]
+        from exams.models import Exam
+        self.question = Exam.objects.get(id=self.exam_id).questions.get()
+
+    def test_ticking_save_to_bank_on_a_patch_actually_saves_it(self):
+        self.assertFalse(QuestionBank.objects.filter(teacher=self.teacher, subject=self.subject).exists())
+
+        response = self.client.patch(
+            f"/api/app/exams/{self.exam_id}/",
+            data={
+                "questions": [
+                    {
+                        "id": self.question.id, "text": "Not banked yet?", "options": ["A", "B"],
+                        "correct_answer": "A", "points": 1, "save_to_bank": True,
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        bank = QuestionBank.objects.get(teacher=self.teacher, subject=self.subject, board="")
+        self.assertEqual(bank.questions.get().id, self.question.id)
+
+    def test_a_question_already_sourced_from_a_bank_can_still_be_saved_again(self):
+        """The frontend used to suppress save_to_bank once a question had a
+        source_question_id (i.e. came from the bank already) - but the
+        backend itself never enforced that, and shouldn't: the same
+        question reused in a different exam's subject/class should still
+        be filed under THIS exam's own bank when the teacher asks for it."""
+        response = self.client.patch(
+            f"/api/app/exams/{self.exam_id}/",
+            data={
+                "questions": [
+                    {
+                        "id": self.question.id, "text": "Not banked yet?", "options": ["A", "B"],
+                        "correct_answer": "A", "points": 1, "save_to_bank": True,
+                        "source_question_id": self.question.id,
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        bank = QuestionBank.objects.get(teacher=self.teacher, subject=self.subject, board="")
+        self.assertEqual(bank.questions.count(), 1)

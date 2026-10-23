@@ -696,9 +696,14 @@ function buildPreparedQuestion(question) {
     correct_answer: isTheory ? "" : (question.options || [])[Number(question.correctIndex)]?.trim() || "",
     explanation: question.explanation?.trim() || "",
     source_question_id: question.cbtBankQuestionId || undefined,
-    // Already-reused bank questions (source_question_id set) need no
-    // re-saving - they're already sitting in the bank they came from.
-    save_to_bank: !isTheory && !question.cbtBankQuestionId && Boolean(question.saveToBank),
+    // Honors the checkbox even for a question picked from the bank - it
+    // only ever sat in the bank it was picked FROM (one subject/class
+    // pair), and this exam can be a different subject or class, so ticking
+    // the box here means "also file it under this exam's own bank" and
+    // must not be silently dropped. The backend's own save is already
+    // idempotent (QuestionBank.questions is a ManyToMany), so re-adding it
+    // to the same bank it already came from is harmless too.
+    save_to_bank: !isTheory && Boolean(question.saveToBank),
     question_image_field: question.questionImageFile ? `question_image_${question.id}` : "",
     question_attachment_field: question.questionAttachmentFile ? `question_attachment_${question.id}` : "",
     group_key: groupKey,
@@ -1038,7 +1043,10 @@ export function TeacherExamBuilder({
     let cancelled = false;
     setMyBankLoading(true);
     setMyBankError("");
-    const params = form.subjectId ? `?subject_id=${encodeURIComponent(form.subjectId)}` : "";
+    const bankParams = new URLSearchParams();
+    if (form.subjectId) bankParams.set("subject_id", form.subjectId);
+    if (form.classId) bankParams.set("class_id", form.classId);
+    const params = bankParams.toString() ? `?${bankParams.toString()}` : "";
     requestJson(session, "GET", `/api/app/exams/question-bank/${params}`)
       .then((result) => {
         if (cancelled) return;
@@ -1055,7 +1063,7 @@ export function TeacherExamBuilder({
     return () => {
       cancelled = true;
     };
-  }, [session, form.subjectId]);
+  }, [session, form.subjectId, form.classId]);
 
   const addFromMyBank = (item) => {
     setQuestions((previous) => [...previous, normalizeBankQuestion(item)]);
@@ -1702,7 +1710,10 @@ export function TeacherExamBuilder({
                   <div className="cbt-bank-picker-head">
                     <div>
                       <h3>My question bank</h3>
-                      <p>Questions you've saved for reuse{form.subjectId ? " in this subject" : ""} - and any a colleague has shared.</p>
+                      <p>
+                        Questions you've saved for reuse{form.subjectId ? " in this subject" : ""}
+                        {form.classId ? ` and class` : ""} - and any a colleague has shared.
+                      </p>
                     </div>
                   </div>
                   {myBankError ? <p className="form-feedback error">{myBankError}</p> : null}
@@ -1718,7 +1729,14 @@ export function TeacherExamBuilder({
                         const alreadyAdded = questions.some((question) => question.cbtBankQuestionId === item.id);
                         return (
                           <li key={item.id}>
-                            <span className="my-question-bank-text">{item.text}</span>
+                            <span className="my-question-bank-text">
+                              {item.text}
+                              {(item.subject_name || item.class_name) ? (
+                                <small className="my-question-bank-meta">
+                                  {[item.subject_name, item.class_name].filter(Boolean).join(" · ")}
+                                </small>
+                              ) : null}
+                            </span>
                             <button
                               type="button"
                               className="table-action"

@@ -17067,9 +17067,24 @@ body[data-theme="dark"] .my-question-bank-list li {
 }
 
 .my-question-bank-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.my-question-bank-meta {
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+body[data-theme="dark"] .my-question-bank-meta {
+  color: #94a3b8;
 }
 
 .cbt-bank-picker-head p {

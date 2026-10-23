@@ -10315,26 +10315,32 @@ def _clean_exam_questions_payload(raw_questions, exam_format="objective", allow_
     return cleaned_questions, ""
 
 
-def _save_questions_to_teacher_bank(tenant_obj, teacher, subject, questions):
-    """Add questions to the teacher's own reusable per-subject bank,
-    creating it the first time - one bank per (tenant, teacher, subject)
-    that accumulates over every exam they ever opt a question into, so
-    "save for reuse" actually means something across exams, not just
-    within the one being created. `board=""` in the lookup is deliberate:
-    it's what keeps this strictly apart from a central (JAMB/WAEC/...)
-    bank, which always has `board` set and lives under a different,
-    non-school Tenant entirely - see cbt_question_bank's own separate
-    global_banks_qs. No-ops (returns None) without a subject, since
+def _save_questions_to_teacher_bank(tenant_obj, teacher, subject, questions, school_class=None):
+    """Add questions to the teacher's own reusable bank for this exact
+    (subject, class) pair, creating it the first time - one bank per
+    (tenant, teacher, subject, class) that accumulates over every exam they
+    ever opt a question into, so "save for reuse" actually means something
+    across exams, not just within the one being created. Separating by
+    class (not just subject) keeps a JSS1 Mathematics question from being
+    offered as reusable content for an SS3 Mathematics exam and vice versa;
+    question_type already separates further within a bank (the picker only
+    ever surfaces mcq - see cbt_question_bank). `board=""` in the lookup is
+    deliberate: it's what keeps this strictly apart from a central
+    (JAMB/WAEC/...) bank, which always has `board` set and lives under a
+    different, non-school Tenant entirely - see cbt_question_bank's own
+    separate global_banks_qs. No-ops (returns None) without a subject, since
     QuestionBank.subject isn't nullable and a question typed under "no
     subject selected" has nothing sensible to file itself under."""
     if not subject or not questions:
         return None
+    name = f"{subject.name} ({school_class.name}{f' {school_class.section}' if getattr(school_class, 'section', '') else ''}) - {teacher.get_full_name() or teacher.email}" if school_class else f"{subject.name} - {teacher.get_full_name() or teacher.email}"
     bank, _ = QuestionBank.objects.get_or_create(
         tenant=tenant_obj,
         teacher=teacher,
         subject=subject,
+        school_class=school_class,
         board="",
-        defaults={"name": f"{subject.name} - {teacher.get_full_name() or teacher.email}"},
+        defaults={"name": name},
     )
     bank.questions.add(*questions)
     return bank
@@ -10462,6 +10468,8 @@ def _cbt_bank_question_payload(question, bank=None):
         "group": _question_group_payload(question.group),
         "subject_id": bank.subject_id if bank else None,
         "subject_name": bank.subject.name if bank and bank.subject else "",
+        "class_id": bank.school_class_id if bank else None,
+        "class_name": _class_label(bank.school_class) if bank and bank.school_class else "",
     }
 
 
@@ -10656,7 +10664,7 @@ def _global_question_bank_tenant():
 def cbt_question_bank(request):
     user = request.user
     banks_qs = _scope_to_user_tenant(
-        QuestionBank.objects.select_related("subject", "teacher").prefetch_related("questions"),
+        QuestionBank.objects.select_related("subject", "teacher", "school_class").prefetch_related("questions"),
         user,
     )
     if getattr(user, "role", None) == "teacher":
@@ -10680,6 +10688,13 @@ def cbt_question_bank(request):
     subject_id = request.query_params.get("subject_id")
     if subject_id:
         banks_qs = banks_qs.filter(subject_id=subject_id)
+
+    class_id = request.query_params.get("class_id")
+    if class_id:
+        # Global/central banks have no class_group at all (board-wide
+        # content isn't scoped to one school's classes) - this filter only
+        # ever narrows a school's own banks_qs, same as subject_id above.
+        banks_qs = banks_qs.filter(school_class_id=class_id)
 
     # JAMB/WAEC-style banks live under a dedicated non-school Tenant rather than any
     # real school's tenant, since every school's own Subject rows are separate database
@@ -10731,6 +10746,8 @@ def cbt_question_bank(request):
                 "name": bank.name,
                 "subject_id": bank.subject_id,
                 "subject_name": bank.subject.name if bank.subject else "",
+                "class_id": bank.school_class_id,
+                "class_name": _class_label(bank.school_class) if bank.school_class else "",
                 "question_count": len(bank_questions),
                 "is_shared": bank.is_shared,
                 "is_central": bool(bank.board),
@@ -11919,7 +11936,7 @@ def create_exam(request):
         if item.get("save_to_bank")
     ]
     if to_bank:
-        _save_questions_to_teacher_bank(tenant_obj, request.user, subject, to_bank)
+        _save_questions_to_teacher_bank(tenant_obj, request.user, subject, to_bank, school_class=class_group)
     should_notify = request.user.role == "teacher" and notify_admin_requested
     if should_notify:
         _notify_admins_exam_ready(exam, request.user)
@@ -12116,7 +12133,18 @@ def exam_detail(request, exam_id):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         tenant_obj = exam.tenant or _tenant_for_model(Question, request.user, school_code=request.data.get("school_code"))
-        _sync_exam_questions(exam, cleaned_questions, tenant_obj, request.user, request)
+        synced_questions = _sync_exam_questions(exam, cleaned_questions, tenant_obj, request.user, request)
+        # Draft saves and auto-save ticks all come through here (exam_create
+        # only ever runs once, on the very first save) - without this, "Save
+        # to my question bank" silently did nothing on every save after the
+        # first, which is most of them.
+        to_bank = [
+            question
+            for item, question in zip(cleaned_questions, synced_questions)
+            if item.get("save_to_bank")
+        ]
+        if to_bank:
+            _save_questions_to_teacher_bank(tenant_obj, request.user, exam.subject, to_bank, school_class=exam.class_group)
         if request.user.role == "teacher" and exam.is_published:
             exam.is_published = False
             exam.save(update_fields=["is_published", "updated_at"])
@@ -12464,7 +12492,14 @@ def exam_group_detail(request, group_id):
                     member.duration_minutes = member_duration
                     member.instructions = str(raw_item.get("instructions") or "").strip() or member.instructions
                     member.save(update_fields=["exam_format", "duration_minutes", "instructions", "updated_at"])
-                    _sync_exam_questions(member, cleaned_questions, tenant_obj, request.user, request)
+                    synced_questions = _sync_exam_questions(member, cleaned_questions, tenant_obj, request.user, request)
+                    to_bank = [
+                        question
+                        for item, question in zip(cleaned_questions, synced_questions)
+                        if item.get("save_to_bank")
+                    ]
+                    if to_bank:
+                        _save_questions_to_teacher_bank(tenant_obj, request.user, member.subject, to_bank, school_class=member.class_group)
                 else:
                     subject_id = raw_item.get("subject_id")
                     if subject_id in (None, ""):
@@ -12496,6 +12531,13 @@ def exam_group_detail(request, group_id):
                         for idx, item in enumerate(cleaned_questions, start=1)
                     ]
                     member.questions.add(*created_questions)
+                    to_bank = [
+                        question
+                        for item, question in zip(cleaned_questions, created_questions)
+                        if item.get("save_to_bank")
+                    ]
+                    if to_bank:
+                        _save_questions_to_teacher_bank(tenant_obj, request.user, subject, to_bank, school_class=member.class_group)
 
     return Response({"success": True, "message": "Exam group updated.", "group": _exam_group_summary_payload(group, request.user)})
 
