@@ -139,7 +139,6 @@ def dashboard_context():
         return qs.count()
 
     monthly_revenue, _ = _platform_revenue(since=month_start)
-    _, transactions_count = _platform_revenue()
 
     stats = {
         "schools": _count_primary(),
@@ -151,12 +150,14 @@ def dashboard_context():
         "open_tickets": safe_count(models["ticket"], {"status__in": ["open", "pending", "new"]}),
         "virtual_accounts": safe_count(models["virtual_account"]),
         "monthly_revenue": monthly_revenue,
-        "transactions": transactions_count,
-        # Cross-cutting, platform-wide count - every money-movement event
+        # Cross-cutting, platform-wide figures - every money-movement event
         # logged by any school (purchases, refunds, salary advances,
         # withdrawals...), not scoped to one tenant. See finance_ledger_logs
         # per-school rows reachable through each school's own Finance page.
+        # Replaces the old "Transactions" card (a narrower count of just
+        # token/SMS/fee-payment events) with the actual money total.
         "finance_ledger_logs": safe_count(models["finance_ledger"]),
+        "finance_ledger_total_amount": safe_sum(models["finance_ledger"], "amount"),
     }
 
     recent_schools = []
