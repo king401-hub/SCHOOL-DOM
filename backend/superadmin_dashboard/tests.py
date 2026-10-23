@@ -3,6 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from core.models import SchoolTenant
+from finance.models import FinanceLedgerLog
 
 
 class ComplianceApprovalTests(TestCase):
@@ -54,3 +55,34 @@ class ComplianceApprovalTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.school.refresh_from_db()
         self.assertEqual(self.school.compliance_status, "not_submitted")
+
+
+class DashboardFinanceLedgerStatTests(TestCase):
+    """The Platform Overview page's stat cards, including the Finance Ledger
+    Logs count added here - a platform-wide total across every school, not
+    scoped to any one tenant (see superadmin_dashboard.services.dashboard_context)."""
+
+    def setUp(self):
+        User = get_user_model()
+        self.super_admin = User.objects.create_user(
+            email="platform-admin2@schooldom.academy", password="testpass123", is_staff=True, is_superuser=True,
+        )
+        self.client.force_login(self.super_admin)
+        self.school_a = SchoolTenant.objects.create(name="Ledger School A", schema_name="ledger_school_a", is_active=True)
+        self.school_b = SchoolTenant.objects.create(name="Ledger School B", schema_name="ledger_school_b", is_active=True)
+
+    def test_the_dashboard_shows_the_total_across_every_school(self):
+        FinanceLedgerLog.objects.create(tenant=self.school_a, action="payment", description="Payment A")
+        FinanceLedgerLog.objects.create(tenant=self.school_a, action="refund", description="Refund A")
+        FinanceLedgerLog.objects.create(tenant=self.school_b, action="payment", description="Payment B")
+
+        response = self.client.get(reverse("superadmin_dashboard:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["stats"]["finance_ledger_logs"], 3)
+        self.assertContains(response, "Finance Ledger Logs")
+
+    def test_zero_logs_shows_zero_not_an_error(self):
+        response = self.client.get(reverse("superadmin_dashboard:dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["stats"]["finance_ledger_logs"], 0)

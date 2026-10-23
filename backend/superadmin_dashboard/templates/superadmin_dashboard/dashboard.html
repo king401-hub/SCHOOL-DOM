@@ -9,6 +9,7 @@
   <a class="stat stat-link" href="{% url 'superadmin_dashboard:payments' %}"><span>Transactions</span><strong>{{ stats.transactions }}</strong><small>payment events</small></a>
   <a class="stat stat-link" href="{% url 'superadmin_dashboard:users' %}"><span>Users</span><strong>{{ stats.users }}</strong><small>platform-wide accounts</small></a>
   <a class="stat stat-link" href="{% url 'superadmin_dashboard:support_tickets' %}"><span>Open Tickets</span><strong>{{ stats.open_tickets }}</strong><small>support queue</small></a>
+  <a class="stat stat-link" href="{% url 'superadmin_dashboard:finance_ledger' %}"><span>Finance Ledger Logs</span><strong>{{ stats.finance_ledger_logs }}</strong><small>money-movement events, every school</small></a>
 </section>
 
 <section class="two-column">

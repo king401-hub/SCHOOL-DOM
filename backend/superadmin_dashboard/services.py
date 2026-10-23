@@ -152,6 +152,11 @@ def dashboard_context():
         "virtual_accounts": safe_count(models["virtual_account"]),
         "monthly_revenue": monthly_revenue,
         "transactions": transactions_count,
+        # Cross-cutting, platform-wide count - every money-movement event
+        # logged by any school (purchases, refunds, salary advances,
+        # withdrawals...), not scoped to one tenant. See finance_ledger_logs
+        # per-school rows reachable through each school's own Finance page.
+        "finance_ledger_logs": safe_count(models["finance_ledger"]),
     }
 
     recent_schools = []
