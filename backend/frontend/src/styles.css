@@ -21983,6 +21983,58 @@ body[data-theme="dark"] .live-feed-row.is-new {
   color: #64748b;
 }
 
+.finance-statement-result {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.finance-statement-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.finance-statement-summary small {
+  display: block;
+  color: #64748b;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.finance-statement-summary strong {
+  font-size: 1.1rem;
+}
+
+.finance-statement-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.finance-statement-table th,
+.finance-statement-table td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.finance-statement-table th {
+  color: #64748b;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+body[data-theme="dark"] .finance-statement-result { border-top-color: #334155; }
+body[data-theme="dark"] .finance-statement-summary small { color: #94a3b8; }
+body[data-theme="dark"] .finance-statement-table th,
+body[data-theme="dark"] .finance-statement-table td { border-bottom-color: #334155; }
+body[data-theme="dark"] .finance-statement-table th { color: #94a3b8; }
+
 /* Record navigation + panels */
 .finance-record-nav {
   display: flex;

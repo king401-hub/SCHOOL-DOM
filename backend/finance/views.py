@@ -1114,6 +1114,137 @@ def admin_overview(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def admin_student_statement(request, student_id):
+    """One student's full fee + payment history - admin_overview only ever
+    returns tenant-wide feeds (capped at 100 rows), with no way to look up a
+    single named student or narrow to a date range, so there was no way for
+    an admin to pull one student's account statement.
+
+    ?from=&to= (YYYY-MM-DD) optionally scope it to a date range, applied to
+    each row's own date (a fee's due_date, a payment's received/created
+    date) - covers "this term's statement" without a separate endpoint.
+
+    Reuses bulk_fee_paid_amounts for per-fee paid totals - the same helper
+    admin_overview's snapshot uses - rather than trusting SchoolFee.amount_paid,
+    which only the online-payment path ever writes (see fee_paid_amount's
+    own docstring).
+    """
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    student = get_object_or_404(
+        StudentProfile.objects.select_related("user", "current_class").filter(user__tenant=user.tenant),
+        id=student_id,
+    )
+
+    date_from = parse_date(request.query_params.get("from") or "")
+    date_to = parse_date(request.query_params.get("to") or "")
+
+    fees = list(SchoolFee.objects.filter(student=student).order_by("due_date"))
+    if date_from:
+        fees = [fee for fee in fees if fee.due_date >= date_from]
+    if date_to:
+        fees = [fee for fee in fees if fee.due_date <= date_to]
+    paid_amounts = bulk_fee_paid_amounts(fees)
+
+    bank_payments = BankPayment.objects.filter(student=student).order_by("-created_at")
+    if date_from:
+        bank_payments = bank_payments.filter(created_at__date__gte=date_from)
+    if date_to:
+        bank_payments = bank_payments.filter(created_at__date__lte=date_to)
+
+    # Matched against every fee this student has ever had, not just the
+    # date-filtered `fees` list above - a payment can land inside the
+    # statement's date range for a fee whose own due_date falls outside it,
+    # and the payment-date filter just below is what actually scopes these
+    # rows to the requested range.
+    all_fee_id_strs = [str(fid) for fid in SchoolFee.objects.filter(student=student).values_list("id", flat=True)]
+
+    # Wallet-funded payments (on-platform balance debited to settle a fee) -
+    # one Transaction per fee, matched by metadata.fee_id the same way
+    # fee_recorded_paid_amount does, since there's no direct FK from
+    # Transaction to a fee for this path.
+    wallet_payment_rows = [
+        {
+            "id": str(tx.id),
+            "source": "wallet",
+            "amount": tx.amount,
+            "reference": tx.reference,
+            "narration": tx.narration,
+            "created_at": tx.created_at,
+        }
+        for tx in Transaction.objects.filter(
+            tx_type=Transaction.FEE_DEBIT, status=Transaction.STATUS_SUCCESS, metadata__fee_id__in=all_fee_id_strs,
+        ).order_by("-created_at")
+    ]
+
+    # Online split payments - one row per Paystack transaction, summing
+    # this student's share (a single transaction can span several of a
+    # parent's children; grouping by transaction_id merges only the
+    # allocations that belong to fees already scoped to this one student).
+    online_payment_totals = {}
+    allocations = (
+        FeeAllocation.objects.filter(fee__student=student, transaction__status=Transaction.STATUS_SUCCESS)
+        .select_related("transaction")
+    )
+    for allocation in allocations:
+        tx = allocation.transaction
+        row = online_payment_totals.setdefault(tx.id, {
+            "id": str(tx.id),
+            "source": "online",
+            "amount": Decimal("0.00"),
+            "reference": tx.reference,
+            "narration": tx.narration,
+            "created_at": tx.created_at,
+        })
+        row["amount"] += allocation.amount_allocated
+    online_payment_rows = list(online_payment_totals.values())
+
+    if date_from or date_to:
+        def _in_range(row):
+            row_date = row["created_at"].date()
+            if date_from and row_date < date_from:
+                return False
+            if date_to and row_date > date_to:
+                return False
+            return True
+
+        wallet_payment_rows = [row for row in wallet_payment_rows if _in_range(row)]
+        online_payment_rows = [row for row in online_payment_rows if _in_range(row)]
+
+    total_billed = sum((fee.amount for fee in fees), Decimal("0.00"))
+    total_paid = sum(paid_amounts.values(), Decimal("0.00"))
+
+    return Response(
+        {
+            "success": True,
+            "student": {
+                "id": str(student.id),
+                "name": student.user.get_full_name() or student.user.email,
+                "student_id": student.student_id or student.admission_number,
+                "admission_number": student.admission_number or "",
+                "email": student.user.email,
+                "class_name": _class_label(student.current_class),
+            },
+            "date_from": date_from.isoformat() if date_from else None,
+            "date_to": date_to.isoformat() if date_to else None,
+            "fees": SchoolFeeSerializer(fees, many=True, context={"paid_amounts": paid_amounts}).data,
+            "bank_payments": BankPaymentSerializer(bank_payments, many=True).data,
+            "online_payments": sorted(
+                [*wallet_payment_rows, *online_payment_rows], key=lambda row: row["created_at"], reverse=True,
+            ),
+            "totals": {
+                "total_billed": total_billed,
+                "total_paid": total_paid,
+                "balance": max(total_billed - total_paid, Decimal("0.00")),
+            },
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def admin_finance_transactions(request):
     """Lightweight recent-transactions feed for the mobile Finance section.
 

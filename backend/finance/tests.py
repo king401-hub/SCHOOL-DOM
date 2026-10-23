@@ -536,6 +536,124 @@ class AdminFinanceSnapshotGoldenValuesTests(TestCase):
         self.assertEqual(summary["eligible_all"], 3)
 
 
+class AdminStudentStatementTests(TestCase):
+    """GET admin/students/<id>/statement/ - one student's own fee + payment
+    history, independent of admin_overview's tenant-wide, 100-row-capped
+    feeds. Fixture mirrors AdminFinanceSnapshotGoldenValuesTests (one
+    student per payment path: wallet, bank, split) so the same golden
+    numbers can be asserted per-student instead of tenant-wide."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Statement School", schema_name="statement_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin = User.objects.create_user(
+            email="admin@statement.test", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.basic1 = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+
+        ClassFee.objects.create(
+            school_class=self.basic1, title="Term Fee", amount=Decimal("20000.00"),
+            due_date=timezone.localdate(), is_active=True, created_by=self.admin,
+        )
+
+        def make_student(email, code, admission):
+            user = User.objects.create_user(
+                email=email, password="StudentPass123", first_name="Stu", last_name=code,
+                role="student", tenant=self.school, is_active=True, is_verified=True,
+            )
+            return StudentProfile.objects.create(
+                user=user, student_id=code, admission_number=admission,
+                admission_date=timezone.localdate(), guardian_name="Guardian",
+                guardian_relation="Parent", current_class=self.basic1,
+            )
+
+        self.student_wallet = make_student("wallet@statement.test", "SW001", "ADM-SW-001")
+        self.student_bank = make_student("bank@statement.test", "SB001", "ADM-SB-001")
+        self.other_tenant_student = make_student("other@statement.test", "SX001", "ADM-SX-001")
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+        sync_tenant_class_fees(self.school, actor=self.admin)
+        self.fee_wallet = SchoolFee.objects.get(student=self.student_wallet)
+        self.fee_bank = SchoolFee.objects.get(student=self.student_bank)
+
+        wallet = ensure_student_wallet(self.student_wallet.user)
+        credit_wallet(wallet, Decimal("20000.00"), Transaction.ADJUSTMENT_CREDIT, "TOPUP-SW-001", "Test top-up")
+        process_due_fees(self.student_wallet, actor=self.admin, due_only=False)
+
+        reference = get_or_create_student_payment_reference(self.student_bank)
+        payment = BankPayment.objects.create(
+            tenant=self.school, student=self.student_bank, payment_reference=reference,
+            amount=Decimal("12000.00"), currency="NGN", narration="Test bank transfer",
+            bank_reference="BANKREF-SB-001", status=BankPayment.STATUS_PENDING,
+            unapplied_amount=Decimal("12000.00"),
+        )
+        apply_bank_payment_to_student(payment, self.student_bank, actor=self.admin)
+
+        # A different school entirely - proves tenant scoping, not just a
+        # different student.
+        self.other_school = SchoolTenant.objects.create(name="Other School", schema_name="statement_other_school", is_active=True)
+        self.other_tenant_student.user.tenant = self.other_school
+        self.other_tenant_student.user.save(update_fields=["tenant"])
+
+    def test_statement_for_a_wallet_paid_student(self):
+        response = self.client.get(f"/api/finance/admin/students/{self.student_wallet.id}/statement/")
+        self.assertEqual(response.status_code, 200)
+        data = response.data
+
+        self.assertEqual(data["student"]["id"], str(self.student_wallet.id))
+        self.assertEqual(len(data["fees"]), 1)
+        self.assertEqual(data["fees"][0]["id"], str(self.fee_wallet.id))
+        self.assertEqual(data["totals"]["total_billed"], Decimal("20000.00"))
+        self.assertEqual(data["totals"]["total_paid"], Decimal("20000.00"))
+        self.assertEqual(data["totals"]["balance"], Decimal("0.00"))
+        self.assertEqual(len(data["bank_payments"]), 0)
+        self.assertEqual(len(data["online_payments"]), 1)
+        self.assertEqual(data["online_payments"][0]["source"], "wallet")
+        self.assertEqual(data["online_payments"][0]["amount"], Decimal("20000.00"))
+
+    def test_statement_for_a_bank_paid_student(self):
+        response = self.client.get(f"/api/finance/admin/students/{self.student_bank.id}/statement/")
+        self.assertEqual(response.status_code, 200)
+        data = response.data
+
+        self.assertEqual(data["totals"]["total_billed"], Decimal("20000.00"))
+        self.assertEqual(data["totals"]["total_paid"], Decimal("12000.00"))
+        self.assertEqual(data["totals"]["balance"], Decimal("8000.00"))
+        self.assertEqual(len(data["bank_payments"]), 1)
+        self.assertEqual(Decimal(data["bank_payments"][0]["amount"]), Decimal("12000.00"))
+        self.assertEqual(len(data["online_payments"]), 0)
+
+    def test_a_date_range_excludes_a_fee_due_outside_it(self):
+        far_future = timezone.localdate().replace(year=timezone.localdate().year + 1)
+        response = self.client.get(
+            f"/api/finance/admin/students/{self.student_wallet.id}/statement/",
+            {"from": far_future.isoformat(), "to": far_future.isoformat()},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["fees"], [])
+        # The payment itself was made today, outside the requested range -
+        # must not show up either.
+        self.assertEqual(response.data["online_payments"], [])
+
+    def test_a_student_from_a_different_school_is_not_found(self):
+        response = self.client.get(f"/api/finance/admin/students/{self.other_tenant_student.id}/statement/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_a_non_finance_role_is_forbidden(self):
+        teacher = User.objects.create_user(
+            email="teacher@statement.test", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        client = APIClient()
+        client.force_authenticate(user=teacher)
+
+        response = client.get(f"/api/finance/admin/students/{self.student_wallet.id}/statement/")
+        self.assertEqual(response.status_code, 403)
+
+
 class AdminFinanceSnapshotProtectionTests(TestCase):
     """A customized or already-paid SchoolFee must never be silently
     overwritten by the background class-fee sync that runs on every GET."""

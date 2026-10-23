@@ -1998,6 +1998,11 @@ function AdminFinanceScreen({
   const [bankPaymentForm, setBankPaymentForm] = useState({ amount: "", narration: "", bank_reference: "" });
   const [cashPaymentForm, setCashPaymentForm] = useState({ student_id: "", amount: "", note: "", payment_method: "cash", received_on: new Date().toISOString().slice(0, 10) });
   const [cashPaymentStudentPicked, setCashPaymentStudentPicked] = useState(false);
+  const [statementStudentQuery, setStatementStudentQuery] = useState("");
+  const [statementStudentPicked, setStatementStudentPicked] = useState(null);
+  const [statementRange, setStatementRange] = useState({ from: "", to: "" });
+  const [statementData, setStatementData] = useState(null);
+  const [statementError, setStatementError] = useState("");
   const [creditPurchaseForm, setCreditPurchaseForm] = useState({ credits: "" });
   const [creditPurchaseReference, setCreditPurchaseReference] = useState("");
   const [creditPurchaseUrl, setCreditPurchaseUrl] = useState("");
@@ -2213,6 +2218,12 @@ function AdminFinanceScreen({
   const cashPaymentStudentMatches = (cashPaymentStudentPicked || normalizedCashPaymentSearch.length < 2) ? [] : paymentRows.filter((row) => {
     const searchable = [row.name, row.student_id, row.class_name].filter(Boolean).join(" ").toLowerCase();
     return cashPaymentSearchTerms.every((term) => searchable.includes(term));
+  }).slice(0, 8);
+  const normalizedStatementSearch = statementStudentQuery.trim().toLowerCase();
+  const statementSearchTerms = normalizedStatementSearch.split(/\s+/).filter(Boolean);
+  const statementStudentMatches = (statementStudentPicked || normalizedStatementSearch.length < 2) ? [] : paymentRows.filter((row) => {
+    const searchable = [row.name, row.student_id, row.class_name].filter(Boolean).join(" ").toLowerCase();
+    return statementSearchTerms.every((term) => searchable.includes(term));
   }).slice(0, 8);
   const visibleCreditRows = creditRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCashPaymentRows = cashPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
@@ -2857,6 +2868,61 @@ function AdminFinanceScreen({
     }
   };
 
+  const handleLoadStatement = async () => {
+    if (!statementStudentPicked) return;
+    setStatementError("");
+    setStatementData(null);
+    setBusyAction("statement");
+    try {
+      const params = new URLSearchParams();
+      if (statementRange.from) params.set("from", statementRange.from);
+      if (statementRange.to) params.set("to", statementRange.to);
+      const query = params.toString();
+      const result = await requestJson(
+        session, "GET",
+        `/api/finance/admin/students/${statementStudentPicked.id}/statement/${query ? `?${query}` : ""}`,
+      );
+      setStatementData(result);
+    } catch (err) {
+      setStatementError(err.message || "Could not load this student's statement.");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const handleDownloadStatement = () => {
+    if (!statementData) return;
+    const { student, fees, bank_payments: bankPayments, online_payments: onlinePayments, totals, date_from: dateFrom, date_to: dateTo } = statementData;
+    const tableRows = [
+      ["— Fees Billed —", ""],
+      ...fees.map((fee) => [`${fee.title} (Due ${formatDate(fee.due_date)})`, formatFinanceAmount(fee.amount)]),
+      ["— Payments Received —", ""],
+      ...bankPayments.map((payment) => [
+        `${payment.payment_method || "Bank transfer"} - ${payment.reference_code || payment.bank_reference} (${formatDate(payment.received_on || payment.created_at)})`,
+        `-${formatFinanceAmount(payment.amount)}`,
+      ]),
+      ...onlinePayments.map((payment) => [
+        `Online payment - ${payment.reference} (${formatDate(payment.created_at)})`,
+        `-${formatFinanceAmount(payment.amount)}`,
+      ]),
+    ];
+    openFinancePrintout({
+      title: "Account Statement",
+      reference: `${student.student_id || student.name}-statement`,
+      metaRows: [
+        ["Student", `${student.name}${student.student_id ? ` (${student.student_id})` : ""}`],
+        [groupLabels.singular, student.class_name || "-"],
+        ["Period", (dateFrom || dateTo) ? `${dateFrom || "Start"} to ${dateTo || "Now"}` : "Full history"],
+        ["Total Billed", formatFinanceAmount(totals.total_billed)],
+        ["Total Paid", formatFinanceAmount(totals.total_paid)],
+      ],
+      tableRows,
+      totalLabel: "Balance Due",
+      total: totals.balance,
+      footer: "This statement reflects fees and payments recorded in SchoolDom as of the date generated.",
+    });
+  };
+
   // Clicking Resend shows the message first; "Send now" in the dialog sends it.
   const openReceiptPreview = async (payment) => {
     setFeedback("");
@@ -3285,6 +3351,123 @@ function AdminFinanceScreen({
                   </button>
                 </div>
               </form>
+            </FinanceActionCard>
+
+            <FinanceActionCard
+              id="account-statement"
+              title="Account Statement"
+              description="Look up one student's full fee and payment history, optionally for a specific period, and download it as a statement."
+              icon="results"
+              open={openActionCard === "account-statement"}
+              onToggle={setOpenActionCard}
+            >
+              <div className="panel-form-grid">
+                <label className="panel-field" style={{ position: "relative" }}>
+                  Student
+                  <input
+                    value={statementStudentQuery}
+                    onChange={(event) => {
+                      setStatementStudentPicked(null);
+                      setStatementData(null);
+                      setStatementError("");
+                      setStatementStudentQuery(event.target.value);
+                    }}
+                    placeholder="Search by name, ID, or class"
+                    autoComplete="off"
+                  />
+                  {statementStudentMatches.length ? (
+                    <ul className="search-typeahead">
+                      {statementStudentMatches.map((row) => (
+                        <li key={row.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStatementStudentPicked(row);
+                              setStatementStudentQuery(row.name || "");
+                              setStatementData(null);
+                              setStatementError("");
+                            }}
+                          >
+                            <strong>{row.name || "Unnamed student"}</strong>
+                            <small>{[row.student_id, row.class_name].filter(Boolean).join(" · ")}</small>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </label>
+                <label className="panel-field">
+                  From (optional)
+                  <input
+                    type="date"
+                    value={statementRange.from}
+                    onChange={(event) => setStatementRange((current) => ({ ...current, from: event.target.value }))}
+                  />
+                </label>
+                <label className="panel-field">
+                  To (optional)
+                  <input
+                    type="date"
+                    value={statementRange.to}
+                    onChange={(event) => setStatementRange((current) => ({ ...current, to: event.target.value }))}
+                  />
+                </label>
+                <div className="panel-form-actions">
+                  <button type="button" onClick={handleLoadStatement} disabled={!statementStudentPicked || anyBusy}>
+                    {busyAction === "statement" ? <><Spinner /> Loading...</> : "Load Statement"}
+                  </button>
+                </div>
+              </div>
+              {statementError ? <p className="form-feedback error">{statementError}</p> : null}
+              {statementData ? (
+                <div className="finance-statement-result">
+                  <div className="finance-statement-summary">
+                    <div><small>Total Billed</small><strong>{formatFinanceAmount(statementData.totals.total_billed)}</strong></div>
+                    <div><small>Total Paid</small><strong>{formatFinanceAmount(statementData.totals.total_paid)}</strong></div>
+                    <div><small>Balance</small><strong>{formatFinanceAmount(statementData.totals.balance)}</strong></div>
+                  </div>
+                  <table className="finance-statement-table">
+                    <thead><tr><th>Fee</th><th>Due</th><th>Amount</th><th>Paid</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {statementData.fees.map((fee) => (
+                        <tr key={fee.id}>
+                          <td>{fee.title}</td>
+                          <td>{formatDate(fee.due_date)}</td>
+                          <td>{formatFinanceAmount(fee.amount)}</td>
+                          <td>{formatFinanceAmount(fee.amount_paid)}</td>
+                          <td>{fee.payment_status}</td>
+                        </tr>
+                      ))}
+                      {!statementData.fees.length ? <tr><td colSpan={5}>No fees in this period.</td></tr> : null}
+                    </tbody>
+                  </table>
+                  <table className="finance-statement-table">
+                    <thead><tr><th>Payment</th><th>Date</th><th>Amount</th></tr></thead>
+                    <tbody>
+                      {statementData.bank_payments.map((payment) => (
+                        <tr key={payment.id}>
+                          <td>{(payment.payment_method || "Bank transfer")} - {payment.reference_code || payment.bank_reference}</td>
+                          <td>{formatDate(payment.received_on || payment.created_at)}</td>
+                          <td>{formatFinanceAmount(payment.amount)}</td>
+                        </tr>
+                      ))}
+                      {statementData.online_payments.map((payment) => (
+                        <tr key={payment.id}>
+                          <td>Online payment - {payment.reference}</td>
+                          <td>{formatDate(payment.created_at)}</td>
+                          <td>{formatFinanceAmount(payment.amount)}</td>
+                        </tr>
+                      ))}
+                      {!statementData.bank_payments.length && !statementData.online_payments.length ? (
+                        <tr><td colSpan={3}>No payments in this period.</td></tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                  <div className="panel-form-actions">
+                    <button type="button" onClick={handleDownloadStatement}>Download Statement</button>
+                  </div>
+                </div>
+              ) : null}
             </FinanceActionCard>
 
             <FinanceActionCard
