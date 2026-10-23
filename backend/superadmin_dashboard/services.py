@@ -14,7 +14,23 @@ def get_model(app_label, model_name):
         return None
 
 
-def safe_count(model, filters=None):
+# Schools used for internal testing - never real schools, so their users
+# and financial activity would otherwise dilute every platform-wide number
+# on this dashboard with synthetic data.
+TEST_SCHOOL_SCHEMA_NAMES = {"happy_academy_2"}
+
+# FinanceLedgerLog.action values that represent real money actually moving,
+# split by direction - see finance.services.record_finance_activity's call
+# sites for the full list of actions recorded. Everything else logged
+# (overpayment_uncredited, duplicate_virtual_account, sms/token wallet
+# credits and adjustments) is bookkeeping/anomaly tracking, not a cash
+# movement in its own right - the real purchase amount behind a wallet
+# credit is already counted once, in Monthly Revenue.
+FINANCE_LEDGER_INFLOW_ACTIONS = {"paystack_split_payment", "paystack_dva_payment"}
+FINANCE_LEDGER_OUTFLOW_ACTIONS = {"salary_advance_paid", "salary_payment_sent", "payroll_processed"}
+
+
+def safe_count(model, filters=None, exclude=None):
     if model is None:
         return 0
     queryset = model.objects.all()
@@ -23,10 +39,15 @@ def safe_count(model, filters=None):
             queryset = queryset.filter(**filters)
         except FieldError:
             return 0
+    if exclude:
+        try:
+            queryset = queryset.exclude(**exclude)
+        except FieldError:
+            pass
     return queryset.count()
 
 
-def safe_sum(model, field, filters=None):
+def safe_sum(model, field, filters=None, exclude=None):
     if model is None:
         return Decimal("0.00")
     queryset = model.objects.all()
@@ -35,10 +56,25 @@ def safe_sum(model, field, filters=None):
             queryset = queryset.filter(**filters)
         except FieldError:
             return Decimal("0.00")
+    if exclude:
+        try:
+            queryset = queryset.exclude(**exclude)
+        except FieldError:
+            pass
     try:
         return queryset.aggregate(total=Sum(field)).get("total") or Decimal("0.00")
     except FieldError:
         return Decimal("0.00")
+
+
+def _money(value):
+    """₦ + thousands separator, same convention as config/control_panel.py's
+    own _money - whole naira only, no kobo, since every figure this backs is
+    a coarse platform-wide total, not a single transaction receipt."""
+    try:
+        return f"₦{Decimal(value):,.0f}"
+    except Exception:
+        return "₦0"
 
 
 def has_field_path(model, field_path):
@@ -80,14 +116,20 @@ def platform_models():
 
 def _platform_revenue(since=None):
     """Real platform-side revenue: activation-token purchases + SMS bundle purchases
-    + the platform's cut of fee-collection payments. Returns (total, transaction_count)."""
+    + the platform's cut of fee-collection payments. Returns (total, transaction_count).
+    Excludes TEST_SCHOOL_SCHEMA_NAMES throughout - a test school's purchases are
+    never real revenue."""
     from finance.models import ActivationCreditTransaction, SmsWalletTransaction
 
     total = Decimal("0.00")
     count = 0
 
-    tokens = ActivationCreditTransaction.objects.filter(tx_type="purchase", status="successful")
-    sms = SmsWalletTransaction.objects.filter(tx_type="purchase", status="successful")
+    tokens = ActivationCreditTransaction.objects.filter(
+        tx_type="purchase", status="successful",
+    ).exclude(pool__tenant__schema_name__in=TEST_SCHOOL_SCHEMA_NAMES)
+    sms = SmsWalletTransaction.objects.filter(
+        tx_type="purchase", status="successful",
+    ).exclude(wallet__tenant__schema_name__in=TEST_SCHOOL_SCHEMA_NAMES)
     if since:
         tokens = tokens.filter(created_at__gte=since)
         sms = sms.filter(created_at__gte=since)
@@ -98,7 +140,9 @@ def _platform_revenue(since=None):
 
     fee_payment_model = get_model("fee_collections", "FeePayment")
     if fee_payment_model is not None:
-        qs = fee_payment_model.objects.filter(status="successful")
+        qs = fee_payment_model.objects.filter(status="successful").exclude(
+            school__schema_name__in=TEST_SCHOOL_SCHEMA_NAMES
+        )
         if since:
             qs = qs.filter(created_at__gte=since)
         agg = qs.aggregate(s=Sum("platform_fee"), c=Count("id"))
@@ -139,25 +183,34 @@ def dashboard_context():
         return qs.count()
 
     monthly_revenue, _ = _platform_revenue(since=month_start)
+    ledger_exclude = {"tenant__schema_name__in": TEST_SCHOOL_SCHEMA_NAMES}
 
     stats = {
         "schools": _count_primary(),
         "pending_schools": _count_primary({"compliance_status": "submitted"}) if has_field_path(school_model, "compliance_status") else 0,
         "active_schools": _count_primary({"is_active": True}) if has_field_path(school_model, "is_active") else _count_primary({"status__iexact": "active"}),
         "suspended_schools": _count_primary({"is_active": False}) if has_field_path(school_model, "is_active") else _count_primary({"status__iexact": "suspended"}),
-        "users": User.objects.count(),
+        "users": User.objects.exclude(tenant__schema_name__in=TEST_SCHOOL_SCHEMA_NAMES).count(),
         "subscriptions": safe_count(models["subscription"]),
         "open_tickets": safe_count(models["ticket"], {"status__in": ["open", "pending", "new"]}),
         "virtual_accounts": safe_count(models["virtual_account"]),
-        "monthly_revenue": monthly_revenue,
+        "monthly_revenue": _money(monthly_revenue),
         # Cross-cutting, platform-wide figures - every money-movement event
         # logged by any school (purchases, refunds, salary advances,
         # withdrawals...), not scoped to one tenant. See finance_ledger_logs
         # per-school rows reachable through each school's own Finance page.
-        # Replaces the old "Transactions" card (a narrower count of just
-        # token/SMS/fee-payment events) with the actual money total.
-        "finance_ledger_logs": safe_count(models["finance_ledger"]),
-        "finance_ledger_total_amount": safe_sum(models["finance_ledger"], "amount"),
+        # Split into what actually moved in vs out (see
+        # FINANCE_LEDGER_INFLOW_ACTIONS/OUTFLOW_ACTIONS above) rather than
+        # one blended total, which mixed money received with money paid out
+        # and meant neither figure on its own was the real amount either
+        # direction.
+        "finance_ledger_logs": safe_count(models["finance_ledger"], exclude=ledger_exclude),
+        "finance_ledger_in_amount": _money(
+            safe_sum(models["finance_ledger"], "amount", {"action__in": FINANCE_LEDGER_INFLOW_ACTIONS}, exclude=ledger_exclude)
+        ),
+        "finance_ledger_out_amount": _money(
+            safe_sum(models["finance_ledger"], "amount", {"action__in": FINANCE_LEDGER_OUTFLOW_ACTIONS}, exclude=ledger_exclude)
+        ),
     }
 
     recent_schools = []

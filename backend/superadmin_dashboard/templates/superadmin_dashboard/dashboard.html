@@ -6,7 +6,8 @@
   <a class="stat stat-link" href="{% url 'superadmin_dashboard:schools' %}"><span>Total Schools</span><strong>{{ stats.schools }}</strong><small>{{ stats.active_schools }} active</small></a>
   <a class="stat stat-link" href="{% url 'superadmin_dashboard:schools' %}?status=pending"><span>Pending Approval</span><strong>{{ stats.pending_schools }}</strong><small>schools awaiting review</small></a>
   <a class="stat stat-link" href="{% url 'superadmin_dashboard:payments' %}"><span>Monthly Revenue</span><strong>{{ stats.monthly_revenue }}</strong><small>confirmed billings</small></a>
-  <a class="stat stat-link" href="{% url 'superadmin_dashboard:finance_ledger' %}"><span>Finance Ledger Total</span><strong>{{ stats.finance_ledger_total_amount }}</strong><small>money-movement amount, every school</small></a>
+  <a class="stat stat-link" href="{% url 'superadmin_dashboard:finance_ledger' %}"><span>Finance Ledger In</span><strong>{{ stats.finance_ledger_in_amount }}</strong><small>money received, every school</small></a>
+  <a class="stat stat-link" href="{% url 'superadmin_dashboard:finance_ledger' %}"><span>Finance Ledger Out</span><strong>{{ stats.finance_ledger_out_amount }}</strong><small>money paid out, every school</small></a>
   <a class="stat stat-link" href="{% url 'superadmin_dashboard:users' %}"><span>Users</span><strong>{{ stats.users }}</strong><small>platform-wide accounts</small></a>
   <a class="stat stat-link" href="{% url 'superadmin_dashboard:support_tickets' %}"><span>Open Tickets</span><strong>{{ stats.open_tickets }}</strong><small>support queue</small></a>
   <a class="stat stat-link" href="{% url 'superadmin_dashboard:finance_ledger' %}"><span>Finance Ledger Logs</span><strong>{{ stats.finance_ledger_logs }}</strong><small>money-movement events, every school</small></a>
