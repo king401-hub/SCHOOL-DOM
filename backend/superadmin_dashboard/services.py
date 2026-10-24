@@ -19,14 +19,10 @@ def get_model(app_label, model_name):
 # on this dashboard with synthetic data.
 TEST_SCHOOL_SCHEMA_NAMES = {"happy_academy_2"}
 
-# FinanceLedgerLog.action values that represent real money actually moving,
-# split by direction - see finance.services.record_finance_activity's call
-# sites for the full list of actions recorded. Everything else logged
-# (overpayment_uncredited, duplicate_virtual_account, sms/token wallet
-# credits and adjustments) is bookkeeping/anomaly tracking, not a cash
-# movement in its own right - the real purchase amount behind a wallet
-# credit is already counted once, in Monthly Revenue.
-FINANCE_LEDGER_INFLOW_ACTIONS = {"paystack_split_payment", "paystack_dva_payment"}
+# FinanceLedgerLog.action values for money paid OUT - see
+# finance.services.record_finance_activity's call sites for the full list.
+# (Money IN no longer reads from FinanceLedgerLog at all - see
+# _payment_channel_totals below for why.)
 FINANCE_LEDGER_OUTFLOW_ACTIONS = {"salary_advance_paid", "salary_payment_sent", "payroll_processed"}
 
 
@@ -152,6 +148,134 @@ def _platform_revenue(since=None):
     return total, count
 
 
+def _excluded_tenant_ids(exclude_schema_names):
+    from core.models import SchoolTenant
+
+    if not exclude_schema_names:
+        return set()
+    return set(SchoolTenant.objects.filter(schema_name__in=exclude_schema_names).values_list("id", flat=True))
+
+
+def _payment_channel_querysets(exclude_schema_names=None):
+    """The three real ways a school actually receives money in this
+    codebase, each sourced from whichever table that flow really writes to
+    - NOT finance_collections.FeePayment, which has a webhook wired up at
+    /api/collections/ but is never called by anything in the live product
+    (AdminScreens.jsx, the parent payment pages) and so always has zero
+    rows; the "Payments and Transactions" page built against it has been
+    silently showing nothing.
+
+    - Bills: a parent paying a bill/invoice link through Paystack checkout
+      (finance.services.process_paystack_webhook -> allocate_split_payment).
+      Transaction.tx_type is SPLIT_PAYMENT either way, so this is
+      distinguished from a DVA payment by its own reference prefix - 'SPL'
+      here vs 'DVA' below (see each function's generate_reference call).
+    - DVA: money sent into a parent's dedicated virtual account
+      (finance.services.process_virtual_account_payment).
+    - Payment recorded: cash/bank transfer/POS an admin enters by hand on
+      the school's own Finance page (finance.services.record_cash_payment),
+      or a bank transfer auto-matched by narration
+      (apply_bank_payment_to_student) - both just create/update a
+      BankPayment row, so both are counted the same way here.
+    """
+    from finance.models import BankPayment, Transaction
+
+    exclude_ids = _excluded_tenant_ids(exclude_schema_names)
+
+    bills = Transaction.objects.filter(
+        tx_type=Transaction.SPLIT_PAYMENT, status=Transaction.STATUS_SUCCESS, reference__startswith="SPL",
+    )
+    dva = Transaction.objects.filter(
+        tx_type=Transaction.SPLIT_PAYMENT, status=Transaction.STATUS_SUCCESS, reference__startswith="DVA",
+    )
+    # Anything that isn't FAILED represents money that actually arrived at
+    # the school, even if it hasn't been matched/applied to a fee yet
+    # (UNMATCHED) or only partly applied (PARTIAL) - PENDING is the
+    # transient state record_cash_payment starts a row in, immediately
+    # before applying it.
+    recorded = BankPayment.objects.exclude(status=BankPayment.STATUS_FAILED)
+    if exclude_ids:
+        bills = bills.exclude(school_id__in=exclude_ids)
+        dva = dva.exclude(school_id__in=exclude_ids)
+        recorded = recorded.exclude(tenant_id__in=exclude_ids)
+    return bills, dva, recorded
+
+
+def _payment_channel_totals(exclude_schema_names=None):
+    """Platform-wide totals for the dashboard's summary cards - see
+    _payment_channel_querysets for what each one actually counts."""
+    bills, dva, recorded = _payment_channel_querysets(exclude_schema_names)
+    return {
+        "bills": bills.aggregate(total=Sum("amount"))["total"] or Decimal("0.00"),
+        "dva": dva.aggregate(total=Sum("amount"))["total"] or Decimal("0.00"),
+        "recorded": recorded.aggregate(total=Sum("amount"))["total"] or Decimal("0.00"),
+    }
+
+
+def _decode_transaction_school_id(uuid_value):
+    """Transaction.school_id is a UUIDField, but SchoolTenant (unlike every
+    other core model, which explicitly declares a UUID primary key) uses
+    Django's plain integer default pk. Django's UUIDField silently encodes
+    a bare int as UUID(int=value) when it's saved (see
+    django.db.models.fields.UUIDField.to_python) - every real school_id in
+    the database is really just a tenant's integer id wearing a UUID
+    costume, written that way at both call sites that set it
+    (finance/services.py's school_id=school.id / resolved_tenant.id) and
+    already relied on by finance/views.py's own Q(school_id=user.tenant_id)
+    lookups. .int undoes the same encoding to recover that integer id."""
+    return uuid_value.int if uuid_value is not None else None
+
+
+def per_school_payment_breakdown(exclude_schema_names=None):
+    """Per-school rows for the Payments page - same three channels as
+    _payment_channel_totals, grouped by school instead of summed
+    platform-wide. Returns (rows, totals), rows sorted by total received,
+    highest first."""
+    from core.models import SchoolTenant
+
+    bills, dva, recorded = _payment_channel_querysets(exclude_schema_names)
+    bills_by_school = {}
+    for row in bills.values("school_id").annotate(total=Sum("amount")):
+        school_id = _decode_transaction_school_id(row["school_id"])
+        if school_id is not None:
+            bills_by_school[school_id] = row["total"]
+    dva_by_school = {}
+    for row in dva.values("school_id").annotate(total=Sum("amount")):
+        school_id = _decode_transaction_school_id(row["school_id"])
+        if school_id is not None:
+            dva_by_school[school_id] = row["total"]
+    # BankPayment.tenant is a real ForeignKey (unlike Transaction.school_id),
+    # so tenant_id already comes back as the plain integer pk - no decoding.
+    recorded_by_school = dict(
+        recorded.values("tenant_id").annotate(total=Sum("amount")).values_list("tenant_id", "total")
+    )
+
+    school_ids = {sid for sid in (*bills_by_school, *dva_by_school, *recorded_by_school) if sid}
+    schools_by_id = {school.id: school for school in SchoolTenant.objects.filter(id__in=school_ids)}
+
+    rows = []
+    totals = {"bills": Decimal("0.00"), "dva": Decimal("0.00"), "recorded": Decimal("0.00")}
+    for school_id in school_ids:
+        bills_amount = bills_by_school.get(school_id) or Decimal("0.00")
+        dva_amount = dva_by_school.get(school_id) or Decimal("0.00")
+        recorded_amount = recorded_by_school.get(school_id) or Decimal("0.00")
+        totals["bills"] += bills_amount
+        totals["dva"] += dva_amount
+        totals["recorded"] += recorded_amount
+        school = schools_by_id.get(school_id)
+        rows.append({
+            "school_id": school_id,
+            "school_name": school.name if school else "Unknown school",
+            "bills": bills_amount,
+            "dva": dva_amount,
+            "recorded": recorded_amount,
+            "total": bills_amount + dva_amount + recorded_amount,
+        })
+    rows.sort(key=lambda row: row["total"], reverse=True)
+    totals["grand_total"] = totals["bills"] + totals["dva"] + totals["recorded"]
+    return rows, totals
+
+
 def dashboard_context():
     models = platform_models()
     User = get_user_model()
@@ -184,6 +308,7 @@ def dashboard_context():
 
     monthly_revenue, _ = _platform_revenue(since=month_start)
     ledger_exclude = {"tenant__schema_name__in": TEST_SCHOOL_SCHEMA_NAMES}
+    payment_totals = _payment_channel_totals(TEST_SCHOOL_SCHEMA_NAMES)
 
     stats = {
         "schools": _count_primary(),
@@ -195,19 +320,17 @@ def dashboard_context():
         "open_tickets": safe_count(models["ticket"], {"status__in": ["open", "pending", "new"]}),
         "virtual_accounts": safe_count(models["virtual_account"]),
         "monthly_revenue": _money(monthly_revenue),
-        # Cross-cutting, platform-wide figures - every money-movement event
-        # logged by any school (purchases, refunds, salary advances,
-        # withdrawals...), not scoped to one tenant. See finance_ledger_logs
-        # per-school rows reachable through each school's own Finance page.
-        # Split into what actually moved in vs out (see
-        # FINANCE_LEDGER_INFLOW_ACTIONS/OUTFLOW_ACTIONS above) rather than
-        # one blended total, which mixed money received with money paid out
-        # and meant neither figure on its own was the real amount either
-        # direction.
+        # The three real ways a school receives money, each its own figure
+        # rather than one blended total - see _payment_channel_querysets.
+        "bills_total": _money(payment_totals["bills"]),
+        "dva_total": _money(payment_totals["dva"]),
+        "payments_recorded_total": _money(payment_totals["recorded"]),
+        # FinanceLedgerLog is a narrower audit trail (purchases, refunds,
+        # salary advances, admin actions...), not a full payments ledger -
+        # bills/dva/payments_recorded above are the real money-received
+        # figures. Out still reads from here since salary/payroll disbursal
+        # has no other table of its own.
         "finance_ledger_logs": safe_count(models["finance_ledger"], exclude=ledger_exclude),
-        "finance_ledger_in_amount": _money(
-            safe_sum(models["finance_ledger"], "amount", {"action__in": FINANCE_LEDGER_INFLOW_ACTIONS}, exclude=ledger_exclude)
-        ),
         "finance_ledger_out_amount": _money(
             safe_sum(models["finance_ledger"], "amount", {"action__in": FINANCE_LEDGER_OUTFLOW_ACTIONS}, exclude=ledger_exclude)
         ),

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.contrib import messages
 from django.contrib.auth.models import Group
 from django.contrib.auth import get_user_model
@@ -9,7 +11,7 @@ from django.views.decorators.http import require_POST
 from .access import function_group_name, super_admin_required
 from .forms import PlatformNotificationForm, SuperAdminCreateForm, SuperAdminFunctionsForm, SUPER_ADMIN_FUNCTIONS
 from .models import PlatformNotification
-from .services import dashboard_context, platform_models, search_queryset
+from .services import TEST_SCHOOL_SCHEMA_NAMES, dashboard_context, per_school_payment_breakdown, platform_models, search_queryset
 
 
 def paginate(request, queryset, per_page=25):
@@ -440,16 +442,29 @@ def subscriptions(request):
 
 @super_admin_required(function="billing")
 def payments(request):
-    model = platform_models()["payment"] or platform_models()["transaction"]
-    if model is None:
-        return missing_module(request, "Payments and Transactions")
-    queryset, query, status = search_queryset(model, request, ["provider_reference", "school__name", "provider", "payer_name"])
-    return render(request, "superadmin_dashboard/list.html", {
-        "title": "Payments and Transactions",
-        "objects": paginate(request, queryset),
-        "query": query,
-        "status": status,
-        "columns": ["provider_reference", "school", "gross_amount", "status", "paid_at"],
+    """Per-school payment breakdown - Bills (online checkout), DVA (virtual
+    account), Payments Recorded (cash/bank/POS), and each school's total.
+    Used to list fee_collections.FeePayment, a model nothing in the live
+    product ever writes to (its webhook at /api/collections/ is unused),
+    so that table was always empty here - see
+    superadmin_dashboard.services.per_school_payment_breakdown."""
+    query = str(request.GET.get("q", "")).strip().lower()
+    rows, totals = per_school_payment_breakdown(TEST_SCHOOL_SCHEMA_NAMES)
+    if query:
+        rows = [row for row in rows if query in row["school_name"].lower()]
+        # The totals row at the bottom of the table should match what's
+        # actually shown, not the whole platform, once a search narrows it.
+        totals = {
+            "bills": sum((row["bills"] for row in rows), Decimal("0.00")),
+            "dva": sum((row["dva"] for row in rows), Decimal("0.00")),
+            "recorded": sum((row["recorded"] for row in rows), Decimal("0.00")),
+        }
+        totals["grand_total"] = totals["bills"] + totals["dva"] + totals["recorded"]
+    return render(request, "superadmin_dashboard/payments.html", {
+        "title": "Payments by School",
+        "rows": rows,
+        "totals": totals,
+        "query": request.GET.get("q", ""),
     })
 
 

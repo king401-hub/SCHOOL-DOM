@@ -1,0 +1,56 @@
+{% extends "superadmin_dashboard/base.html" %}
+{% load superadmin_extras %}
+{% block heading %}{{ title }}{% endblock %}
+{% block content %}
+<form class="filters" method="get">
+  <input name="q" value="{{ query }}" placeholder="Search by school">
+  <button type="submit">Filter</button>
+</form>
+
+<section class="stat-grid">
+  <div class="stat"><span>Bills</span><strong>{{ totals.bills|naira }}</strong><small>paid via bill/invoice checkout</small></div>
+  <div class="stat"><span>DVA Payments</span><strong>{{ totals.dva|naira }}</strong><small>paid into virtual accounts</small></div>
+  <div class="stat"><span>Payments Recorded</span><strong>{{ totals.recorded|naira }}</strong><small>cash/bank/POS entered by admins</small></div>
+  <div class="stat"><span>Total Received</span><strong>{{ totals.grand_total|naira }}</strong><small>bills + DVA + recorded</small></div>
+</section>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>School</th>
+          <th>Bills</th>
+          <th>DVA</th>
+          <th>Payments Recorded</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.school_name }}</td>
+            <td>{{ row.bills|naira }}</td>
+            <td>{{ row.dva|naira }}</td>
+            <td>{{ row.recorded|naira }}</td>
+            <td><strong>{{ row.total|naira }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">No payments recorded yet.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if rows %}
+      <tfoot>
+        <tr>
+          <td><strong>Total</strong></td>
+          <td><strong>{{ totals.bills|naira }}</strong></td>
+          <td><strong>{{ totals.dva|naira }}</strong></td>
+          <td><strong>{{ totals.recorded|naira }}</strong></td>
+          <td><strong>{{ totals.grand_total|naira }}</strong></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</section>
+{% endblock %}
