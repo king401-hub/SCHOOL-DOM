@@ -1660,7 +1660,18 @@ def cbt_offline_sync_package(request):
                 "id": exam.id,
                 "title": exam.title,
                 "subject": getattr(exam.subject, "name", "") or "",
-                "class_name": getattr(exam.class_group, "name", "") or "All classes",
+                # Must match two things exactly, or the Win7 LAN server's
+                # class-based exam visibility silently hides every exam:
+                # (1) blank (not the literal string "All classes") when
+                # class_group isn't set - LanServerService.Login() treats
+                # IsNullOrWhiteSpace(exam.ClassName) as "visible to every
+                # class", same Q(class_group__isnull=True) convention the
+                # cloud's own ExamListView uses; (2) str(class_group), not
+                # just .name, so a class-specific exam's "Name - Section"
+                # matches the same str(current_class) a student's own
+                # class_name is built from just above - .name alone drops
+                # the section and never matched.
+                "class_name": str(exam.class_group) if exam.class_group_id else "",
                 "duration_minutes": exam.duration_minutes,
                 "duration_seconds": exam.duration_minutes * 60,
                 "start_date": exam.start_date,

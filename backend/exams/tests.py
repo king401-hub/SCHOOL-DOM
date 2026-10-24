@@ -411,6 +411,77 @@ class StudentCbtEntryCollisionTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
+class OfflineSyncClassNameTests(TestCase):
+    """cbt_offline_sync_package feeds the Win7 LAN server, whose Login()
+    hides an exam from a student unless exam.ClassName is blank (meaning
+    "every class") or equals the student's own ClassName exactly (see
+    LanServerService.cs). A student's class_name here must come out in the
+    exact same shape as an exam's, or every exam silently disappears for
+    every student regardless of which class it's actually for."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Sync Class School", schema_name="sync_class_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        create_license(school=self.school, activate=True)
+
+        self.admin = User.objects.create_user(
+            email="admin@sync-class-school.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.jss1a = Class.objects.create(tenant=self.legacy_tenant, name="JSS1", section="A")
+
+        student_user = User.objects.create_user(
+            email="student@sync-class-school.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student_profile = StudentProfile.objects.create(
+            user=student_user, student_id="SCS001", admission_number="ADM-SCS-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.jss1a,
+        )
+
+        teacher = User.objects.create_user(
+            email="teacher@sync-class-school.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.exam_for_class = Exam.objects.create(
+            tenant=self.legacy_tenant, title="JSS1A Exam", teacher=teacher, class_group=self.jss1a,
+            start_date=timezone.now() - timedelta(minutes=5), end_date=timezone.now() + timedelta(hours=1),
+            duration_minutes=60, is_published=True,
+        )
+        self.exam_for_everyone = Exam.objects.create(
+            tenant=self.legacy_tenant, title="Whole-School Exam", teacher=teacher, class_group=None,
+            start_date=timezone.now() - timedelta(minutes=5), end_date=timezone.now() + timedelta(hours=1),
+            duration_minutes=60, is_published=True,
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def test_an_exam_with_no_class_is_blank_not_the_literal_string_all_classes(self):
+        response = self.client.get(reverse("exams:cbt_offline_sync_package"))
+        self.assertEqual(response.status_code, 200, response.data)
+        rows_by_title = {row["title"]: row for row in response.data["exams"]}
+        self.assertEqual(rows_by_title["Whole-School Exam"]["class_name"], "")
+
+    def test_a_class_specific_exams_class_name_matches_the_students_own_format_exactly(self):
+        response = self.client.get(reverse("exams:cbt_offline_sync_package"))
+        self.assertEqual(response.status_code, 200, response.data)
+
+        rows_by_title = {row["title"]: row for row in response.data["exams"]}
+        exam_class_name = rows_by_title["JSS1A Exam"]["class_name"]
+
+        student_row = next(row for row in response.data["students"] if row["student_id"] == "SCS001")
+        student_class_name = student_row["class_name"]
+
+        # The actual bug: exam_views.py used to send getattr(class_group, "name")
+        # ("JSS1", dropping the section) while a student's class_name always
+        # used str(current_class) ("JSS1 - A") - never equal, so the Win7 LAN
+        # server's exact-match visibility check hid every class-specific exam.
+        self.assertEqual(exam_class_name, student_class_name)
+        self.assertEqual(exam_class_name, "JSS1 - A")
+
+
 class TheoryExamAuthoringTests(TestCase):
     """Objective exams keep working exactly as before; Theory/Mixed exams
     relax the options/correct-answer requirement for theory-typed questions
