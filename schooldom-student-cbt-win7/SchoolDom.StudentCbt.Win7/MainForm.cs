@@ -142,13 +142,20 @@ namespace SchoolDom.StudentCbt.Win7
 
             var hero = BuildHeroPanel("Connecting to the exam room network...");
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
-            var card = Card(80, 60, 560, 200);
+            var card = Card(0, 0, 560, 200);
+            Action centerCard = () =>
+            {
+                card.Left = Math.Max(24, (content.ClientSize.Width - card.Width) / 2);
+                card.Top = Math.Max(24, (content.ClientSize.Height - card.Height) / 2);
+            };
+            content.Resize += (s, e) => centerCard();
             content.Controls.Add(card);
             card.Controls.Add(Label("Connecting...", 34, 30, 20, true, 420, Palette.Text));
             card.Controls.Add(Label("Looking for the SchoolDom admin server on this network. This is automatic - no setup is needed.", 36, 76, 10, false, 480, Palette.Muted));
 
             _root.Controls.Add(content);
             _root.Controls.Add(hero);
+            centerCard();
         }
 
         // Runs LAN discovery on a background thread and returns to the UI thread via the
@@ -197,7 +204,13 @@ namespace SchoolDom.StudentCbt.Win7
 
             var hero = BuildHeroPanel("Could not reach the admin server automatically.");
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
-            var card = Card(80, 60, 560, 260);
+            var card = Card(0, 0, 560, 260);
+            Action centerCard = () =>
+            {
+                card.Left = Math.Max(24, (content.ClientSize.Width - card.Width) / 2);
+                card.Top = Math.Max(24, (content.ClientSize.Height - card.Height) / 2);
+            };
+            content.Resize += (s, e) => centerCard();
             content.Controls.Add(card);
             card.Controls.Add(Label("Connection Problem", 34, 30, 20, true, 420, Palette.Text));
             card.Controls.Add(Label(string.IsNullOrWhiteSpace(message) ? "No LAN server was found on this network." : message, 36, 76, 10, false, 480, Palette.Coral));
@@ -218,6 +231,7 @@ namespace SchoolDom.StudentCbt.Win7
 
             _root.Controls.Add(content);
             _root.Controls.Add(hero);
+            centerCard();
         }
 
         private void CancelSettings()
@@ -333,7 +347,13 @@ namespace SchoolDom.StudentCbt.Win7
 
             var hero = BuildHeroPanel("Admin settings - not visible to students.");
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
-            var card = Card(80, 60, 560, 460);
+            var card = Card(0, 0, 560, 460);
+            Action centerCard = () =>
+            {
+                card.Left = Math.Max(24, (content.ClientSize.Width - card.Width) / 2);
+                card.Top = Math.Max(24, (content.ClientSize.Height - card.Height) / 2);
+            };
+            content.Resize += (s, e) => centerCard();
             content.Controls.Add(card);
             card.Controls.Add(Label("Connection Settings", 34, 30, 20, true, 420, Palette.Text));
             card.Controls.Add(Label("Configure the LAN server manually if automatic discovery did not work.", 36, 76, 10, false, 480, Palette.Muted));
@@ -407,6 +427,7 @@ namespace SchoolDom.StudentCbt.Win7
 
             _root.Controls.Add(content);
             _root.Controls.Add(hero);
+            centerCard();
         }
 
         private void ShowChangeSettingsPin()
@@ -474,7 +495,13 @@ namespace SchoolDom.StudentCbt.Win7
 
             var hero = BuildHeroPanel("Enter your Student ID to see the exams assigned to your class.");
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
-            var card = Card(80, 60, 560, 300);
+            var card = Card(0, 0, 560, 300);
+            Action centerCard = () =>
+            {
+                card.Left = Math.Max(24, (content.ClientSize.Width - card.Width) / 2);
+                card.Top = Math.Max(24, (content.ClientSize.Height - card.Height) / 2);
+            };
+            content.Resize += (s, e) => centerCard();
             content.Controls.Add(card);
             card.Controls.Add(Label("Exam Login", 34, 30, 20, true, 420, Palette.Text));
             card.Controls.Add(Label("Connected. No PIN is needed - just enter your Student ID.", 36, 76, 10, false, 480, Palette.Muted));
@@ -525,6 +552,7 @@ namespace SchoolDom.StudentCbt.Win7
 
             _root.Controls.Add(content);
             _root.Controls.Add(hero);
+            centerCard();
             studentId.Focus();
         }
 

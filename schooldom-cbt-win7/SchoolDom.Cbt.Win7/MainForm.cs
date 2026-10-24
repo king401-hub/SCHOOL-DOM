@@ -20,6 +20,12 @@ namespace SchoolDom.Cbt.Win7
         private Panel _root;
         private Label _statusLabel;
 
+        // ClassDropdown's own placeholder for the blank ClassName that means
+        // "visible to every class" everywhere else in this codebase
+        // (LanServerService.Login, exams/exam_views.py) - shared with
+        // ClassDropdownValue so the two can never drift to different text.
+        private const string EveryClassLabel = "(Every class)";
+
         public MainForm()
         {
             _store = new LocalStore();
@@ -525,8 +531,7 @@ namespace SchoolDom.Cbt.Win7
                 title.Width = 340;
                 var subject = Field(form, "Subject", "", left + 364, 62, false);
                 subject.Width = 180;
-                var className = Field(form, "Class", "", left + 572, 62, false);
-                className.Width = 170;
+                var className = ClassDropdown(form, "", left + 572, 62, 170);
                 var duration = Field(form, "Duration Minutes", "60", left, 132, false);
                 var pin = Field(form, "LAN PIN", "", left + 250, 132, false);
                 ApplyNumbersOnly(pin);
@@ -623,7 +628,7 @@ namespace SchoolDom.Cbt.Win7
                         Id = "local_exam_" + Guid.NewGuid().ToString("N"),
                         Title = title.Text.Trim(),
                         Subject = subject.Text.Trim(),
-                        ClassName = className.Text.Trim(),
+                        ClassName = ClassDropdownValue(className),
                         DurationSeconds = minutes * 60,
                         StartsAt = started.ToString("o"),
                         EndsAt = started.AddDays(30).ToString("o"),
@@ -1092,8 +1097,7 @@ namespace SchoolDom.Cbt.Win7
                 title.Width = 360;
                 var subject = Field(form, "Subject", exam.Subject, left + 390, 62, false);
                 subject.Width = 180;
-                var className = Field(form, "Class", exam.ClassName, left + 590, 62, false);
-                className.Width = 190;
+                var className = ClassDropdown(form, exam.ClassName, left + 590, 62, 190);
                 var duration = Field(form, "Duration Minutes", Math.Max(1, exam.DurationSeconds / 60).ToString(), left, 132, false);
                 var instructionsLabel = TextLabel("Instructions", left, 182, 9, true, 220, Palette.Text);
                 form.Controls.Add(instructionsLabel);
@@ -1154,7 +1158,7 @@ namespace SchoolDom.Cbt.Win7
                     }
                     exam.Title = title.Text.Trim();
                     exam.Subject = subject.Text.Trim();
-                    exam.ClassName = className.Text.Trim();
+                    exam.ClassName = ClassDropdownValue(className);
                     exam.DurationSeconds = minutes * 60;
                     exam.Instructions = NewlinesToHtmlBreaks(instructions.Text);
                     exam.Questions = questions;
@@ -1484,6 +1488,75 @@ namespace SchoolDom.Cbt.Win7
                 parent.Controls.Add(PasswordRevealToggle(box, left + boxWidth + 4, top));
             }
             return box;
+        }
+
+        // A free-text Class field let an admin type "JSS1", "jss 1a", "JSS 1 A" -
+        // anything - for what the cloud always renders as "JSS1 - A" (Class.__str__,
+        // Name - Section). The Win7 LAN server's exam visibility requires an exact
+        // string match against a student's own ClassName (itself synced straight
+        // from the cloud in that same "Name - Section" shape - see
+        // exams/exam_views.py's cbt_offline_sync_package), so any typo or format
+        // difference silently hid the exam from every student in that class. A
+        // locked dropdown sourced from the class names already on the synced
+        // student roster makes a mismatch structurally impossible instead of
+        // relying on the admin typing it exactly right.
+        private ComboBox ClassDropdown(Control parent, string currentValue, int left, int top, int width)
+        {
+            var labelControl = new Label
+            {
+                Text = "Class",
+                Left = left,
+                Top = top - 30,
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                ForeColor = Palette.Text,
+                UseCompatibleTextRendering = true
+            };
+            parent.Controls.Add(labelControl);
+
+            var combo = new ComboBox
+            {
+                Left = left,
+                Top = top,
+                Width = width,
+                Height = 34,
+                Font = new Font("Segoe UI", 11),
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            combo.Items.Add(EveryClassLabel);
+            var knownClasses = _store.State.Students
+                .Select(s => (s.ClassName ?? "").Trim())
+                .Where(name => !string.IsNullOrEmpty(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            foreach (var className in knownClasses) combo.Items.Add(className);
+
+            // Editing an exam whose class isn't in the roster (renamed/deleted class,
+            // or synced after this exam was made) still needs to show and keep that
+            // value rather than silently swapping it to "(Every class)" the moment
+            // the edit form opens - only typing a genuinely non-existent class is
+            // what this dropdown is meant to prevent going forward.
+            var trimmedCurrent = (currentValue ?? "").Trim();
+            if (!string.IsNullOrEmpty(trimmedCurrent) && !knownClasses.Any(name => string.Equals(name, trimmedCurrent, StringComparison.OrdinalIgnoreCase)))
+            {
+                combo.Items.Add(trimmedCurrent);
+            }
+            combo.SelectedIndex = string.IsNullOrEmpty(trimmedCurrent) ? 0 : combo.Items.IndexOf(trimmedCurrent);
+            if (combo.SelectedIndex < 0) combo.SelectedIndex = 0;
+
+            parent.Controls.Add(combo);
+            return combo;
+        }
+
+        // "(Every class)" is the dropdown's own placeholder text for the blank
+        // ClassName that means "visible to every class" everywhere else in this
+        // codebase (LanServerService.Login, exams/exam_views.py) - never save the
+        // literal placeholder string itself.
+        private static string ClassDropdownValue(ComboBox combo)
+        {
+            var text = (combo.SelectedItem as string ?? "").Trim();
+            return text == EveryClassLabel ? "" : text;
         }
 
         private Button PasswordRevealToggle(TextBox box, int left, int top)
