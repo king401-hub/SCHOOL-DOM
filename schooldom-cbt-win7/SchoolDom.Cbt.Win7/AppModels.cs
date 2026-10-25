@@ -12,6 +12,11 @@ namespace SchoolDom.Cbt.Win7
         public string PackageGeneratedAt { get; set; }
         public string CloudUrl { get; set; }
         public string AccessToken { get; set; }
+        // "Remember me": issued alongside AccessToken at login (7-day lifetime, see
+        // SIMPLE_JWT.REFRESH_TOKEN_LIFETIME), used to silently mint a fresh AccessToken
+        // once the short-lived one expires instead of forcing the admin back to
+        // ShowCloudLogin() every 1-2 hours. See CloudSyncService.TryRefreshAccessToken().
+        public string RefreshToken { get; set; }
         public string LastSyncAt { get; set; }
         public string SchoolName { get; set; }
         public string SchoolCode { get; set; }
@@ -23,6 +28,15 @@ namespace SchoolDom.Cbt.Win7
         public string LastUploadAttemptAt { get; set; }
         // Shared token for UDP LAN discovery — student app must include this to get a response
         public string DiscoveryToken { get; set; }
+
+        // SHA-256 hash (same unsalted algorithm as the Student CBT app's own
+        // LocalSettingsStore.HashPin) of a single Settings PIN the admin configures once
+        // here. Broadcast in LanServerService's /health response so every Student CBT
+        // terminal on the LAN silently adopts it instead of each one needing its own
+        // separately-set PIN - see MainForm.AdoptServerSettingsPin() on that side. Empty
+        // until the admin sets one; a terminal talking to a server with no PIN configured
+        // keeps using whatever (if anything) it already has set locally.
+        public string StudentSettingsPinHash { get; set; }
 
         // CBT license state, as last reported by the cloud (offline-sync pull or the
         // license-activate endpoint) - never computed locally. LicenseLastVerifiedTickCount

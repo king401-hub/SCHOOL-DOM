@@ -465,6 +465,10 @@ namespace SchoolDom.Cbt.Win7
                 { "exams", _store.State.Exams.Count },
                 { "students", _store.State.Students.Count },
                 { "updated_at", JsonUtil.IsoNow() },
+                // See AppState.StudentSettingsPinHash - a one-way hash, never the plaintext
+                // PIN, so a Student CBT terminal can adopt it without ever learning the PIN
+                // itself (it still needs a human to type the matching PIN to pass the gate).
+                { "settings_pin_hash", _store.State.StudentSettingsPinHash ?? "" },
             };
         }
 

@@ -54,6 +54,7 @@ namespace SchoolDom.Cbt.Win7
             }
             _store.State.CloudUrl = NormalizeCloudUrl(cloudUrl);
             _store.State.AccessToken = Convert.ToString(data["access"]);
+            _store.State.RefreshToken = data.ContainsKey("refresh") ? Convert.ToString(data["refresh"]) : null;
             var school = data.ContainsKey("school") ? data["school"] as Dictionary<string, object> : null;
             if (school != null)
             {
@@ -79,7 +80,7 @@ namespace SchoolDom.Cbt.Win7
         {
             RequireToken();
             var body = new Dictionary<string, object> { { "key", (key ?? "").Trim() } };
-            var response = Request("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/app/license/activate/", JsonUtil.Serialize(body), _store.State.AccessToken);
+            var response = RequestAuthenticated("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/app/license/activate/", JsonUtil.Serialize(body));
             var data = JsonUtil.DeserializeObject(response);
             if (!data.ContainsKey("success") || !Convert.ToBoolean(data["success"]))
             {
@@ -94,7 +95,7 @@ namespace SchoolDom.Cbt.Win7
         public string PullPackage(string fallbackPin)
         {
             RequireToken();
-            var json = Request("GET", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/offline-sync/", "", _store.State.AccessToken);
+            var json = RequestAuthenticated("GET", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/offline-sync/", "");
             var result = _packages.ImportPackageJson(json, fallbackPin);
             _store.State.LastSyncAt = JsonUtil.IsoNow();
             _store.Save();
@@ -109,7 +110,7 @@ namespace SchoolDom.Cbt.Win7
             _store.Save();
             try
             {
-                var response = Request("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/package/results/import/", json, _store.State.AccessToken);
+                var response = RequestAuthenticated("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/package/results/import/", json);
                 var data = JsonUtil.DeserializeObject(response);
                 var imported = data.ContainsKey("imported") ? Convert.ToString(data["imported"]) : "0";
                 var failed = data.ContainsKey("failed") ? Convert.ToString(data["failed"]) : "0";
@@ -146,7 +147,7 @@ namespace SchoolDom.Cbt.Win7
                 throw new InvalidOperationException("Select an exam before generating a new PIN.");
             }
             var url = NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/exams/" + Uri.EscapeDataString(examId) + "/pin/regenerate/";
-            var response = Request("POST", url, "{}", _store.State.AccessToken);
+            var response = RequestAuthenticated("POST", url, "{}");
             var data = JsonUtil.DeserializeObject(response);
             if (!data.ContainsKey("success") || !Convert.ToBoolean(data["success"]))
             {
@@ -197,7 +198,7 @@ namespace SchoolDom.Cbt.Win7
                 { "questions", questions }
             };
 
-            var response = Request("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/app/exams/create/", JsonUtil.Serialize(body), _store.State.AccessToken);
+            var response = RequestAuthenticated("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/app/exams/create/", JsonUtil.Serialize(body));
             var data = JsonUtil.DeserializeObject(response);
             if (!data.ContainsKey("success") || !Convert.ToBoolean(data["success"]))
             {
@@ -215,7 +216,7 @@ namespace SchoolDom.Cbt.Win7
                 { "student_id", studentId ?? "" },
                 { "session_id", sessionId ?? "" }
             };
-            var response = Request("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/results/delete/", JsonUtil.Serialize(body), _store.State.AccessToken);
+            var response = RequestAuthenticated("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/results/delete/", JsonUtil.Serialize(body));
             var data = JsonUtil.DeserializeObject(response);
             if (!data.ContainsKey("success") || !Convert.ToBoolean(data["success"]))
             {
@@ -236,6 +237,62 @@ namespace SchoolDom.Cbt.Win7
             if (string.IsNullOrWhiteSpace(_store.State.AccessToken))
             {
                 throw new InvalidOperationException("Add an admin JWT access token or sign in before syncing.");
+            }
+        }
+
+        /// <summary>
+        /// Every cloud call that needs the admin's session goes through here instead of
+        /// calling Request(...) directly. On a 401/expired-token response it tries one
+        /// silent refresh (via the "remember me" RefreshToken saved at login) and retries
+        /// the same call once with the new access token - the admin only sees the
+        /// "Cloud Login Expired" prompt once the 7-day refresh token itself is gone.
+        /// </summary>
+        private string RequestAuthenticated(string method, string url, string body)
+        {
+            RequireToken();
+            try
+            {
+                return Request(method, url, body, _store.State.AccessToken);
+            }
+            catch (CloudAuthExpiredException)
+            {
+                if (TryRefreshAccessToken())
+                {
+                    return Request(method, url, body, _store.State.AccessToken);
+                }
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Attempts to mint a fresh access token from the saved refresh token
+        /// (POST /api/auth/refresh/). Returns false (never throws) on any failure -
+        /// an invalid/expired/missing refresh token just means the admin has to sign
+        /// in again, which the caller's own CloudAuthExpiredException handling covers.
+        /// </summary>
+        private bool TryRefreshAccessToken()
+        {
+            if (string.IsNullOrWhiteSpace(_store.State.RefreshToken)) return false;
+            try
+            {
+                var body = new Dictionary<string, object> { { "refresh", _store.State.RefreshToken } };
+                var response = Request("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/auth/refresh/", JsonUtil.Serialize(body), "");
+                var data = JsonUtil.DeserializeObject(response);
+                if (!data.ContainsKey("access") || string.IsNullOrWhiteSpace(Convert.ToString(data["access"])))
+                {
+                    return false;
+                }
+                _store.State.AccessToken = Convert.ToString(data["access"]);
+                if (data.ContainsKey("refresh"))
+                {
+                    _store.State.RefreshToken = Convert.ToString(data["refresh"]);
+                }
+                _store.Save();
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 

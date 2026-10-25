@@ -168,13 +168,14 @@ namespace SchoolDom.StudentCbt.Win7
 
             Task.Factory.StartNew(() =>
             {
+                Dictionary<string, object> health = null;
                 if (!string.IsNullOrWhiteSpace(_localSettings.LastLanServerUrl))
                 {
                     try
                     {
                         _client.BaseUrl = _localSettings.LastLanServerUrl;
-                        _client.Health();
-                        return;
+                        health = _client.Health();
+                        return health;
                     }
                     catch
                     {
@@ -182,6 +183,11 @@ namespace SchoolDom.StudentCbt.Win7
                     }
                 }
                 _client.Discover();
+                // Best-effort only - Discover() already succeeded and that's what matters for
+                // getting the student to the login screen; a settings-PIN sync hiccup here
+                // just means this terminal keeps whatever PIN it already has.
+                try { health = _client.Health(); } catch { }
+                return health;
             })
             .ContinueWith(t =>
             {
@@ -192,9 +198,29 @@ namespace SchoolDom.StudentCbt.Win7
                     return;
                 }
                 _localSettings.LastLanServerUrl = _client.BaseUrl;
+                AdoptServerSettingsPin(t.Result);
                 LocalSettingsStore.Save(_localSettings);
                 ShowStudentIdLogin();
             }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
+
+        /// <summary>
+        /// When the admin has configured a shared "Student Settings PIN" on the Admin Sync
+        /// LAN server (AppState.StudentSettingsPinHash), every terminal silently adopts it
+        /// here on each connect/reconnect - this is what lets the admin set the PIN once
+        /// centrally instead of visiting every student PC, and lets a later PIN change on
+        /// the server propagate automatically. A terminal talking to a server that hasn't
+        /// configured one (an empty hash) keeps whatever it already has locally, including
+        /// nothing yet - which still falls through to ShowSettingsSetupFirstTime() exactly
+        /// as before this feature existed.
+        /// </summary>
+        private void AdoptServerSettingsPin(Dictionary<string, object> health)
+        {
+            if (health == null || !health.ContainsKey("settings_pin_hash")) return;
+            var serverHash = JsonUtil.Text(health["settings_pin_hash"]).Trim();
+            if (string.IsNullOrWhiteSpace(serverHash)) return;
+            if (string.Equals(serverHash, _localSettings.SettingsPinHash, StringComparison.OrdinalIgnoreCase)) return;
+            _localSettings.SettingsPinHash = serverHash;
         }
 
         private void ShowDiscoveryFailed(string message)

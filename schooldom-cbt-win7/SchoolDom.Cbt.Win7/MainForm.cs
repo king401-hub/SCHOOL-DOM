@@ -180,6 +180,7 @@ namespace SchoolDom.Cbt.Win7
             signOut.Click += (s, e) =>
             {
                 _store.State.AccessToken = "";
+                _store.State.RefreshToken = "";
                 _store.Save();
                 ShowCloudLogin();
             };
@@ -328,12 +329,24 @@ namespace SchoolDom.Cbt.Win7
             lan.Controls.Add(lanStopInline);
             content.Controls.Add(lan);
 
-            var submittedResults = Card(34, 552, 1024, 230);
+            var pinCard = Card(34, 552, 760, 104);
+            pinCard.Controls.Add(TextLabel("Student Settings PIN", 22, 12, 13, true, 400, Palette.Text));
+            var hasSharedPin = !string.IsNullOrWhiteSpace(_store.State.StudentSettingsPinHash);
+            var pinDetail = hasSharedPin
+                ? "Set. Every Student CBT terminal on this LAN picks this PIN up automatically - no need to set it on each one."
+                : "Not set yet. Each Student CBT terminal will ask for its own PIN on first use instead of sharing one.";
+            pinCard.Controls.Add(TextLabel(pinDetail, 22, 44, 9, false, 560, Palette.Muted));
+            var setPinInline = MiniButton(hasSharedPin ? "Change PIN" : "Set PIN", 580, 12, 160);
+            setPinInline.Click += SetStudentSettingsPin;
+            pinCard.Controls.Add(setPinInline);
+            content.Controls.Add(pinCard);
+
+            var submittedResults = Card(34, 672, 1024, 230);
             submittedResults.Controls.Add(TextLabel("Submitted Results", 22, 14, 16, true, 300, Palette.Text));
             FillSubmittedResults(submittedResults);
             content.Controls.Add(submittedResults);
 
-            var exams = Card(34, 806, 500, 410);
+            var exams = Card(34, 926, 500, 410);
             exams.Controls.Add(TextLabel("Exams", 22, 18, 16, true, 240, Palette.Text));
             var moreExams = MiniButton("More", 408, 18, 74);
             moreExams.Click += (s, e) => ShowExamList();
@@ -341,7 +354,7 @@ namespace SchoolDom.Cbt.Win7
             FillExamList(exams);
             content.Controls.Add(exams);
 
-            var students = Card(558, 806, 500, 410);
+            var students = Card(558, 926, 500, 410);
             students.Controls.Add(TextLabel("Students", 22, 18, 16, true, 240, Palette.Text));
             var moreStudents = MiniButton("More", 408, 18, 74);
             moreStudents.Click += (s, e) => ShowStudentList();
@@ -349,7 +362,7 @@ namespace SchoolDom.Cbt.Win7
             FillStudentList(students);
             content.Controls.Add(students);
 
-            var note = Card(34, 1240, 1024, 96);
+            var note = Card(34, 1360, 1024, 96);
             note.Controls.Add(TextLabel("Admin Sync Tools", 22, 16, 14, true, 940, Palette.Text));
             note.Controls.Add(TextLabel("Use this console to sync school CBT data, review/edit imported exams, export broadsheets, and upload or export local result packages.", 22, 48, 10, false, 960, Palette.Muted));
             content.Controls.Add(note);
@@ -1313,6 +1326,7 @@ namespace SchoolDom.Cbt.Win7
         private void HandleCloudAuthExpired(CloudAuthExpiredException ex)
         {
             _store.State.AccessToken = "";
+            _store.State.RefreshToken = "";
             _store.Save();
             SetStatus(ex.Message, Palette.Coral);
             MessageBox.Show(ex.Message, "Cloud Login Expired");
@@ -1348,6 +1362,30 @@ namespace SchoolDom.Cbt.Win7
                     return message;
                 },
                 ShowDashboard);
+        }
+
+        private void SetStudentSettingsPin(object sender, EventArgs e)
+        {
+            var newPin = PromptDialog.Show(
+                "Student Settings PIN",
+                "Set the shared PIN every Student CBT terminal on this LAN will use for its own Settings screen - at least 4 digits. Terminals pick this up automatically the next time they connect; no need to visit each one.",
+                true, true);
+            if (string.IsNullOrWhiteSpace(newPin)) return;
+            if (newPin.Length < 4)
+            {
+                MessageBox.Show("PIN must be at least 4 digits. Nothing was changed.", "Student Settings PIN");
+                return;
+            }
+            var confirmPin = PromptDialog.Show("Confirm PIN", "Re-enter the same PIN to confirm.", true, true);
+            if (newPin != confirmPin)
+            {
+                MessageBox.Show("PINs did not match. Nothing was changed.", "Student Settings PIN");
+                return;
+            }
+            _store.State.StudentSettingsPinHash = JsonUtil.Sha256(newPin);
+            _store.Save();
+            MessageBox.Show("Saved. Student CBT terminals will pick up this PIN automatically next time they connect.", "Student Settings PIN");
+            ShowDashboard();
         }
 
         private void ImportPackage(object sender, EventArgs e)
