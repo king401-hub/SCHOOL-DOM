@@ -13143,17 +13143,31 @@ def grading_scale_detail(request, scale_id):
 @permission_classes([IsAuthenticated])
 def push_results_to_admin(request):
     user = request.user
-    if user.role != "teacher":
+    if user.role != "teacher" and user.role not in ADMIN_ROLES:
         return Response({"success": False, "message": "Only teachers can push results."}, status=status.HTTP_403_FORBIDDEN)
     class_id = request.data.get("class_id")
     term_id = request.data.get("term_id")
+    score_id = request.data.get("score_id")
     class_group = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=class_id) if class_id else None
     term = get_object_or_404(_scope_to_user_tenant(Term.objects.all(), user), id=term_id) if term_id else None
-    scores = StudentSubjectScore.objects.filter(teacher=user, approval_status__in=[ResultBatch.DRAFT, ResultBatch.REJECTED])
-    if class_group:
-        scores = scores.filter(class_group=class_group)
-    if term:
-        scores = scores.filter(term=term)
+    scores = _scope_to_user_tenant(StudentSubjectScore.objects.all(), user).filter(
+        approval_status__in=[ResultBatch.DRAFT, ResultBatch.REJECTED],
+    )
+    # A teacher only ever pushes their own drafts; an admin oversees the
+    # whole school and can push any teacher's pending drafts (e.g. one the
+    # teacher saved but never got around to sending themselves).
+    if user.role == "teacher":
+        scores = scores.filter(teacher=user)
+    if score_id:
+        # A single explicit score (the per-row "Send to admin" action on an
+        # already-saved draft) - skips the class/term scoping below, since
+        # the caller already knows exactly which record they want sent.
+        scores = scores.filter(id=score_id)
+    else:
+        if class_group:
+            scores = scores.filter(class_group=class_group)
+        if term:
+            scores = scores.filter(term=term)
     if not scores.exists():
         return Response({"success": False, "message": "No draft results found to push."}, status=status.HTTP_400_BAD_REQUEST)
     for score in scores:
@@ -13408,7 +13422,7 @@ def _fuzzy_student_filter(queryset, code):
 @permission_classes([IsAuthenticated])
 def submit_subject_score(request):
     user = request.user
-    if user.role != "teacher":
+    if user.role != "teacher" and user.role not in ADMIN_ROLES:
         return Response(
             {"success": False, "message": "Only teachers can submit subject scores."},
             status=status.HTTP_403_FORBIDDEN,
@@ -13532,8 +13546,10 @@ def submit_subject_score(request):
     # class_group may only be known once the student is resolved (a request
     # can omit class_id and let it fall back to the student's own class), and
     # authorization has to be against the class actually being written to,
-    # not just "does this teacher teach the subject somewhere".
-    if not _teacher_is_eligible_for_class_subject(user, class_group, subject):
+    # not just "does this teacher teach the subject somewhere". An admin
+    # oversees every class/subject in the school, so this check is
+    # teacher-only - same split as _class_scope_for_attendance_marking.
+    if user.role == "teacher" and not _teacher_is_eligible_for_class_subject(user, class_group, subject):
         return Response(
             {"success": False, "message": "You are not assigned to teach this subject for this class."},
             status=status.HTTP_403_FORBIDDEN,

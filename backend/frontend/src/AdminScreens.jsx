@@ -41,6 +41,7 @@ import {
   writeStoredSession,
 } from "./AppShared";
 import { TeacherExamBuilder, TheoryGradingPanel, ExamGroupBuilder } from "./TeacherExamPanels";
+import { TeacherResultsPanel } from "./App";
 import { PageHeader, SectionCard, MetricTile, EmptyState, useAdminStudioScope } from "./teacher/TeacherKit";
 import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
 import SignaturePad from "./components/SignaturePad";
@@ -5589,6 +5590,7 @@ function computeReportPrintLayout(table, theme) {
 function AdminResultsScreen({
   data = {}, loading, error, onRetry, onSearch, onReviewBatch, onDeleteBatch, onViewBatch, onEditBatchScore, onSendSms,
   onLoadBroadsheet, onLoadBroadsheetParents, onSendBroadsheet, session,
+  onSubmitScore, onPushResults, onLoadResultsSnapshot, onLoadClassStudents,
 }) {
   const summary = data?.summary || {};
   const documentTheme = resolveDocumentTheme(data?.school, session?.school);
@@ -6043,6 +6045,21 @@ function AdminResultsScreen({
           </table>
         ) : <p className="panel-empty">No pushed result batches yet.</p>}
       </article>
+
+      {onSubmitScore ? (
+        <TeacherResultsPanel
+          session={session}
+          school={data?.school}
+          subjects={data?.options?.subjects || []}
+          classOptions={data?.options?.classes || []}
+          cbtResults={data?.cbt_results || []}
+          onSubmitScore={onSubmitScore}
+          onLoadResults={onLoadResultsSnapshot}
+          onLoadClassStudents={onLoadClassStudents}
+          onPushResults={onPushResults}
+          audience="admin"
+        />
+      ) : null}
 
       {viewingBatchDetail ? (
         <ResultBatchReviewModal

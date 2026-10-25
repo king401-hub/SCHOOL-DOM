@@ -5757,7 +5757,8 @@ function RankBadge({ rank }) {
   return <span className={`rank-badge rank-badge-${tone}`}>{ordinalRank(rank)}</span>;
 }
 
-function TeacherResultsPanel({ session, school, subjects = [], classOptions = [], cbtResults = [], onSubmitScore, onLoadResults, onLoadClassStudents, onPushResults }) {
+export function TeacherResultsPanel({ session, school, subjects = [], classOptions = [], cbtResults = [], onSubmitScore, onLoadResults, onLoadClassStudents, onPushResults, audience = "teacher" }) {
+  const isAdminAudience = audience === "admin";
   const documentTheme = resolveDocumentTheme(school, session?.school);
   const [reviewingAttempt, setReviewingAttempt] = useState(null);
   const [form, setForm] = useState({
@@ -5885,6 +5886,9 @@ function TeacherResultsPanel({ session, school, subjects = [], classOptions = []
     }
   }, [subjects, form.subject_id]);
 
+  const [drafts, setDrafts] = useState([]);
+  const [sendingId, setSendingId] = useState("");
+
   const refresh = useCallback(async () => {
     if (!onLoadResults) {
       return;
@@ -5892,10 +5896,33 @@ function TeacherResultsPanel({ session, school, subjects = [], classOptions = []
     try {
       const snapshot = await onLoadResults();
       setRecent(snapshot?.leaderboard || []);
+      // "Save score" always stores as a draft first (see submit_subject_score -
+      // it never pushes by itself), and the only other way to send one is the
+      // bulk "Send results to admin" button above, scoped to whatever class is
+      // currently selected. A draft saved earlier (different class selected
+      // since, or from a previous visit) had no way back to admin at all -
+      // this surfaces every still-unsent draft with its own Send action.
+      setDrafts((snapshot?.results || []).filter((row) => row.approval_status === "draft"));
     } catch (loadError) {
       // No-op; teacher can still submit scores.
     }
   }, [onLoadResults]);
+
+  const handleSendSingle = async (scoreId) => {
+    if (!onPushResults || !scoreId) return;
+    setSendingId(scoreId);
+    setError("");
+    setFeedback("");
+    try {
+      const result = await onPushResults({ score_id: scoreId });
+      setFeedback(result?.message || "Sent to admin.");
+      refresh();
+    } catch (sendError) {
+      setError(sendError.message || "Could not send this result.");
+    } finally {
+      setSendingId("");
+    }
+  };
 
   useEffect(() => {
     refresh();
@@ -6022,8 +6049,8 @@ function TeacherResultsPanel({ session, school, subjects = [], classOptions = []
 
       <div className="metric-grid teacher-results-stats">
         <MetricTile label="Students" value={studentOptions.length || "—"} note={scopeLabel ? `in ${scopeLabel}` : "Pick a subject to see them"} icon={Users} tone="emerald" />
-        <MetricTile label="Subjects" value={subjects.length} note="assigned to you" icon={BookOpen} tone="indigo" />
-        <MetricTile label="CBT results" value={subjectCbtResults.length} note="from your subjects" icon={Monitor} tone="sky" />
+        <MetricTile label="Subjects" value={subjects.length} note={isAdminAudience ? "in your school" : "assigned to you"} icon={BookOpen} tone="indigo" />
+        <MetricTile label="CBT results" value={subjectCbtResults.length} note={isAdminAudience ? "school-wide" : "from your subjects"} icon={Monitor} tone="sky" />
         <MetricTile label="Top of the class" value={topRanked ? topRanked.student_name : "—"} note={topRanked ? `${topRanked.total_score} pts · ${ordinalRank(topRanked.rank)}` : "Awaiting results"} icon={Trophy} tone="amber" />
       </div>
 
@@ -6032,7 +6059,7 @@ function TeacherResultsPanel({ session, school, subjects = [], classOptions = []
           <div className="panel-head">
             <div>
               <h3>Record a score</h3>
-              <small>Only the subjects you teach are listed.</small>
+              <small>{isAdminAudience ? "Every subject in your school is listed." : "Only the subjects you teach are listed."}</small>
             </div>
             <span className="pill">{pluralize(subjects.length || 0, "subject")}</span>
           </div>
@@ -6186,6 +6213,9 @@ function TeacherResultsPanel({ session, school, subjects = [], classOptions = []
             <button type="button" className={resultsTab === "cbt" ? "active" : ""} aria-pressed={resultsTab === "cbt"} onClick={() => setResultsTab("cbt")}>
               CBT results
             </button>
+            <button type="button" className={resultsTab === "drafts" ? "active" : ""} aria-pressed={resultsTab === "drafts"} onClick={() => setResultsTab("drafts")}>
+              Drafts{drafts.length ? ` (${drafts.length})` : ""}
+            </button>
           </div>
 
           {resultsTab === "rankings" ? (
@@ -6225,6 +6255,37 @@ function TeacherResultsPanel({ session, school, subjects = [], classOptions = []
               </>
             ) : (
               <EmptyState compact art="clipboard" title="No standings yet" message="Save a student's score and the rankings will build themselves here." />
+            )
+          ) : resultsTab === "drafts" ? (
+            drafts.length ? (
+              <div className="table-scroll">
+                <table className="data-table teacher-drafts-table">
+                  <thead>
+                    <tr><th>Student</th><th>Subject</th><th>Score</th><th><span className="visually-hidden">Actions</span></th></tr>
+                  </thead>
+                  <tbody>
+                    {drafts.map((row) => (
+                      <tr key={row.id}>
+                        <td><strong className="theory-queue-name">{row.student_name}</strong><small>{[row.student_id, row.class_name].filter(Boolean).join(" · ")}</small></td>
+                        <td>{row.subject || "—"}</td>
+                        <td><strong>{row.score}</strong><small>/ {row.max_score}</small></td>
+                        <td className="table-action-cell">
+                          <button
+                            type="button"
+                            className="table-action"
+                            disabled={sendingId === row.id}
+                            onClick={() => handleSendSingle(row.id)}
+                          >
+                            {sendingId === row.id ? <><Spinner size={12} /> Sending…</> : "Send to admin"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState compact art="clipboard" title="Nothing waiting to send" message="Every score you've saved has already been sent to admin." />
             )
           ) : subjectCbtResults.length ? (
             <div className="table-scroll">
@@ -9005,6 +9066,51 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [session]
   );
 
+  // Admin-facing twins of the teacher dashboard's own result handlers
+  // (handleTeacherSubmitScore/handleTeacherPushResults/
+  // handleTeacherClassStudents, further below) - same backend endpoints,
+  // now admin-accessible too (see submit_subject_score/
+  // push_results_to_admin), but refreshed through the admin app's
+  // per-route screenData cache instead of the teacher app's single
+  // loadDashboard(). Declared here (not alongside their teacher twins)
+  // because AdminResultsScreen's render below needs them in scope.
+  const handleAdminSubmitScore = useCallback(
+    async (payload) => {
+      const result = await postJson(session, "/api/app/results/submit/", payload);
+      await loadScreen("/results", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleAdminPushResults = useCallback(
+    async (payload) => {
+      const result = await postJson(session, "/api/app/results/push/", payload);
+      await loadScreen("/results", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleAdminResultsSnapshot = useCallback(
+    async () => requestJson(session, "GET", "/api/app/results/"),
+    [session]
+  );
+
+  const handleAdminClassStudents = useCallback(
+    async (classId = "", subjectId = "") => {
+      const params = new URLSearchParams();
+      if (classId) params.set("class_id", classId);
+      if (subjectId) {
+        params.set("context", "results");
+        params.set("subject_id", subjectId);
+      }
+      const query = params.toString() ? `?${params.toString()}` : "";
+      return requestJson(session, "GET", `/api/app/attendance/class-students/${query}`);
+    },
+    [session]
+  );
+
   const handleSendReportSms = useCallback(
     async ({ phones, report }) => {
       const result = await requestJson(session, "POST", "/api/app/messages/send/", {
@@ -9619,6 +9725,10 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onLoadBroadsheet={handleLoadBroadsheet}
         onLoadBroadsheetParents={handleLoadBroadsheetParents}
         onSendBroadsheet={handleSendBroadsheet}
+        onSubmitScore={handleAdminSubmitScore}
+        onPushResults={handleAdminPushResults}
+        onLoadResultsSnapshot={handleAdminResultsSnapshot}
+        onLoadClassStudents={handleAdminClassStudents}
         session={session}
       />
     );
