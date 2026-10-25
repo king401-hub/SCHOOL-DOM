@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import Mock, patch
 
 from django.core import mail
 from django.core.cache import cache
@@ -480,6 +481,65 @@ class OfflineSyncClassNameTests(TestCase):
         # server's exact-match visibility check hid every class-specific exam.
         self.assertEqual(exam_class_name, student_class_name)
         self.assertEqual(exam_class_name, "JSS1 - A")
+
+
+class CbtAdminAppVersionEndpointTests(TestCase):
+    """GET /api/exams/cbt/version/ - what the Win7 Admin Sync app's
+    auto-updater polls on every launch. version/file_size_bytes must always
+    come from the real shipped installer (apps.app.views.admin_app_version/
+    admin_app_installer_path), never a value someone has to remember to
+    bump by hand - that static default (0.2.12) is exactly what let two
+    real releases (0.3.0, 0.3.1) go out with no admin ever prompted to
+    update, because nobody edited it."""
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_version_comes_from_the_real_installer_not_a_hardcoded_default(self):
+        with patch("apps.app.views.admin_app_version", return_value="9.9.9"), \
+             patch("apps.app.views.admin_app_installer_path", return_value=None):
+            response = self.client.get(reverse("exams:cbt_app_version"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["version"], "9.9.9")
+
+    def test_file_size_matches_the_real_installer_on_disk(self):
+        fake_installer = Mock()
+        fake_installer.stat.return_value.st_size = 123456
+        with patch("apps.app.views.admin_app_version", return_value="1.2.3"), \
+             patch("apps.app.views.admin_app_installer_path", return_value=fake_installer):
+            response = self.client.get(reverse("exams:cbt_app_version"))
+
+        self.assertEqual(response.data["file_size_bytes"], 123456)
+
+    def test_no_installer_present_reports_no_file_size_without_erroring(self):
+        with patch("apps.app.views.admin_app_version", return_value="1.2.3"), \
+             patch("apps.app.views.admin_app_installer_path", return_value=None):
+            response = self.client.get(reverse("exams:cbt_app_version"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["file_size_bytes"])
+
+    def test_release_notes_and_date_still_come_from_settings(self):
+        custom_version_info = {
+            "release_notes": "Test notes",
+            "release_date": "2026-01-01",
+            "download_url": "https://example.com/x.exe",
+            "is_mandatory": True,
+        }
+        with override_settings(CBT_ADMIN_APP_VERSION=custom_version_info), \
+             patch("apps.app.views.admin_app_version", return_value="1.0.0"), \
+             patch("apps.app.views.admin_app_installer_path", return_value=None):
+            response = self.client.get(reverse("exams:cbt_app_version"))
+
+        self.assertEqual(response.data["release_notes"], "Test notes")
+        self.assertEqual(response.data["release_date"], "2026-01-01")
+        self.assertEqual(response.data["download_url"], "https://example.com/x.exe")
+        self.assertTrue(response.data["is_mandatory"])
+        # version still comes from the real installer even when the rest of
+        # the settings dict is overridden - never from a "version" key an
+        # admin might still have lying around in their own settings/.env.
+        self.assertEqual(response.data["version"], "1.0.0")
 
 
 class TheoryExamAuthoringTests(TestCase):

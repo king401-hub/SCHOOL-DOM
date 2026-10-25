@@ -2025,33 +2025,37 @@ def cbt_results_package_import(request):
 # ---------------------------------------------------------------------------
 # CBT Admin App auto-update version endpoint
 # ---------------------------------------------------------------------------
-# Update CBT_ADMIN_APP_VERSION in your Django settings (or .env via a
-# settings override) whenever you publish a new installer.  The desktop app
-# checks this endpoint on every launch and prompts the admin to update when
-# 'version' is newer than the installed version.
+# The desktop app checks this endpoint on every launch
+# (SchoolDom.Cbt.Win7's UpdateService.CheckForUpdate) and prompts the admin
+# to update when 'version' is newer than the installed version.
 #
-# Example settings.py entry:
-#   CBT_ADMIN_APP_VERSION = {
-#       "version": "0.2.0",
-#       "release_notes": "- Fixed timer sync\n- HTML question rendering",
-#       "release_date": "2026-08-01",
-#       "download_url": "https://schooldom.academy/media/app/cbt/SchoolDom-Admin-Sync-Win7-0.2.0-Setup.exe",
-#       "file_size_bytes": 4567890,
-#       "is_mandatory": False,
-#   }
+# 'version' and 'file_size_bytes' are no longer something you have to
+# remember to bump per release - they're read straight from the actual
+# shipped installer (apps.app.views.admin_app_version/
+# admin_app_installer_path, the same pair GET /app/download/admin/version/
+# already used), so this endpoint can never fall behind what's really been
+# published the way it did from 0.2.12 all the way through 0.3.1: two real
+# releases came and went with no admin ever prompted to update, because
+# this dict's "version" was never edited by hand. Only release_notes/
+# release_date/is_mandatory still need a human to write them - update
+# CBT_ADMIN_APP_VERSION in Django settings (or the matching env vars) for
+# those whenever you publish a new installer.
 _CBT_ADMIN_APP_VERSION_DEFAULT = {
-    "version": "0.1.0",
     "release_notes": "Initial release of SchoolDom Admin Sync for Windows 7.",
     "release_date": "2026-07-27",
     "download_url": "",
-    "file_size_bytes": None,
     "is_mandatory": False,
 }
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def cbt_app_version(request):
-    info = getattr(settings, 'CBT_ADMIN_APP_VERSION', _CBT_ADMIN_APP_VERSION_DEFAULT)
+    from apps.app.views import admin_app_installer_path, admin_app_version
+
+    info = dict(getattr(settings, 'CBT_ADMIN_APP_VERSION', _CBT_ADMIN_APP_VERSION_DEFAULT))
+    info['version'] = admin_app_version()
+    installer_path = admin_app_installer_path()
+    info['file_size_bytes'] = installer_path.stat().st_size if installer_path else None
     return Response(info)
 
 

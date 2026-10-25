@@ -510,26 +510,29 @@ OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1')
 # CBT Admin App auto-update (see exams.exam_views.cbt_app_version). The
 # SchoolDom Admin Sync Win7 desktop app checks GET /api/exams/cbt/version/ on
 # every launch and offers to download+install when 'version' is newer than
-# the installed one. Update the *_NUMBER/*_DOWNLOAD_URL/*_RELEASE_* env vars
-# (or just edit the defaults below) whenever a new installer is published -
-# no other server-side change is needed to announce it.
+# the installed one. 'version' and 'file_size_bytes' are NOT set here - the
+# view reads them straight from the actual shipped installer
+# (apps.app.views.admin_app_version/admin_app_installer_path), so they can
+# never silently fall behind what's really been published again (0.2.12
+# stayed configured here through two real releases, so neither 0.3.0 nor
+# 0.3.1 ever prompted anyone to update). Update the *_NOTES/*_DATE/
+# *_MANDATORY env vars (or just edit the defaults below) whenever you
+# publish a new installer and want admins to see what changed.
 CBT_ADMIN_APP_VERSION = {
-    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.12"),
     "release_notes": os.environ.get(
         "CBT_ADMIN_APP_RELEASE_NOTES",
-        "- Added a Show/Hide toggle to the Cloud Login password field and the "
-        "JWT-token/LAN-PIN prompts, so you can confirm what you typed before "
-        "submitting\n"
-        "- Fixed downloads and in-app updates sometimes serving an older "
-        "installer once release numbers passed 0.2.9 (a version-sorting bug)\n"
-        "- Silent update failures (e.g. antivirus briefly locking the app "
-        "file mid-update) are no longer invisible - a failed attempt now "
-        "leaves a log and tells you plainly instead of repeating the same "
-        "update prompt forever\n"
-        "- Carries forward 0.2.11's CBT License Key system and Ethernet/"
-        "Wi-Fi networking improvements.",
+        "- Fixed exam login: the class-based exam visibility rollout "
+        "(0.3.0) sent an exam's class in a different format than a "
+        "student's own class, so no exam was visible to any student - "
+        "fixed, and the Class field on Create/Edit Exam is now a dropdown "
+        "instead of free text, so this can't happen from a typo again\n"
+        "- Several screens (Connecting, Connection Problem, Settings, Exam "
+        "Login) now center their content on larger or maximized windows "
+        "instead of staying pinned in the top-left corner\n"
+        "- Carries forward 0.3.0's move to class-based exam visibility and "
+        "removal of the per-exam LAN PIN from student login.",
     ),
-    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-24"),
+    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-10-25"),
     # Served straight from this server's own git-tracked installer folder
     # (schooldom-cbt-win7/release/) rather than a GitHub Release asset -
     # admin_app_installer_path() always resolves to the highest version
@@ -539,7 +542,6 @@ CBT_ADMIN_APP_VERSION = {
         "CBT_ADMIN_APP_DOWNLOAD_URL",
         "https://schooldom.academy/app/download/admin/",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3809877),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
