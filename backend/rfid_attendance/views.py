@@ -15,6 +15,7 @@ originally built for).
 """
 import threading
 from datetime import timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
@@ -138,6 +139,34 @@ def _student_dva_payload(student_profile):
     return None
 
 
+def _school_localtime(school, moment=None):
+    """timezone.localtime(moment) converts to Django's single global
+    TIME_ZONE setting (Africa/Lagos) regardless of which school is asking -
+    every gate SMS, clock-in/out message, and the classify_event window
+    check itself all went through that, silently ignoring
+    SchoolTenant.timezone (an admin-editable per-school field, see
+    _school_payload/the school settings update view) entirely. A school
+    whose configured timezone differs from the platform default got SMS
+    times that didn't match their own clock, and - worse - clock-in/late/
+    clock-out window classification computed against the wrong "now".
+    Falls back to the Django default for an empty/unrecognized zone
+    string (e.g. still the field's own 'UTC' default) rather than
+    raising, since a bad per-school setting must never break a scan."""
+    moment = moment or timezone.now()
+    tz_name = str(getattr(school, 'timezone', '') or '').strip()
+    # 'UTC' is the field's own blank-state default (every school that has
+    # never touched this setting sits at exactly that value) - treating it
+    # as "not configured" and falling through to the platform default
+    # (Africa/Lagos) avoids silently shifting every untouched school back
+    # an hour. Only a school that picked something else gets honored here.
+    if tz_name and tz_name != 'UTC':
+        try:
+            return moment.astimezone(ZoneInfo(tz_name))
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
+    return timezone.localtime(moment)
+
+
 def _gate_sms_text(school, student, action, event, occurred_at=None):
     """Deliberately separate from users.app_views._attendance_sms_text -
     that one is gated behind a parent's paid Kids Monitor subscription
@@ -156,7 +185,7 @@ def _gate_sms_text(school, student, action, event, occurred_at=None):
 
     Signed with the school's own name, not "SchoolDom" - this message is
     the school talking to its own parents, not a platform notification."""
-    moment = timezone.localtime(occurred_at or timezone.now())
+    moment = _school_localtime(school, occurred_at)
     time_str = moment.strftime('%I:%M %p').lstrip('0')
     date_str = moment.strftime('%b %d')
     name = student.get_full_name() or student.email
@@ -599,9 +628,9 @@ def _too_early_response(gate_settings):
 
 def _record_student_scan(request, school, student, card_uid, idempotency_key):
     scanned_at = _parse_scanned_at(request)
-    today = timezone.localdate(scanned_at) if scanned_at else timezone.localdate()
+    today = _school_localtime(school, scanned_at).date()
     gate_settings = get_or_create_gate_settings(school)
-    event = gate_settings.classify_event(timezone.localtime(scanned_at or timezone.now()).time())
+    event = gate_settings.classify_event(_school_localtime(school, scanned_at).time())
     if event == 'too_early':
         return _too_early_response(gate_settings)
 
@@ -714,9 +743,9 @@ def _record_staff_scan(request, school, staff, card_uid, idempotency_key):
     location field below is left null on purpose, all of which are nullable
     on TeacherAttendance already."""
     scanned_at = _parse_scanned_at(request)
-    today = timezone.localdate(scanned_at) if scanned_at else timezone.localdate()
+    today = _school_localtime(school, scanned_at).date()
     gate_settings = get_or_create_gate_settings(school)
-    event = gate_settings.classify_event(timezone.localtime(scanned_at or timezone.now()).time())
+    event = gate_settings.classify_event(_school_localtime(school, scanned_at).time())
     if event == 'too_early':
         return _too_early_response(gate_settings)
 
@@ -742,7 +771,7 @@ def _record_staff_scan(request, school, staff, card_uid, idempotency_key):
         if scanned_at:
             extra_update['check_in_time'] = scanned_at
             extra_update['attendance_date'] = today
-        local_event = timezone.localtime(event_time)
+        local_event = _school_localtime(school, event_time)
         message = f"{staff.get_full_name()} clocked in at {local_event.strftime('%I:%M %p').lstrip('0')} on {local_event.strftime('%b %d')}."
     elif existing.check_out_time is None:
         # Same override as _record_student_scan: once the terminal's own
@@ -761,7 +790,7 @@ def _record_staff_scan(request, school, staff, card_uid, idempotency_key):
         event_time = scanned_at or attendance.check_out_time
         if scanned_at:
             extra_update['check_out_time'] = scanned_at
-        local_event = timezone.localtime(event_time)
+        local_event = _school_localtime(school, event_time)
         message = f"{staff.get_full_name()} clocked out at {local_event.strftime('%I:%M %p').lstrip('0')} on {local_event.strftime('%b %d')}."
     else:
         return _bad_request(f'{staff.get_full_name()} has already clocked out today.')
@@ -1016,7 +1045,7 @@ def attendance_history(request):
         except ValueError:
             return _bad_request('date must be YYYY-MM-DD.')
     else:
-        end_date = timezone.localdate()
+        end_date = _school_localtime(school).date()
         start_date = end_date - timezone.timedelta(days=7)
 
     student_rows = (
