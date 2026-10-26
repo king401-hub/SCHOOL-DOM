@@ -1,16 +1,22 @@
 """
 Recovers fee payments that Paystack charged successfully but SchoolDom never
 recorded, because the webhook that should have credited them was crashing
-with an uncaught AttributeError (fixed alongside this command - see
-finance/services.py process_paystack_webhook's dedicated_nuban branch).
-Paystack retries a failed webhook delivery for a while and then gives up, so
-any transfer older than that retry window needs this one-off backfill.
+(two separate bugs fixed alongside this command: a null-metadata
+AttributeError, and a "FOR UPDATE on the nullable side of an outer join"
+Postgres error - see finance/services.py process_paystack_webhook's
+dedicated_nuban branch and process_virtual_account_payment). Paystack retries
+a failed webhook delivery for a while and then gives up, so any transfer
+older than that retry window needs this one-off backfill.
 
 Walks Paystack's own transaction list for a date range, finds successful
-dedicated_nuban (virtual account bank transfer) charges with no matching
-Transaction row here, and replays each one through the normal webhook
-processing path so it gets allocated exactly as if the webhook had worked.
-Safe to re-run: process_paystack_webhook skips anything already recorded.
+dedicated_nuban (virtual account bank transfer) charges that either have no
+Transaction row here at all, OR have one stuck at allocation_status=pending
+(process_virtual_account_payment creates the Transaction row before running
+the fee-allocation query that was crashing, so a failed call still leaves a
+row behind - checking existence alone misses these entirely), and replays
+each one through the normal webhook processing path so it gets allocated
+exactly as if the webhook had worked. Safe to re-run: anything already
+allocated is skipped.
 """
 from datetime import timedelta
 
@@ -76,14 +82,17 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Found {len(candidates)} successful dedicated_nuban charge(s) in the last {since_days} day(s).")
 
-        existing_refs = set(
+        # A row that exists but is still ALLOCATION_PENDING means a prior call
+        # created the Transaction and then crashed before allocating it to any
+        # fee - that needs replaying exactly like a genuinely missing one.
+        done_refs = set(
             Transaction.objects.filter(
                 paystack_ref__in=[c.get("reference") for c in candidates]
-            ).values_list("paystack_ref", flat=True)
+            ).exclude(allocation_status=Transaction.ALLOCATION_PENDING).values_list("paystack_ref", flat=True)
         )
 
-        missing = [c for c in candidates if c.get("reference") not in existing_refs]
-        self.stdout.write(f"{len(missing)} of those have no Transaction row here and would be recovered.")
+        missing = [c for c in candidates if c.get("reference") not in done_refs]
+        self.stdout.write(f"{len(missing)} of those are missing or stuck pending and would be recovered.")
 
         for row in missing:
             reference = row.get("reference")
