@@ -2,6 +2,10 @@ import { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle, ArrowRight, Star, Zap, Shield, Users, Eye, ScanLine } from 'lucide-react';
 
+const K12_COLOR = '#c9a24e';
+const NONK12_COLOR = '#8a7246';
+const GATE_COLOR = '#a86a4a';
+
 function useVisible(threshold = 0.15) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -29,13 +33,13 @@ export default function Pricing() {
   return (
     <section id="pricing" ref={ref} className="py-28 px-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(34,197,94,0.05) 0%, transparent 60%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(201,162,78,0.04) 0%, transparent 60%)' }} />
 
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-14"
-          style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(24px)', transition: 'all 0.7s ease' }}>
-          <span className="badge badge-green mb-4">{t('pricing.badge')}</span>
-          <h2 className="font-display font-black text-4xl sm:text-5xl text-white mb-4">
+          style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(20px)', transition: 'all 0.7s ease' }}>
+          <span className="badge mb-4">{t('pricing.badge')}</span>
+          <h2 className="font-display font-semibold text-4xl sm:text-5xl text-white mb-4">
             {t('pricing.title')} <span className="gradient-text">{t('pricing.titleHighlight')}</span>
           </h2>
           <p className="text-slate-400 max-w-lg mx-auto">{t('pricing.subtitle')}</p>
@@ -45,35 +49,32 @@ export default function Pricing() {
           {/* K-12 Card */}
           <div className="relative rounded-3xl p-8 overflow-hidden sd-card"
             style={{
-              border: '1px solid rgba(34,197,94,0.25)',
-              boxShadow: '0 0 60px rgba(34,197,94,0.08), inset 0 1px 0 rgba(34,197,94,0.08)',
+              border: `1px solid ${K12_COLOR}40`,
               opacity: visible ? 1 : 0,
-              transform: visible ? 'none' : 'translateY(30px)',
+              transform: visible ? 'none' : 'translateY(24px)',
               transition: 'all 0.7s ease 0.1s',
             }}>
             <div className="absolute top-4 right-4">
-              <span className="flex items-center gap-1 badge badge-green text-[9px]">
+              <span className="flex items-center gap-1 badge text-[9px]">
                 <Star className="h-2.5 w-2.5 fill-current" /> {t('pricing.mostPopular')}
               </span>
             </div>
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 pointer-events-none"
-              style={{ background: 'radial-gradient(ellipse, rgba(34,197,94,0.1) 0%, transparent 70%)', filter: 'blur(20px)' }} />
 
             <div className="relative">
               <div className="flex items-center gap-3 mb-6">
                 <div className="h-11 w-11 rounded-2xl flex items-center justify-center"
-                  style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)' }}>
-                  <Users className="h-5 w-5" style={{ color: '#22c55e' }} />
+                  style={{ background: `${K12_COLOR}22`, border: `1px solid ${K12_COLOR}50` }}>
+                  <Users className="h-5 w-5" style={{ color: K12_COLOR }} />
                 </div>
                 <div>
-                  <h3 className="font-display font-black text-white text-xl">{t('pricing.k12.name')}</h3>
+                  <h3 className="font-display font-semibold text-white text-xl">{t('pricing.k12.name')}</h3>
                   <p className="text-slate-500 text-xs">{t('pricing.k12.tagline')}</p>
                 </div>
               </div>
 
               <div className="mb-6">
                 <div className="flex items-end gap-2">
-                  <span className="font-display font-black text-5xl" style={{ color: '#22c55e' }}>₦500</span>
+                  <span className="font-display font-semibold text-5xl" style={{ color: K12_COLOR }}>₦500</span>
                   <div className="mb-2">
                     <p className="text-white text-sm font-semibold">{t('pricing.k12.perTerm')}</p>
                     <p className="text-slate-500 text-xs">{t('pricing.k12.termLength')}</p>
@@ -85,22 +86,22 @@ export default function Pricing() {
               {/* Child Monitor Toggle */}
               <div className="rounded-2xl p-4 mb-6 transition-all sd-card"
                 style={{
-                  background: kidMonitor ? 'rgba(34,197,94,0.06)' : undefined,
-                  borderColor: kidMonitor ? 'rgba(34,197,94,0.3)' : undefined,
+                  background: kidMonitor ? `${K12_COLOR}10` : undefined,
+                  borderColor: kidMonitor ? `${K12_COLOR}50` : undefined,
                 }}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <Eye className="h-4 w-4 shrink-0" style={{ color: kidMonitor ? '#22c55e' : '#475569' }} />
+                    <Eye className="h-4 w-4 shrink-0" style={{ color: kidMonitor ? K12_COLOR : '#5a554d' }} />
                     <div>
                       <p className="text-white text-sm font-semibold">{t('pricing.childMonitor.title')}</p>
                       <p className="text-slate-500 text-[10px]">{t('pricing.childMonitor.desc')}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-mono font-bold" style={{ color: '#22c55e' }}>{t('pricing.childMonitor.price')}</span>
+                    <span className="text-xs font-mono font-bold" style={{ color: K12_COLOR }}>{t('pricing.childMonitor.price')}</span>
                     <button onClick={() => setKidMonitor(k => !k)}
                       className="relative h-6 w-11 rounded-full transition-all cursor-pointer shrink-0"
-                      style={{ background: kidMonitor ? '#22c55e' : 'rgba(255,255,255,0.1)' }}>
+                      style={{ background: kidMonitor ? K12_COLOR : 'rgba(255,255,255,0.12)' }}>
                       <div className="absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200"
                         style={{ left: kidMonitor ? 24 : 4 }} />
                     </button>
@@ -109,7 +110,7 @@ export default function Pricing() {
                 {kidMonitor && (
                   <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
                     <span className="text-slate-400 text-xs">{t('pricing.childMonitor.totalPerTerm')}</span>
-                    <span className="font-display font-black text-lg" style={{ color: '#22c55e' }}>₦1,500</span>
+                    <span className="font-display font-semibold text-lg" style={{ color: K12_COLOR }}>₦1,500</span>
                   </div>
                 )}
               </div>
@@ -117,7 +118,7 @@ export default function Pricing() {
               <ul className="space-y-2.5 mb-8">
                 {K12_FEATURES.map(f => (
                   <li key={f} className="flex items-center gap-3 text-slate-300 text-sm">
-                    <CheckCircle className="h-4 w-4 shrink-0" style={{ color: '#22c55e' }} />
+                    <CheckCircle className="h-4 w-4 shrink-0" style={{ color: K12_COLOR }} />
                     {f}
                   </li>
                 ))}
@@ -132,30 +133,26 @@ export default function Pricing() {
           {/* Non-K12 Card */}
           <div className="relative rounded-3xl p-8 overflow-hidden sd-card"
             style={{
-              border: '1px solid rgba(14,165,233,0.2)',
-              boxShadow: '0 0 40px rgba(14,165,233,0.05)',
+              border: `1px solid ${NONK12_COLOR}40`,
               opacity: visible ? 1 : 0,
-              transform: visible ? 'none' : 'translateY(30px)',
+              transform: visible ? 'none' : 'translateY(24px)',
               transition: 'all 0.7s ease 0.25s',
             }}>
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 pointer-events-none"
-              style={{ background: 'radial-gradient(ellipse, rgba(14,165,233,0.07) 0%, transparent 70%)', filter: 'blur(20px)' }} />
-
             <div className="relative">
               <div className="flex items-center gap-3 mb-6">
                 <div className="h-11 w-11 rounded-2xl flex items-center justify-center"
-                  style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.25)' }}>
-                  <Zap className="h-5 w-5" style={{ color: '#0ea5e9' }} />
+                  style={{ background: `${NONK12_COLOR}22`, border: `1px solid ${NONK12_COLOR}50` }}>
+                  <Zap className="h-5 w-5" style={{ color: NONK12_COLOR }} />
                 </div>
                 <div>
-                  <h3 className="font-display font-black text-white text-xl">{t('pricing.nonK12.name')}</h3>
+                  <h3 className="font-display font-semibold text-white text-xl">{t('pricing.nonK12.name')}</h3>
                   <p className="text-slate-500 text-xs">{t('pricing.nonK12.tagline')}</p>
                 </div>
               </div>
 
               <div className="mb-6">
                 <div className="flex items-end gap-2">
-                  <span className="font-display font-black text-5xl" style={{ color: '#0ea5e9' }}>₦200</span>
+                  <span className="font-display font-semibold text-5xl" style={{ color: NONK12_COLOR }}>₦200</span>
                   <div className="mb-2">
                     <p className="text-white text-sm font-semibold">{t('pricing.nonK12.perMonth')}</p>
                     <p className="text-slate-500 text-xs">{t('pricing.nonK12.billedMonthly')}</p>
@@ -177,15 +174,15 @@ export default function Pricing() {
               <ul className="space-y-2.5 mb-8">
                 {NON_K12_FEATURES.map(f => (
                   <li key={f} className="flex items-center gap-3 text-slate-300 text-sm">
-                    <CheckCircle className="h-4 w-4 shrink-0" style={{ color: '#0ea5e9' }} />
+                    <CheckCircle className="h-4 w-4 shrink-0" style={{ color: NONK12_COLOR }} />
                     {f}
                   </li>
                 ))}
               </ul>
 
               <a href="/#/signup?tier=non_k12"
-                className="w-full py-4 rounded-2xl font-bold text-base text-white cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
-                style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.3)' }}>
+                className="w-full py-4 rounded-2xl font-semibold text-base text-white cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
+                style={{ background: `${NONK12_COLOR}22`, border: `1px solid ${NONK12_COLOR}55` }}>
                 {t('pricing.nonK12.cta')} <ArrowRight className="h-4 w-4 inline ml-2" />
               </a>
             </div>
@@ -194,28 +191,25 @@ export default function Pricing() {
           {/* SchoolGate Card */}
           <div className="relative rounded-3xl p-8 overflow-hidden sd-card"
             style={{
-              border: '1px solid rgba(139,92,246,0.25)',
-              boxShadow: '0 0 40px rgba(139,92,246,0.06)',
+              border: `1px solid ${GATE_COLOR}40`,
               opacity: visible ? 1 : 0,
-              transform: visible ? 'none' : 'translateY(30px)',
+              transform: visible ? 'none' : 'translateY(24px)',
               transition: 'all 0.7s ease 0.4s',
             }}>
             <div className="absolute top-4 right-4">
-              <span className="badge text-[9px]" style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)', color: '#c4b5fd' }}>
+              <span className="badge text-[9px]" style={{ background: `${GATE_COLOR}22`, border: `1px solid ${GATE_COLOR}50`, color: GATE_COLOR }}>
                 {t('pricing.new')}
               </span>
             </div>
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 pointer-events-none"
-              style={{ background: 'radial-gradient(ellipse, rgba(139,92,246,0.1) 0%, transparent 70%)', filter: 'blur(20px)' }} />
 
             <div className="relative">
               <div className="flex items-center gap-3 mb-6">
                 <div className="h-11 w-11 rounded-2xl flex items-center justify-center"
-                  style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)' }}>
-                  <ScanLine className="h-5 w-5" style={{ color: '#8b5cf6' }} />
+                  style={{ background: `${GATE_COLOR}22`, border: `1px solid ${GATE_COLOR}50` }}>
+                  <ScanLine className="h-5 w-5" style={{ color: GATE_COLOR }} />
                 </div>
                 <div>
-                  <h3 className="font-display font-black text-white text-xl">{t('pricing.schoolgate.name')}</h3>
+                  <h3 className="font-display font-semibold text-white text-xl">{t('pricing.schoolgate.name')}</h3>
                   <p className="text-slate-500 text-xs">{t('pricing.schoolgate.tagline')}</p>
                 </div>
               </div>
@@ -226,8 +220,8 @@ export default function Pricing() {
                   <button key={plan} onClick={() => setGatePlan(plan)}
                     className="flex-1 py-2 rounded-lg text-xs font-bold capitalize transition-all cursor-pointer"
                     style={{
-                      background: gatePlan === plan ? 'rgba(139,92,246,0.18)' : 'transparent',
-                      color: gatePlan === plan ? '#c4b5fd' : '#64748b',
+                      background: gatePlan === plan ? `${GATE_COLOR}28` : 'transparent',
+                      color: gatePlan === plan ? GATE_COLOR : '#6b645b',
                     }}>
                     {plan === 'basic' ? t('pricing.schoolgate.basic') : t('pricing.schoolgate.premium')}
                   </button>
@@ -236,7 +230,7 @@ export default function Pricing() {
 
               <div className="mb-6">
                 <div className="flex items-end gap-2">
-                  <span className="font-display font-black text-5xl" style={{ color: '#8b5cf6' }}>
+                  <span className="font-display font-semibold text-5xl" style={{ color: GATE_COLOR }}>
                     ₦{gatePlan === 'premium' ? '1,500' : '700'}
                   </span>
                   <div className="mb-2">
@@ -249,15 +243,15 @@ export default function Pricing() {
               <ul className="space-y-2.5 mb-8">
                 {SCHOOLGATE_FEATURES[gatePlan].map(f => (
                   <li key={f} className="flex items-center gap-3 text-slate-300 text-sm">
-                    <CheckCircle className="h-4 w-4 shrink-0" style={{ color: '#8b5cf6' }} />
+                    <CheckCircle className="h-4 w-4 shrink-0" style={{ color: GATE_COLOR }} />
                     {f}
                   </li>
                 ))}
               </ul>
 
               <a href={`/#/signup?product=schoolgate&plan=${gatePlan}`}
-                className="w-full py-4 rounded-2xl font-bold text-base text-white cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
-                style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.35)' }}>
+                className="w-full py-4 rounded-2xl font-semibold text-base text-white cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
+                style={{ background: `${GATE_COLOR}22`, border: `1px solid ${GATE_COLOR}55` }}>
                 {t('pricing.schoolgate.cta')} <ArrowRight className="h-4 w-4 inline ml-2" />
               </a>
             </div>
@@ -268,15 +262,15 @@ export default function Pricing() {
         <div className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-4"
           style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.5s' }}>
           {[
-            { icon: Shield, label: t('pricing.guarantees.noSetupFee'), color: '#22c55e' },
-            { icon: Zap, label: t('pricing.guarantees.startIn4Min'), color: '#0ea5e9' },
-            { icon: Users, label: t('pricing.guarantees.unlimitedUsers'), color: '#8b5cf6' },
-            { icon: Star, label: t('pricing.guarantees.cancelAnytime'), color: '#f59e0b' },
+            { icon: Shield, label: t('pricing.guarantees.noSetupFee') },
+            { icon: Zap, label: t('pricing.guarantees.startIn4Min') },
+            { icon: Users, label: t('pricing.guarantees.unlimitedUsers') },
+            { icon: Star, label: t('pricing.guarantees.cancelAnytime') },
           ].map(g => {
             const Icon = g.icon;
             return (
               <div key={g.label} className="flex items-center gap-2 justify-center px-4 py-3 rounded-xl sd-card">
-                <Icon className="h-4 w-4 shrink-0" style={{ color: g.color }} />
+                <Icon className="h-4 w-4 shrink-0" style={{ color: '#c9a24e' }} />
                 <span className="text-slate-400 text-xs">{g.label}</span>
               </div>
             );

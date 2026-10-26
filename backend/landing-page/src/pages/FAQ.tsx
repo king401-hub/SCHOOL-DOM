@@ -7,11 +7,11 @@ const CATEGORY_KEYS = ['pricing', 'cbt', 'finance', 'setup', 'security'] as cons
 type CategoryKey = (typeof CATEGORY_KEYS)[number];
 
 const CATEGORY_COLORS: Record<CategoryKey, string> = {
-  pricing: '#22c55e',
-  cbt: '#0ea5e9',
-  finance: '#8b5cf6',
-  setup: '#f59e0b',
-  security: '#10b981',
+  pricing: '#c9a24e',
+  cbt: '#c9a24e',
+  finance: '#c9a24e',
+  setup: '#c9a24e',
+  security: '#c9a24e',
 };
 
 interface FaqItem { q: string; a: string }
@@ -67,7 +67,7 @@ export default function FAQPage() {
   return (
     <div className="min-h-screen pt-24 pb-20 px-4 relative">
       <div className="absolute top-0 inset-x-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(34,197,94,0.05) 0%, transparent 50%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(201,162,78,0.05) 0%, transparent 50%)' }} />
 
       <div className="max-w-3xl mx-auto">
         {/* Back */}
@@ -81,7 +81,7 @@ export default function FAQPage() {
           <h1 className="font-display font-black text-4xl sm:text-5xl text-white mb-4">
             {t('faq.title')} <span className="gradient-text">{t('faq.titleHighlight')}</span>
           </h1>
-          <p className="text-slate-400">{t('faq.intro')} <a href="/#/contact" className="text-green-400 hover:underline">{t('faq.contactUs')}</a></p>
+          <p className="text-slate-400">{t('faq.intro')} <a href="/#/contact" className="hover:underline" style={{ color: '#c9a24e' }}>{t('faq.contactUs')}</a></p>
         </div>
 
         {/* Search */}
@@ -104,9 +104,9 @@ export default function FAQPage() {
               onClick={() => setActiveCategory(cat.key)}
               className="px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer sd-card-2"
               style={{
-                background: activeCategory === cat.key ? 'rgba(34,197,94,0.1)' : undefined,
-                borderColor: activeCategory === cat.key ? 'rgba(34,197,94,0.3)' : undefined,
-                color: activeCategory === cat.key ? '#22c55e' : undefined,
+                background: activeCategory === cat.key ? 'rgba(201,162,78,0.1)' : undefined,
+                borderColor: activeCategory === cat.key ? 'rgba(201,162,78,0.3)' : undefined,
+                color: activeCategory === cat.key ? '#c9a24e' : undefined,
               }}
             >
               {cat.label}
@@ -127,15 +127,15 @@ export default function FAQPage() {
           ))}
           {filtered.length === 0 && (
             <div className="text-center py-16">
-              <p className="text-slate-500">{t('faq.noResults')} <a href="/#/contact" className="text-green-400 hover:underline">{t('faq.askDirectly')}</a></p>
+              <p className="text-slate-500">{t('faq.noResults')} <a href="/#/contact" className="hover:underline" style={{ color: '#c9a24e' }}>{t('faq.askDirectly')}</a></p>
             </div>
           )}
         </div>
 
         {/* Still have questions */}
         <div className="mt-14 rounded-2xl p-8 text-center"
-          style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.07), rgba(14,165,233,0.07))', border: '1px solid rgba(34,197,94,0.15)' }}>
-          <h3 className="font-display font-black text-white text-xl mb-2">{t('faq.stillQuestionsTitle')}</h3>
+          style={{ background: 'rgba(201,162,78,0.07)', border: '1px solid rgba(201,162,78,0.2)' }}>
+          <h3 className="font-display font-semibold text-white text-xl mb-2">{t('faq.stillQuestionsTitle')}</h3>
           <p className="text-slate-400 text-sm mb-5">{t('faq.stillQuestionsSubtitle')}</p>
           <a href="/#/contact" className="btn-primary inline-flex">
             {t('faq.contactSupport')} <ArrowLeft className="h-4 w-4 rotate-180" />

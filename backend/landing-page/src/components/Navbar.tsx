@@ -1,26 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Menu, X, ChevronDown, Sun, Moon } from 'lucide-react';
+import { Menu, X, ChevronDown } from 'lucide-react';
 import LanguageSwitcher from './LanguageSwitcher';
-
-function ThemeToggle({ label }: { label: string }) {
-  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
-    (localStorage.getItem('sd-theme') as 'dark' | 'light') || 'dark'
-  );
-  useEffect(() => {
-    document.documentElement.classList.toggle('light', theme === 'light');
-    localStorage.setItem('sd-theme', theme);
-  }, [theme]);
-  return (
-    <button
-      onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
-      aria-label={label}
-      className="h-9 w-9 rounded-xl border border-white/8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer shrink-0"
-    >
-      {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" style={{ color: '#475569' }} />}
-    </button>
-  );
-}
 
 interface NavbarProps {
   onSignIn: () => void;
@@ -81,13 +62,12 @@ export default function Navbar({ onSignIn }: NavbarProps) {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between">
           <a href="/" className="flex items-center gap-3 group">
-            <div className="h-9 w-9 rounded-xl overflow-hidden border border-white/10 group-hover:border-green-500/30 transition-all"
-              style={{ boxShadow: '0 0 12px rgba(34,197,94,0.15)' }}>
+            <div className="h-9 w-9 rounded-xl overflow-hidden border border-white/10 group-hover:border-[#c9a24e]/40 transition-all">
               <img src="/schooldom-favicon.jpeg" alt="Schooldom" className="w-full h-full object-cover" />
             </div>
             <div className="flex flex-col leading-none">
-              <span className="font-display font-black text-white text-lg tracking-tight">Schooldom</span>
-              <span className="text-[9px] font-bold uppercase tracking-[0.15em]" style={{ color: '#22c55e' }}>Academy</span>
+              <span className="font-display font-bold text-white text-lg tracking-tight">Schooldom</span>
+              <span className="text-[9px] font-semibold uppercase tracking-[0.15em]" style={{ color: '#c9a24e' }}>Academy</span>
             </div>
           </a>
 
@@ -119,13 +99,13 @@ export default function Navbar({ onSignIn }: NavbarProps) {
                     onClick={() => scrollTo(link.href)}
                     className="px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer relative"
                     style={{
-                      color: activeLink === link.href.slice(1) ? '#22c55e' : '#94a3b8',
-                      background: activeLink === link.href.slice(1) ? 'rgba(34,197,94,0.06)' : 'transparent',
+                      color: activeLink === link.href.slice(1) ? '#c9a24e' : '#94a3b8',
+                      background: activeLink === link.href.slice(1) ? 'rgba(201,162,78,0.08)' : 'transparent',
                     }}
                   >
                     {link.label}
                     {activeLink === link.href.slice(1) && (
-                      <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-green-500" />
+                      <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style={{ background: '#c9a24e' }} />
                     )}
                   </button>
                 )}
@@ -135,14 +115,12 @@ export default function Navbar({ onSignIn }: NavbarProps) {
 
           <div className="hidden md:flex items-center gap-3">
             <LanguageSwitcher />
-            <ThemeToggle label={t('nav.toggleTheme')} />
             <button onClick={onSignIn} className="btn-ghost text-sm px-5 py-2">{t('nav.signIn')}</button>
             <a href="/#/signup" className="btn-primary text-sm px-5 py-2">{t('nav.getStarted')}</a>
           </div>
 
           <div className="md:hidden flex items-center gap-2">
             <LanguageSwitcher />
-            <ThemeToggle label={t('nav.toggleTheme')} />
             <button
               className="p-2 rounded-xl border border-white/8 text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
               onClick={() => setMobileOpen(o => !o)}

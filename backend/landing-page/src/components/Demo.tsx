@@ -2,6 +2,8 @@ import { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { TrendingUp, Users, DollarSign, BookOpen, Zap, Shield, Globe, Award } from 'lucide-react';
 
+const GOLD = '#c9a24e';
+
 function useVisible(threshold = 0.15) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -38,12 +40,12 @@ function AnimatedCounter({ target, prefix = '', suffix = '' }: { target: number;
 
 function buildStats(t: (key: string) => string) {
   return [
-    { icon: Users, value: 300, suffix: '+', label: t('demo.stats.schools.label'), desc: t('demo.stats.schools.desc'), color: '#22c55e' },
-    { icon: BookOpen, value: 95000, suffix: '+', label: t('demo.stats.students.label'), desc: t('demo.stats.students.desc'), color: '#0ea5e9' },
-    { icon: DollarSign, value: 450, prefix: '₦', suffix: 'M+', label: t('demo.stats.fees.label'), desc: t('demo.stats.fees.desc'), color: '#8b5cf6' },
-    { icon: TrendingUp, value: 15000, suffix: '+', label: t('demo.stats.exams.label'), desc: t('demo.stats.exams.desc'), color: '#f59e0b' },
-    { icon: Award, value: 98, suffix: '%', label: t('demo.stats.retention.label'), desc: t('demo.stats.retention.desc'), color: '#10b981' },
-    { icon: Zap, value: 4, suffix: 'min', label: t('demo.stats.setup.label'), desc: t('demo.stats.setup.desc'), color: '#ec4899' },
+    { icon: Users, value: 300, suffix: '+', label: t('demo.stats.schools.label'), desc: t('demo.stats.schools.desc') },
+    { icon: BookOpen, value: 95000, suffix: '+', label: t('demo.stats.students.label'), desc: t('demo.stats.students.desc') },
+    { icon: DollarSign, value: 450, prefix: '₦', suffix: 'M+', label: t('demo.stats.fees.label'), desc: t('demo.stats.fees.desc') },
+    { icon: TrendingUp, value: 15000, suffix: '+', label: t('demo.stats.exams.label'), desc: t('demo.stats.exams.desc') },
+    { icon: Award, value: 98, suffix: '%', label: t('demo.stats.retention.label'), desc: t('demo.stats.retention.desc') },
+    { icon: Zap, value: 4, suffix: 'min', label: t('demo.stats.setup.label'), desc: t('demo.stats.setup.desc') },
   ];
 }
 
@@ -61,16 +63,16 @@ export default function Demo() {
   return (
     <section id="demo" ref={ref} className="py-28 px-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 20% 50%, rgba(34,197,94,0.04) 0%, transparent 60%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 20% 50%, rgba(201,162,78,0.03) 0%, transparent 60%)' }} />
 
       <div className="max-w-7xl mx-auto">
         {/* Heading */}
         <div className="text-center mb-16"
-          style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(24px)', transition: 'all 0.7s ease' }}>
-          <span className="badge badge-green mb-4">
+          style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(20px)', transition: 'all 0.7s ease' }}>
+          <span className="badge mb-4">
             <Globe className="h-3 w-3" /> {t('demo.badge')}
           </span>
-          <h2 className="font-display font-black text-4xl sm:text-5xl text-white mb-4">
+          <h2 className="font-display font-semibold text-4xl sm:text-5xl text-white mb-4">
             {t('demo.title')}{' '}
             <span className="gradient-text">{t('demo.titleHighlight')}</span>
           </h2>
@@ -83,17 +85,15 @@ export default function Demo() {
             const Icon = s.icon;
             return (
               <div key={s.label}
-                className="premium-card p-6 relative overflow-hidden group"
+                className="premium-card p-6 relative overflow-hidden"
                 style={{
                   opacity: visible ? 1 : 0,
-                  transform: visible ? 'none' : 'translateY(24px)',
+                  transform: visible ? 'none' : 'translateY(20px)',
                   transition: `all 0.6s ease ${i * 80}ms`,
                 }}
               >
-                <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-5"
-                  style={{ background: s.color, filter: 'blur(20px)' }} />
-                <Icon className="h-6 w-6 mb-3" style={{ color: s.color }} />
-                <p className="font-display font-black text-3xl sm:text-4xl mb-1" style={{ color: s.color }}>
+                <Icon className="h-6 w-6 mb-3" style={{ color: GOLD }} />
+                <p className="font-display font-semibold text-3xl sm:text-4xl mb-1" style={{ color: GOLD }}>
                   <AnimatedCounter target={s.value} prefix={s.prefix} suffix={s.suffix} />
                 </p>
                 <p className="text-white font-semibold text-sm mb-1">{s.label}</p>
@@ -110,7 +110,7 @@ export default function Demo() {
             <div className="flex gap-6 animate-marquee-left" style={{ width: 'max-content' }}>
               {[...LOGOS, ...LOGOS].map((logo, i) => (
                 <div key={i} className="flex items-center gap-2 px-5 py-3 rounded-xl shrink-0 sd-card">
-                  <div className="w-2 h-2 rounded-full" style={{ background: ['#22c55e', '#0ea5e9', '#8b5cf6', '#f59e0b'][i % 4] }} />
+                  <div className="w-2 h-2 rounded-full" style={{ background: GOLD }} />
                   <span className="text-slate-400 text-xs font-medium whitespace-nowrap">{logo}</span>
                 </div>
               ))}
@@ -118,19 +118,19 @@ export default function Demo() {
           </div>
         </div>
 
-        {/* Shield trust bar */}
+        {/* Trust bar */}
         <div className="mt-16 rounded-2xl p-6 flex flex-wrap items-center justify-center gap-8 sd-card"
           style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.7s' }}>
           {[
-            { icon: Shield, label: t('demo.trust.ndpa'), color: '#22c55e' },
-            { icon: Globe, label: t('demo.trust.aws'), color: '#0ea5e9' },
-            { icon: Zap, label: t('demo.trust.uptime'), color: '#8b5cf6' },
-            { icon: Award, label: t('demo.trust.iso'), color: '#f59e0b' },
+            { icon: Shield, label: t('demo.trust.ndpa') },
+            { icon: Globe, label: t('demo.trust.aws') },
+            { icon: Zap, label: t('demo.trust.uptime') },
+            { icon: Award, label: t('demo.trust.iso') },
           ].map(item => {
             const Icon = item.icon;
             return (
               <div key={item.label} className="flex items-center gap-2">
-                <Icon className="h-4 w-4" style={{ color: item.color }} />
+                <Icon className="h-4 w-4" style={{ color: GOLD }} />
                 <span className="text-slate-400 text-sm">{item.label}</span>
               </div>
             );

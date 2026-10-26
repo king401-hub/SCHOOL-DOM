@@ -15,9 +15,7 @@ export default function Footer() {
   return (
     <footer className="relative border-t border-white/5 pt-20 pb-8 px-4 overflow-hidden">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[1px]"
-        style={{ background: 'linear-gradient(90deg, transparent, rgba(34,197,94,0.4), rgba(14,165,233,0.4), transparent)' }} />
-      <div className="absolute top-0 inset-x-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(34,197,94,0.03) 0%, transparent 50%)' }} />
+        style={{ background: 'linear-gradient(90deg, transparent, rgba(201,162,78,0.4), transparent)' }} />
 
       <div className="max-w-7xl mx-auto">
         {/* Main grid */}
@@ -25,13 +23,12 @@ export default function Footer() {
           {/* Brand col */}
           <div className="lg:col-span-2">
             <div className="flex items-center gap-3 mb-5">
-              <div className="h-10 w-10 rounded-xl overflow-hidden border border-white/10"
-                style={{ boxShadow: '0 0 16px rgba(34,197,94,0.15)' }}>
+              <div className="h-10 w-10 rounded-xl overflow-hidden border border-white/10">
                 <img src="/schooldom-favicon.jpeg" alt="Schooldom" className="w-full h-full object-cover" />
               </div>
               <div>
-                <span className="font-display font-black text-white text-xl tracking-tight">Schooldom</span>
-                <span className="text-[9px] font-bold ml-2 px-1.5 py-0.5 rounded border" style={{ color: '#22c55e', background: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.2)' }}>ACADEMY</span>
+                <span className="font-display font-semibold text-white text-xl tracking-tight">Schooldom</span>
+                <span className="text-[9px] font-bold ml-2 px-1.5 py-0.5 rounded border" style={{ color: '#c9a24e', background: 'rgba(201,162,78,0.08)', borderColor: 'rgba(201,162,78,0.25)' }}>ACADEMY</span>
               </div>
             </div>
             <p className="text-slate-500 text-sm leading-relaxed max-w-xs mb-6">
@@ -40,15 +37,15 @@ export default function Footer() {
 
             <div className="space-y-2.5 mb-6">
               <a href="mailto:support@schooldom.academy" className="flex items-center gap-2.5 text-slate-500 hover:text-slate-300 text-sm transition-colors">
-                <Mail className="h-4 w-4 shrink-0" style={{ color: '#22c55e' }} />
+                <Mail className="h-4 w-4 shrink-0" style={{ color: '#c9a24e' }} />
                 support@schooldom.academy
               </a>
               <a href="tel:+2349076821365" className="flex items-center gap-2.5 text-slate-500 hover:text-slate-300 text-sm transition-colors">
-                <Phone className="h-4 w-4 shrink-0" style={{ color: '#0ea5e9' }} />
+                <Phone className="h-4 w-4 shrink-0" style={{ color: '#c9a24e' }} />
                 +234 907 682 1365
               </a>
               <div className="flex items-center gap-2.5 text-slate-500 text-sm">
-                <MapPin className="h-4 w-4 shrink-0" style={{ color: '#8b5cf6' }} />
+                <MapPin className="h-4 w-4 shrink-0" style={{ color: '#c9a24e' }} />
                 {t('footer.location')}
               </div>
             </div>
@@ -88,11 +85,9 @@ export default function Footer() {
 
         {/* CTA block */}
         <div className="rounded-3xl p-10 mb-10 text-center relative overflow-hidden"
-          style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.08), rgba(14,165,233,0.08))', border: '1px solid rgba(34,197,94,0.15)' }}>
-          <div className="absolute inset-0 pointer-events-none"
-            style={{ background: 'radial-gradient(ellipse at 50% 100%, rgba(34,197,94,0.06) 0%, transparent 60%)' }} />
+          style={{ background: 'rgba(201,162,78,0.07)', border: '1px solid rgba(201,162,78,0.2)' }}>
           <div className="relative">
-            <h3 className="font-display font-black text-white text-2xl sm:text-3xl mb-3">
+            <h3 className="font-display font-semibold text-white text-2xl sm:text-3xl mb-3">
               {t('footer.ctaTitle')}
             </h3>
             <p className="text-slate-400 text-sm mb-6">{t('footer.ctaSubtitle')}</p>

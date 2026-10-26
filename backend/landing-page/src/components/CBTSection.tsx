@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Monitor, Wifi, WifiOff, Shield, Zap, CheckCircle, Download, ArrowRight } from 'lucide-react';
+import { Monitor, Wifi, WifiOff, Shield, Zap, CheckCircle, Download } from 'lucide-react';
+
+const GOLD = '#c9a24e';
 
 function useVisible(threshold = 0.15) {
   const ref = useRef<HTMLDivElement>(null);
@@ -39,9 +41,9 @@ function CBTAppMockup() {
 
   return (
     <div className="rounded-2xl overflow-hidden border border-white/8 shadow-2xl keep-dark"
-      style={{ background: 'rgba(10,15,30,0.95)', boxShadow: '0 30px 60px rgba(0,0,0,0.5), 0 0 40px rgba(14,165,233,0.08)' }}>
+      style={{ background: 'rgba(16,14,11,0.96)' }}>
       {/* Title bar */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5" style={{ background: 'rgba(14,165,233,0.05)' }}>
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5" style={{ background: 'rgba(201,162,78,0.05)' }}>
         <div className="flex gap-1.5">
           <div className="w-3 h-3 rounded-full bg-red-500/70" />
           <div className="w-3 h-3 rounded-full bg-yellow-500/70" />
@@ -62,18 +64,18 @@ function CBTAppMockup() {
             <div className="flex gap-0.5 mt-1.5">
               {[...Array(20)].map((_, i) => (
                 <div key={i} className="h-1.5 flex-1 rounded-full transition-all"
-                  style={{ background: i < question ? '#22c55e' : i === question ? '#0ea5e9' : 'rgba(255,255,255,0.06)' }} />
+                  style={{ background: i <= question ? GOLD : 'rgba(255,255,255,0.06)' }} />
               ))}
             </div>
           </div>
           <div className="text-right">
-            <p className="font-mono font-bold text-lg" style={{ color: timeLeft < 600 ? '#ef4444' : '#0ea5e9' }}>{fmt(timeLeft)}</p>
+            <p className="font-mono font-bold text-lg" style={{ color: timeLeft < 600 ? '#f87171' : GOLD }}>{fmt(timeLeft)}</p>
             <p className="text-slate-600 text-[9px]">remaining</p>
           </div>
         </div>
 
         {/* Question */}
-        <div className="rounded-xl p-4 mb-4" style={{ background: 'rgba(14,165,233,0.05)', border: '1px solid rgba(14,165,233,0.15)' }}>
+        <div className="rounded-xl p-4 mb-4" style={{ background: 'rgba(201,162,78,0.05)', border: '1px solid rgba(201,162,78,0.18)' }}>
           <p className="text-white text-sm font-medium leading-relaxed">{q.text}</p>
         </div>
 
@@ -88,9 +90,9 @@ function CBTAppMockup() {
                 onClick={() => setSelected(i)}
                 className="rounded-xl p-3 text-left text-sm font-medium transition-all cursor-pointer"
                 style={{
-                  background: isCorrect ? 'rgba(34,197,94,0.15)' : isSelected ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.03)',
-                  border: `1px solid ${isCorrect ? 'rgba(34,197,94,0.5)' : isSelected ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.06)'}`,
-                  color: isCorrect ? '#22c55e' : isSelected ? '#ef4444' : '#94a3b8',
+                  background: isCorrect ? 'rgba(52,211,153,0.15)' : isSelected ? 'rgba(248,113,113,0.15)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${isCorrect ? 'rgba(52,211,153,0.5)' : isSelected ? 'rgba(248,113,113,0.5)' : 'rgba(255,255,255,0.07)'}`,
+                  color: isCorrect ? '#34d399' : isSelected ? '#f87171' : '#94a3b8',
                 }}
               >
                 <span className="text-[10px] opacity-60 mr-1">{String.fromCharCode(65 + i)}.</span> {opt}
@@ -102,8 +104,8 @@ function CBTAppMockup() {
         {/* Status bar */}
         <div className="mt-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1 text-[9px]" style={{ color: '#22c55e' }}>
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Auto-save on
+            <span className="flex items-center gap-1 text-[9px] text-emerald-400">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Auto-save on
             </span>
             <span className="flex items-center gap-1 text-[9px] text-orange-400">
               <WifiOff className="h-2.5 w-2.5" /> Offline — syncs on reconnect
@@ -116,16 +118,16 @@ function CBTAppMockup() {
   );
 }
 
-interface CbtFeature { icon: typeof WifiOff; title: string; desc: string; color: string }
+interface CbtFeature { icon: typeof WifiOff; title: string; desc: string }
 
 function buildFeatures(t: (key: string) => string): CbtFeature[] {
   return [
-    { icon: WifiOff, title: t('cbt.features.offline.title'), desc: t('cbt.features.offline.desc'), color: '#f97316' },
-    { icon: Shield, title: t('cbt.features.antiCheat.title'), desc: t('cbt.features.antiCheat.desc'), color: '#8b5cf6' },
-    { icon: Zap, title: t('cbt.features.sync.title'), desc: t('cbt.features.sync.desc'), color: '#0ea5e9' },
-    { icon: Monitor, title: t('cbt.features.windows.title'), desc: t('cbt.features.windows.desc'), color: '#22c55e' },
-    { icon: CheckCircle, title: t('cbt.features.marking.title'), desc: t('cbt.features.marking.desc'), color: '#10b981' },
-    { icon: Download, title: t('cbt.features.deploy.title'), desc: t('cbt.features.deploy.desc'), color: '#ec4899' },
+    { icon: WifiOff, title: t('cbt.features.offline.title'), desc: t('cbt.features.offline.desc') },
+    { icon: Shield, title: t('cbt.features.antiCheat.title'), desc: t('cbt.features.antiCheat.desc') },
+    { icon: Zap, title: t('cbt.features.sync.title'), desc: t('cbt.features.sync.desc') },
+    { icon: Monitor, title: t('cbt.features.windows.title'), desc: t('cbt.features.windows.desc') },
+    { icon: CheckCircle, title: t('cbt.features.marking.title'), desc: t('cbt.features.marking.desc') },
+    { icon: Download, title: t('cbt.features.deploy.title'), desc: t('cbt.features.deploy.desc') },
   ];
 }
 
@@ -137,16 +139,16 @@ export default function CBTSection() {
   return (
     <section id="cbt" ref={ref} className="py-28 px-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 80% 50%, rgba(14,165,233,0.05) 0%, transparent 60%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 80% 50%, rgba(201,162,78,0.04) 0%, transparent 60%)' }} />
 
       <div className="max-w-7xl mx-auto">
         <div className="grid lg:grid-cols-2 gap-14 items-center">
           {/* Left */}
-          <div style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateX(-30px)', transition: 'all 0.7s ease' }}>
-            <span className="badge badge-blue mb-5">
+          <div style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateX(-24px)', transition: 'all 0.7s ease' }}>
+            <span className="badge mb-5">
               <Monitor className="h-3 w-3" /> {t('cbt.badge')}
             </span>
-            <h2 className="font-display font-black text-4xl sm:text-5xl text-white leading-tight mb-5">
+            <h2 className="font-display font-semibold text-4xl sm:text-5xl text-white leading-tight mb-5">
               {t('cbt.title')}{' '}
               <span className="gradient-text-reverse">{t('cbt.titleHighlight')}</span>
             </h2>
@@ -159,7 +161,7 @@ export default function CBTSection() {
                 const Icon = f.icon;
                 return (
                   <div key={f.title} className="rounded-xl p-4 hover:border-white/10 transition-all sd-card">
-                    <Icon className="h-5 w-5 mb-2" style={{ color: f.color }} />
+                    <Icon className="h-5 w-5 mb-2" style={{ color: GOLD }} />
                     <p className="text-white text-sm font-semibold mb-1">{f.title}</p>
                     <p className="text-slate-500 text-xs leading-relaxed">{f.desc}</p>
                   </div>
@@ -169,28 +171,28 @@ export default function CBTSection() {
 
             <div className="flex flex-wrap gap-3">
               <div className="flex items-center gap-2 px-4 py-3 rounded-xl border text-sm"
-                style={{ background: 'rgba(34,197,94,0.06)', borderColor: 'rgba(34,197,94,0.2)', color: '#22c55e' }}>
+                style={{ background: 'rgba(201,162,78,0.06)', borderColor: 'rgba(201,162,78,0.2)', color: GOLD }}>
                 <Monitor className="h-4 w-4" />
                 {t('cbt.includedBadge')}
               </div>
               <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-white/8 text-slate-400 text-sm">
-                <Wifi className="h-4 w-4 text-green-400" />
+                <Wifi className="h-4 w-4 text-emerald-400" />
                 {t('cbt.mobileSoon')}
               </div>
             </div>
           </div>
 
           {/* Right: Mockup */}
-          <div style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateX(30px)', transition: 'all 0.7s ease 0.15s' }}>
+          <div style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateX(24px)', transition: 'all 0.7s ease 0.15s' }}>
             <CBTAppMockup />
             <div className="mt-4 grid grid-cols-3 gap-3">
               {[
-                { val: '127', label: t('cbt.statLiveSessions'), color: '#0ea5e9' },
-                { val: '99.8%', label: t('cbt.statUptime'), color: '#22c55e' },
-                { val: '2.8s', label: t('cbt.statSubmitSpeed'), color: '#8b5cf6' },
+                { val: '127', label: t('cbt.statLiveSessions') },
+                { val: '99.8%', label: t('cbt.statUptime') },
+                { val: '2.8s', label: t('cbt.statSubmitSpeed') },
               ].map(s => (
                 <div key={s.label} className="rounded-xl p-3 text-center sd-card">
-                  <p className="font-display font-black text-xl" style={{ color: s.color }}>{s.val}</p>
+                  <p className="font-display font-semibold text-xl" style={{ color: GOLD }}>{s.val}</p>
                   <p className="text-slate-500 text-[10px]">{s.label}</p>
                 </div>
               ))}

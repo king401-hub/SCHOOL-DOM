@@ -53,7 +53,7 @@ export default function LanguageSwitcher({ className = '', align = 'right' }: La
               className="w-full flex items-center justify-between px-4 py-3 text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
             >
               {LANGUAGE_LABELS[code]}
-              {current === code && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: '#22c55e' }} />}
+              {current === code && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: '#c9a24e' }} />}
             </button>
           ))}
         </div>

@@ -5,14 +5,14 @@ import { Star, Quote } from 'lucide-react';
 interface TestimonialData { name: string; role: string; quoteKey: string; schoolKey: string; studentsCount: number; initials: string; color: string }
 
 const TESTIMONIALS: TestimonialData[] = [
-  { name: 'Mr. Adewale Ogundimu', role: 'Principal, Greenfield Academy, Ibadan', quoteKey: 'adewale', schoolKey: 'k12', studentsCount: 1240, initials: 'AO', color: '#22c55e' },
-  { name: 'Mrs. Chidinma Eze', role: 'Bursar, Royal Heights Group of Schools, Enugu', quoteKey: 'chidinma', schoolKey: 'groupOf4', studentsCount: 3800, initials: 'CE', color: '#0ea5e9' },
-  { name: 'Mr. Ibrahim Al-Hassan', role: "ICT Coordinator, Al-Noor International Academy, Kano", quoteKey: 'ibrahim', schoolKey: 'islamicSecondary', studentsCount: 680, initials: 'IH', color: '#8b5cf6' },
-  { name: 'Mrs. Funmilayo Adesanya', role: 'Head Mistress, Sunrise Nursery & Primary, Lagos', quoteKey: 'funmilayo', schoolKey: 'k12', studentsCount: 420, initials: 'FA', color: '#f59e0b' },
-  { name: 'Dr. Emeka Okonkwo', role: 'Registrar, Covenant Vocational College, Owerri', quoteKey: 'emeka', schoolKey: 'vocationalCollege', studentsCount: 600, initials: 'EO', color: '#10b981' },
-  { name: 'Mrs. Ngozi Okeke', role: 'Director, Prestige Group of Schools, Abuja', quoteKey: 'ngozi', schoolKey: 'groupOf5', studentsCount: 2100, initials: 'NO', color: '#ec4899' },
-  { name: 'Mr. Tunde Adeyemi', role: "Vice Principal, Bishop's Crown Secondary, Abeokuta", quoteKey: 'tunde', schoolKey: 'secondarySchool', studentsCount: 890, initials: 'TA', color: '#06b6d4' },
-  { name: 'Mrs. Halima Yusuf', role: 'Proprietress, New Horizon International, Kaduna', quoteKey: 'halima', schoolKey: 'k12', studentsCount: 560, initials: 'HY', color: '#a855f7' },
+  { name: 'Mr. Adewale Ogundimu', role: 'Principal, Greenfield Academy, Ibadan', quoteKey: 'adewale', schoolKey: 'k12', studentsCount: 1240, initials: 'AO', color: '#c9a24e' },
+  { name: 'Mrs. Chidinma Eze', role: 'Bursar, Royal Heights Group of Schools, Enugu', quoteKey: 'chidinma', schoolKey: 'groupOf4', studentsCount: 3800, initials: 'CE', color: '#a98b4a' },
+  { name: 'Mr. Ibrahim Al-Hassan', role: "ICT Coordinator, Al-Noor International Academy, Kano", quoteKey: 'ibrahim', schoolKey: 'islamicSecondary', studentsCount: 680, initials: 'IH', color: '#8a7246' },
+  { name: 'Mrs. Funmilayo Adesanya', role: 'Head Mistress, Sunrise Nursery & Primary, Lagos', quoteKey: 'funmilayo', schoolKey: 'k12', studentsCount: 420, initials: 'FA', color: '#b08d52' },
+  { name: 'Dr. Emeka Okonkwo', role: 'Registrar, Covenant Vocational College, Owerri', quoteKey: 'emeka', schoolKey: 'vocationalCollege', studentsCount: 600, initials: 'EO', color: '#9c8255' },
+  { name: 'Mrs. Ngozi Okeke', role: 'Director, Prestige Group of Schools, Abuja', quoteKey: 'ngozi', schoolKey: 'groupOf5', studentsCount: 2100, initials: 'NO', color: '#6f5e3f' },
+  { name: 'Mr. Tunde Adeyemi', role: "Vice Principal, Bishop's Crown Secondary, Abeokuta", quoteKey: 'tunde', schoolKey: 'secondarySchool', studentsCount: 890, initials: 'TA', color: '#c4a35f' },
+  { name: 'Mrs. Halima Yusuf', role: 'Proprietress, New Horizon International, Kaduna', quoteKey: 'halima', schoolKey: 'k12', studentsCount: 560, initials: 'HY', color: '#8f7a4d' },
 ];
 
 function TestimonialCard({ item }: { item: TestimonialData }) {
@@ -60,7 +60,7 @@ export default function Testimonials() {
   return (
     <section id="testimonials" ref={ref} className="py-28 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 50% 100%, rgba(34,197,94,0.04) 0%, transparent 60%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 50% 100%, rgba(201,162,78,0.04) 0%, transparent 60%)' }} />
 
       <div className="mb-14 px-4"
         style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(24px)', transition: 'all 0.7s ease' }}>

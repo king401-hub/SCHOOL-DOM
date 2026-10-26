@@ -73,7 +73,7 @@ function Stepper({ step, stepLabels }: { step: number; stepLabels: string[] }) {
         {stepLabels.map((_, i) => (
           <div key={i} className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
             <div className="h-full rounded-full transition-all duration-500"
-              style={{ width: i <= step - 1 ? '100%' : '0%', background: 'linear-gradient(90deg,#22c55e,#0ea5e9)' }} />
+              style={{ width: i <= step - 1 ? '100%' : '0%', background: '#c9a24e' }} />
           </div>
         ))}
       </div>
@@ -299,8 +299,8 @@ export default function SignUpPage() {
             initial={{ scale: 0 }} animate={{ scale: 1 }}
             transition={{ type: 'spring', stiffness: 400, damping: 14, delay: 0.1 }}
             className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-5"
-            style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)' }}>
-            <CheckCircle2 className="h-8 w-8" style={{ color: '#22c55e' }} />
+            style={{ background: 'rgba(201,162,78,0.15)', border: '1px solid rgba(201,162,78,0.3)' }}>
+            <CheckCircle2 className="h-8 w-8" style={{ color: '#c9a24e' }} />
           </motion.div>
           <h1 className="font-display font-black text-white text-2xl mb-2">{t('signup.activated.title')}</h1>
           <p className="text-slate-400 text-sm mb-6">
@@ -319,7 +319,7 @@ export default function SignUpPage() {
   return (
     <div className="signup-shell min-h-screen pt-24 pb-20 px-4 relative">
       <div className="absolute top-0 inset-x-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(34,197,94,0.05) 0%, transparent 50%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(201,162,78,0.05) 0%, transparent 50%)' }} />
 
       <div className="max-w-3xl mx-auto" style={{ animation: 'fadeInUp 0.6s ease' }}>
         <a href="/" className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-300 text-sm mb-8 transition-colors">
@@ -346,10 +346,10 @@ export default function SignUpPage() {
                     return (
                       <button key={r.value} type="button" onClick={() => setRole(r.value)}
                         className="relative w-full text-left flex items-start gap-3 p-4 rounded-2xl transition-all sd-card cursor-pointer"
-                        style={{ borderColor: active ? 'rgba(34,197,94,0.4)' : undefined, background: active ? 'rgba(34,197,94,0.06)' : undefined }}>
+                        style={{ borderColor: active ? 'rgba(201,162,78,0.4)' : undefined, background: active ? 'rgba(201,162,78,0.06)' : undefined }}>
                         <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0"
-                          style={{ background: active ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.04)', border: active ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(255,255,255,0.06)' }}>
-                          <Icon className="h-4 w-4" style={{ color: active ? '#22c55e' : '#64748b' }} />
+                          style={{ background: active ? 'rgba(201,162,78,0.15)' : 'rgba(255,255,255,0.04)', border: active ? '1px solid rgba(201,162,78,0.3)' : '1px solid rgba(255,255,255,0.06)' }}>
+                          <Icon className="h-4 w-4" style={{ color: active ? '#c9a24e' : '#64748b' }} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-white text-sm font-semibold">{r.title}</p>
@@ -360,7 +360,7 @@ export default function SignUpPage() {
                             initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                             transition={{ type: 'spring', stiffness: 500, damping: 15 }}
                             className="absolute top-3 right-3">
-                            <CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: '#22c55e' }} />
+                            <CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: '#c9a24e' }} />
                           </motion.span>
                         )}
                       </button>
@@ -521,10 +521,10 @@ export default function SignUpPage() {
 
               {schoolCode && (
                 <div className="rounded-2xl p-4 flex items-center justify-between gap-3"
-                  style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)' }}>
+                  style={{ background: 'rgba(201,162,78,0.06)', border: '1px solid rgba(201,162,78,0.2)' }}>
                   <div>
                     <p className="text-slate-500 text-[10px] uppercase tracking-wider">{t('signup.step3.schoolCodeLabel')}</p>
-                    <p className="font-display font-black text-lg" style={{ color: '#22c55e' }}>{schoolCode}</p>
+                    <p className="font-display font-black text-lg" style={{ color: '#c9a24e' }}>{schoolCode}</p>
                   </div>
                   <button type="button" onClick={copyCode} className="btn-ghost text-xs py-2 px-3">
                     {codeCopied ? <><Check className="h-3.5 w-3.5" /> {t('signup.step3.copied')}</> : <><Copy className="h-3.5 w-3.5" /> {t('signup.step3.copy')}</>}

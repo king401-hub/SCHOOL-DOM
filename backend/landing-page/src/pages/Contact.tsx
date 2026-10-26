@@ -45,7 +45,7 @@ export default function ContactPage() {
   return (
     <div className="min-h-screen pt-24 pb-20 px-4 relative">
       <div className="absolute top-0 inset-x-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(14,165,233,0.05) 0%, transparent 50%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(201,162,78,0.05) 0%, transparent 50%)' }} />
 
       <div className="max-w-5xl mx-auto">
         <a href="/" className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-300 text-sm mb-8 transition-colors">
@@ -64,11 +64,11 @@ export default function ContactPage() {
           {/* Left: Contact info */}
           <div className="lg:col-span-2 space-y-5">
             {[
-              { icon: Mail, label: t('contact.info.email'), value: 'support@schooldom.academy', href: 'mailto:support@schooldom.academy', color: '#22c55e' },
-              { icon: Phone, label: t('contact.info.phone'), value: '+234 907 682 1365', href: 'tel:+2349076821365', color: '#0ea5e9' },
-              { icon: MapPin, label: t('contact.info.location'), value: t('contact.info.locationValue'), href: '#', color: '#8b5cf6' },
-              { icon: Clock, label: t('contact.info.supportHours'), value: t('contact.info.supportHoursValue'), href: '#', color: '#f59e0b' },
-              { icon: MessageSquare, label: t('contact.info.whatsapp'), value: '+234 907 682 1365', href: 'https://wa.me/2349076821365', color: '#10b981' },
+              { icon: Mail, label: t('contact.info.email'), value: 'support@schooldom.academy', href: 'mailto:support@schooldom.academy', color: '#c9a24e' },
+              { icon: Phone, label: t('contact.info.phone'), value: '+234 907 682 1365', href: 'tel:+2349076821365', color: '#c9a24e' },
+              { icon: MapPin, label: t('contact.info.location'), value: t('contact.info.locationValue'), href: '#', color: '#c9a24e' },
+              { icon: Clock, label: t('contact.info.supportHours'), value: t('contact.info.supportHoursValue'), href: '#', color: '#c9a24e' },
+              { icon: MessageSquare, label: t('contact.info.whatsapp'), value: '+234 907 682 1365', href: 'https://wa.me/2349076821365', color: '#c9a24e' },
             ].map(c => {
               const Icon = c.icon;
               return (
@@ -87,7 +87,7 @@ export default function ContactPage() {
             })}
 
             <div className="rounded-2xl p-5 mt-4"
-              style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.07), rgba(14,165,233,0.07))', border: '1px solid rgba(34,197,94,0.15)' }}>
+              style={{ background: 'rgba(201,162,78,0.07)', border: '1px solid rgba(201,162,78,0.15)' }}>
               <p className="text-white text-sm font-semibold mb-1">{t('contact.avgResponseTitle')}</p>
               <p className="text-slate-400 text-xs">{t('contact.avgResponseDesc')}</p>
               <div className="mt-3 flex items-center gap-2">
@@ -103,8 +103,8 @@ export default function ContactPage() {
               {submitted ? (
                 <div className="py-12 text-center space-y-4">
                   <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto"
-                    style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)' }}>
-                    <CheckCircle className="h-8 w-8" style={{ color: '#22c55e' }} />
+                    style={{ background: 'rgba(201,162,78,0.15)', border: '1px solid rgba(201,162,78,0.3)' }}>
+                    <CheckCircle className="h-8 w-8" style={{ color: '#c9a24e' }} />
                   </div>
                   <h3 className="font-display font-black text-white text-2xl">{t('contact.success.title')}</h3>
                   <p className="text-slate-400 text-sm max-w-xs mx-auto">
