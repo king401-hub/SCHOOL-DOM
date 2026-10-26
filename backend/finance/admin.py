@@ -8,6 +8,7 @@ from finance.models import (
     BankLink,
     ClassFee,
     ExpenseRecord,
+    FeeWaiver,
     FinanceLedgerLog,
     SchoolFee,
     SmsBundle,
@@ -65,6 +66,14 @@ class SchoolFeeAdmin(admin.ModelAdmin):
     list_display = ("title", "student", "amount", "status", "due_date", "class_fee", "is_customized")
     list_filter = ("status", "class_fee", "is_customized")
     search_fields = ("title", "student__user__email")
+
+
+@admin.register(FeeWaiver)
+class FeeWaiverAdmin(admin.ModelAdmin):
+    list_display = ("title", "student", "amount", "status", "fee", "granted_by", "granted_at")
+    list_filter = ("status",)
+    search_fields = ("title", "student__user__email", "reason")
+    readonly_fields = ("granted_at",)
 
 
 @admin.register(ClassFee)

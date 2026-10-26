@@ -35,6 +35,7 @@ from finance.models import (
     ClassFee,
     ExpenseRecord,
     FeeAllocation,
+    FeeWaiver,
     FinanceLedgerLog,
     ParentVirtualAccount,
     PaymentReceiptLink,
@@ -1141,6 +1142,18 @@ def admin_student_statement(request, student_id):
     date_from = parse_date(request.query_params.get("from") or "")
     date_to = parse_date(request.query_params.get("to") or "")
 
+    # Signed - can go negative, meaning the student is in credit from
+    # before this period (they overpaid), same as a real billing
+    # statement's own "previous balance" line. Only meaningful once a
+    # start date actually carves out a "this period" - with no date_from
+    # there's no earlier period to speak of.
+    previous_balance = Decimal("0.00")
+    if date_from:
+        previous_fees = list(SchoolFee.objects.filter(student=student, due_date__lt=date_from))
+        previous_paid = bulk_fee_paid_amounts(previous_fees)
+        previous_billed = sum((fee.amount for fee in previous_fees), Decimal("0.00"))
+        previous_balance = previous_billed - sum(previous_paid.values(), Decimal("0.00"))
+
     fees = list(SchoolFee.objects.filter(student=student).order_by("due_date"))
     if date_from:
         fees = [fee for fee in fees if fee.due_date >= date_from]
@@ -1215,6 +1228,27 @@ def admin_student_statement(request, student_id):
 
     total_billed = sum((fee.amount for fee in fees), Decimal("0.00"))
     total_paid = sum(paid_amounts.values(), Decimal("0.00"))
+    # Signed too, same reasoning as previous_balance above - this is the
+    # "CURRENT BILLED BALANCE" line on a billing statement, before any
+    # financial aid/waiver is applied.
+    current_billed_balance = previous_balance + total_billed - total_paid
+
+    waivers_qs = FeeWaiver.objects.filter(student=student).order_by("-granted_at")
+    if date_from:
+        waivers_qs = waivers_qs.filter(granted_at__date__gte=date_from)
+    if date_to:
+        waivers_qs = waivers_qs.filter(granted_at__date__lte=date_to)
+    waivers = list(waivers_qs)
+    authorized_aid = sum(
+        (w.amount for w in waivers if w.status == FeeWaiver.STATUS_AUTHORIZED), Decimal("0.00"),
+    )
+    memoed_aid = sum(
+        (w.amount for w in waivers if w.status == FeeWaiver.STATUS_MEMOED), Decimal("0.00"),
+    )
+    # Only authorized aid actually reduces what's owed - memoed is shown on
+    # the statement for visibility only, same split FeeWaiver's own
+    # docstring explains.
+    total_amount_due = current_billed_balance - authorized_aid
 
     return Response(
         {
@@ -1234,13 +1268,106 @@ def admin_student_statement(request, student_id):
             "online_payments": sorted(
                 [*wallet_payment_rows, *online_payment_rows], key=lambda row: row["created_at"], reverse=True,
             ),
+            "waivers": [
+                {
+                    "id": str(w.id),
+                    "title": w.title,
+                    "amount": w.amount,
+                    "status": w.status,
+                    "reason": w.reason,
+                    "fee_id": str(w.fee_id) if w.fee_id else None,
+                    "granted_by": w.granted_by.get_full_name() if w.granted_by else "",
+                    "granted_at": w.granted_at,
+                }
+                for w in waivers
+            ],
             "totals": {
                 "total_billed": total_billed,
                 "total_paid": total_paid,
                 "balance": max(total_billed - total_paid, Decimal("0.00")),
+                "previous_balance": previous_balance,
+                "current_billed_balance": current_billed_balance,
+                "authorized_aid": authorized_aid,
+                "memoed_aid": memoed_aid,
+                "total_amount_due": total_amount_due,
             },
         }
     )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_grant_fee_waiver(request, student_id):
+    """Grant a discount/scholarship/waiver to one student - the "financial
+    aid" half of admin_student_statement, which only ever reads these.
+    `status` defaults to authorized (actually reduces what's owed);
+    pass "memoed" for one that's been promised but isn't confirmed yet."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    student = get_object_or_404(
+        StudentProfile.objects.filter(user__tenant=user.tenant),
+        id=student_id,
+    )
+
+    title = str(request.data.get("title") or "").strip()
+    if not title:
+        return Response({"success": False, "message": "title is required."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        amount = Decimal(str(request.data.get("amount")))
+    except Exception:
+        return Response({"success": False, "message": "amount must be a number."}, status=status.HTTP_400_BAD_REQUEST)
+    if amount <= 0:
+        return Response({"success": False, "message": "amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+
+    waiver_status = str(request.data.get("status") or FeeWaiver.STATUS_AUTHORIZED).strip().lower()
+    if waiver_status not in dict(FeeWaiver.STATUS_CHOICES):
+        return Response({"success": False, "message": "status must be authorized or memoed."}, status=status.HTTP_400_BAD_REQUEST)
+
+    fee = None
+    fee_id = request.data.get("fee_id")
+    if fee_id:
+        fee = get_object_or_404(SchoolFee.objects.filter(student=student), id=fee_id)
+
+    waiver = FeeWaiver.objects.create(
+        tenant=user.tenant,
+        student=student,
+        fee=fee,
+        title=title,
+        amount=amount,
+        status=waiver_status,
+        reason=str(request.data.get("reason") or "").strip(),
+        granted_by=user,
+    )
+    return Response(
+        {
+            "success": True,
+            "message": "Waiver granted.",
+            "waiver": {
+                "id": str(waiver.id),
+                "title": waiver.title,
+                "amount": waiver.amount,
+                "status": waiver.status,
+                "reason": waiver.reason,
+                "fee_id": str(waiver.fee_id) if waiver.fee_id else None,
+                "granted_by": user.get_full_name(),
+                "granted_at": waiver.granted_at,
+            },
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def admin_delete_fee_waiver(request, waiver_id):
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+    waiver = get_object_or_404(FeeWaiver.objects.filter(tenant=user.tenant), id=waiver_id)
+    waiver.delete()
+    return Response({"success": True, "message": "Waiver removed."})
 
 
 @api_view(["GET"])

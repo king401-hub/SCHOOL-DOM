@@ -620,6 +620,68 @@ class SchoolFee(models.Model):
         return f"{self.title} • {self.student.user.email}"
 
 
+class FeeWaiver(models.Model):
+    """A discount, scholarship, or fee waiver granted to one student -
+    SchoolDom's equivalent of a college billing statement's "financial
+    aid" line items (admin_student_statement). Two-tier like a real
+    financial-aid award, same distinction a billing statement itself
+    draws: authorized (confirmed, actually reduces the student's total
+    amount due) vs memoed (granted but not yet applied - shown on the
+    statement for visibility, never subtracted from what's currently
+    owed until an admin flips it to authorized).
+
+    Not tied to a specific SchoolFee by default (`fee` is nullable) - a
+    waiver is usually a general account credit ("20% sibling discount"),
+    not a reduction against one particular bill line."""
+
+    STATUS_AUTHORIZED = "authorized"
+    STATUS_MEMOED = "memoed"
+    STATUS_CHOICES = [
+        (STATUS_AUTHORIZED, "Authorized"),
+        (STATUS_MEMOED, "Memoed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.SchoolTenant",
+        on_delete=models.CASCADE,
+        related_name="fee_waivers",
+    )
+    student = models.ForeignKey(
+        "users.StudentProfile",
+        on_delete=models.CASCADE,
+        related_name="fee_waivers",
+    )
+    fee = models.ForeignKey(
+        "finance.SchoolFee",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="waivers",
+    )
+    title = models.CharField(max_length=150)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_AUTHORIZED)
+    reason = models.TextField(blank=True, default="")
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="granted_fee_waivers",
+    )
+    granted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-granted_at"]
+        indexes = [
+            models.Index(fields=["student", "granted_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.title} - {self.student.user.email} ({self.status})"
+
+
 class StudentPaymentReference(models.Model):
     """Stable bank-transfer narration code assigned to one student."""
 
