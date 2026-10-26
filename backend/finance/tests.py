@@ -2035,6 +2035,35 @@ class PaystackDvaReconciliationTests(TestCase):
         self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
         self.assertEqual(fee_paid_amount(self.fee), Decimal("50000.00"))
 
+    def test_webhook_credits_dva_bank_transfer_with_null_metadata_and_authorization(self):
+        # Reproduces the real shape of a Paystack charge.success webhook for a
+        # bank transfer straight into a Dedicated Virtual Account: it never went
+        # through our own /paystack/initialize/ flow, so Paystack sends
+        # "metadata": null and "authorization": null (present, not omitted) -
+        # every DVA bank transfer webhook was raising AttributeError on this
+        # shape and getting turned into an HTTP 400, so no transfer was ever
+        # credited.
+        from finance.services import process_paystack_webhook
+
+        webhook_payload = {
+            "event": "charge.success",
+            "data": {
+                "reference": "DVA-REAL-SHAPE-001",
+                "channel": "dedicated_nuban",
+                "amount": 3000000,
+                "metadata": None,
+                "authorization": None,
+                "dedicated_account": {"account_number": self.vac.account_number},
+            },
+        }
+
+        result = process_paystack_webhook(webhook_payload)
+
+        self.assertEqual(result["status"], "success")
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PARTIAL)
+        self.assertEqual(fee_paid_amount(self.fee), Decimal("30000.00"))
+
     def test_dva_payment_appears_on_admin_finance_ledger(self):
         process_virtual_account_payment(
             tenant=self.school,

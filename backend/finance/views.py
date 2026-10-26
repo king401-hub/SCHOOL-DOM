@@ -3584,6 +3584,7 @@ def paystack_webhook(request):
         data = request.data
         result = process_paystack_webhook(data)
     except Exception as exc:
+        logger.exception("Paystack webhook processing failed: %s", exc)
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     return Response({"success": True, "result": result})

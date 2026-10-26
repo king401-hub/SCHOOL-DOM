@@ -1837,19 +1837,26 @@ def process_paystack_webhook(data: dict) -> dict:
 
     # Dedicated virtual account payment (DVA / dedicated_nuban)
     if channel == 'dedicated_nuban':
+        # Paystack returns these keys with a null value (not omitted) when a charge
+        # has none - e.g. a pure inbound bank transfer never goes through our own
+        # /paystack/initialize/ flow, so it carries no metadata at all. dict.get(key, {})
+        # only applies that default when the key is missing, not when its value is
+        # None, so this used to raise AttributeError on every single DVA webhook call
+        # and get turned into an HTTP 400 by the view - no payment via bank transfer
+        # ever got credited.
         account_number = (
-            transaction_data.get('authorization', {}).get('receiver_bank_account_number')
-            or transaction_data.get('dedicated_account', {}).get('account_number')
+            (transaction_data.get('authorization') or {}).get('receiver_bank_account_number')
+            or (transaction_data.get('dedicated_account') or {}).get('account_number')
             or ''
         )
         amount_kobo = transaction_data.get('amount', 0)
         amount_naira = Decimal(str(amount_kobo)) / 100
 
         from core.models import SchoolTenant
-        # Attempt to identify tenant from metadata
+        # Attempt to identify tenant from metadata (reuse the already null-safe
+        # `metadata` computed above rather than re-reading transaction_data).
         tenant = None
-        customer_meta = transaction_data.get('customer', {})
-        meta_tenant_id = transaction_data.get('metadata', {}).get('school_id')
+        meta_tenant_id = metadata.get('school_id')
         if meta_tenant_id:
             try:
                 tenant = SchoolTenant.objects.get(id=meta_tenant_id)
