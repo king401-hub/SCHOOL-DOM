@@ -1545,9 +1545,17 @@ def allocate_split_payment(
     # deliveries racing) must not both read the fee as "still fully owed" and
     # each conclude they fully paid it - that double-books the same fee and
     # leaves the second payment's money with no record of where it went.
+    # of=("self",) locks only the SchoolFee row - without it, Postgres raises
+    # "FOR UPDATE cannot be applied to the nullable side of an outer join"
+    # for every single row, because student__current_class is a SET_NULL (so
+    # nullable) FK and select_related() joins it as a LEFT OUTER JOIN, which
+    # Postgres refuses to lock. This made every online fee payment raise here
+    # and get turned into an HTTP 400 - sqlite silently no-ops
+    # select_for_update() instead of enforcing this, which is why it never
+    # showed up in a local/test run.
     with transaction.atomic():
         unpaid_fees = list(
-            SchoolFee.objects.select_for_update()
+            SchoolFee.objects.select_for_update(of=("self",))
             .filter(
                 student__in=students,
                 status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_OVERDUE, SchoolFee.STATUS_PARTIAL],
@@ -3544,7 +3552,11 @@ def complete_wallet_funding(reference: str, actor=None, verification: Optional[d
         raise ValueError("Payment amount mismatch.")
 
     with transaction.atomic():
-        locked_tx = Transaction.objects.select_for_update().select_related("wallet", "wallet__user").get(pk=tx.pk)
+        # of=("self",): Transaction.wallet is nullable (split-payment rows have
+        # no wallet at all), so select_related() joins it as a LEFT OUTER JOIN -
+        # locking it too makes Postgres raise "FOR UPDATE cannot be applied to
+        # the nullable side of an outer join" on every call, same as the DVA bug.
+        locked_tx = Transaction.objects.select_for_update(of=("self",)).select_related("wallet", "wallet__user").get(pk=tx.pk)
         # The row lock makes this the single source of truth for "did I win
         # the race to apply this payment" - a concurrent caller (webhook +
         # client-side verify poll, or a doubled webhook delivery) blocks on
@@ -6692,9 +6704,13 @@ def process_virtual_account_payment(
     # milliseconds of each other must not both read a fee as "still fully
     # owed" and each conclude they fully paid it - that double-books the fee
     # and leaves one payment's money with no record of where it went.
+    # of=("self",): see the matching note in allocate_split_payment - without
+    # it, Postgres raises "FOR UPDATE cannot be applied to the nullable side
+    # of an outer join" on every row (student__current_class is nullable), which
+    # is the actual, still-live cause behind the 400s on every DVA webhook call.
     with transaction.atomic():
         unpaid_fees = list(
-            SchoolFee.objects.select_for_update()
+            SchoolFee.objects.select_for_update(of=("self",))
             .filter(
                 student__in=students,
                 status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_OVERDUE, SchoolFee.STATUS_PARTIAL],
