@@ -5915,7 +5915,7 @@ export function TeacherResultsPanel({ session, school, subjects = [], classOptio
     setFeedback("");
     try {
       const result = await onPushResults({ score_id: scoreId });
-      setFeedback(result?.message || "Sent to admin.");
+      setFeedback(result?.message || (isAdminAudience ? "Sent for approval." : "Sent to admin."));
       refresh();
     } catch (sendError) {
       setError(sendError.message || "Could not send this result.");
@@ -6015,7 +6015,7 @@ export function TeacherResultsPanel({ session, school, subjects = [], classOptio
     setPushBusy(true);
     try {
       const result = await onPushResults?.({ class_id: form.class_id, title: "Teacher compiled results" });
-      setFeedback(result?.message || "Results pushed to admin.");
+      setFeedback(result?.message || (isAdminAudience ? "Results submitted for approval." : "Results pushed to admin."));
       refresh();
     } catch (pushError) {
       setError(pushError.message || "Could not push results.");
@@ -6189,8 +6189,14 @@ export function TeacherResultsPanel({ session, school, subjects = [], classOptio
             {error ? <p className="form-feedback error" role="alert">{error}</p> : null}
             {feedback ? <p className="form-feedback success" role="status">{feedback}</p> : null}
             <div className="panel-form-actions teacher-results-form-actions">
-              <button type="button" className="table-action" onClick={handlePushResults} disabled={pushBusy} title="Send everything you've recorded to the school admin">
-                {pushBusy ? <><Spinner size={12} /> Sending…</> : "Send results to admin"}
+              <button
+                type="button"
+                className="table-action"
+                onClick={handlePushResults}
+                disabled={pushBusy}
+                title={isAdminAudience ? "Move everything you've recorded into the approval queue above" : "Send everything you've recorded to the school admin"}
+              >
+                {pushBusy ? <><Spinner size={12} /> Sending…</> : isAdminAudience ? "Submit for approval" : "Send results to admin"}
               </button>
               <button type="submit" className="teacher-results-submit-btn" disabled={busy || subjects.length === 0}>
                 {busy ? <><Spinner size={12} /> Saving…</> : "Save score"}
@@ -6276,7 +6282,7 @@ export function TeacherResultsPanel({ session, school, subjects = [], classOptio
                             disabled={sendingId === row.id}
                             onClick={() => handleSendSingle(row.id)}
                           >
-                            {sendingId === row.id ? <><Spinner size={12} /> Sending…</> : "Send to admin"}
+                            {sendingId === row.id ? <><Spinner size={12} /> Sending…</> : isAdminAudience ? "Submit for approval" : "Send to admin"}
                           </button>
                         </td>
                       </tr>
@@ -6285,7 +6291,12 @@ export function TeacherResultsPanel({ session, school, subjects = [], classOptio
                 </table>
               </div>
             ) : (
-              <EmptyState compact art="clipboard" title="Nothing waiting to send" message="Every score you've saved has already been sent to admin." />
+              <EmptyState
+                compact
+                art="clipboard"
+                title="Nothing waiting to send"
+                message={isAdminAudience ? "Every score recorded so far is already in the approval queue." : "Every score you've saved has already been sent to admin."}
+              />
             )
           ) : subjectCbtResults.length ? (
             <div className="table-scroll">
