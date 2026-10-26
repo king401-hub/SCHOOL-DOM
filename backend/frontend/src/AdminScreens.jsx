@@ -2004,6 +2004,9 @@ function AdminFinanceScreen({
   const [statementRange, setStatementRange] = useState({ from: "", to: "" });
   const [statementData, setStatementData] = useState(null);
   const [statementError, setStatementError] = useState("");
+  const [waiverForm, setWaiverForm] = useState({ title: "", amount: "", status: "authorized", reason: "" });
+  const [waiverBusy, setWaiverBusy] = useState(false);
+  const [waiverDeleteBusyId, setWaiverDeleteBusyId] = useState("");
   const [creditPurchaseForm, setCreditPurchaseForm] = useState({ credits: "" });
   const [creditPurchaseReference, setCreditPurchaseReference] = useState("");
   const [creditPurchaseUrl, setCreditPurchaseUrl] = useState("");
@@ -2891,13 +2894,54 @@ function AdminFinanceScreen({
     }
   };
 
+  const handleGrantWaiver = async (event) => {
+    event.preventDefault();
+    if (!statementStudentPicked || !waiverForm.title.trim() || !waiverForm.amount) return;
+    setWaiverBusy(true);
+    setStatementError("");
+    try {
+      await requestJson(session, "POST", `/api/finance/admin/students/${statementStudentPicked.id}/waivers/`, {
+        title: waiverForm.title.trim(),
+        amount: waiverForm.amount,
+        status: waiverForm.status,
+        reason: waiverForm.reason.trim(),
+      });
+      setWaiverForm({ title: "", amount: "", status: "authorized", reason: "" });
+      await handleLoadStatement();
+    } catch (err) {
+      setStatementError(err.message || "Could not grant this waiver.");
+    } finally {
+      setWaiverBusy(false);
+    }
+  };
+
+  const handleDeleteWaiver = async (waiverId) => {
+    setWaiverDeleteBusyId(waiverId);
+    setStatementError("");
+    try {
+      await requestJson(session, "DELETE", `/api/finance/admin/waivers/${waiverId}/`);
+      await handleLoadStatement();
+    } catch (err) {
+      setStatementError(err.message || "Could not remove this waiver.");
+    } finally {
+      setWaiverDeleteBusyId("");
+    }
+  };
+
   const handleDownloadStatement = () => {
     if (!statementData) return;
-    const { student, fees, bank_payments: bankPayments, online_payments: onlinePayments, totals, date_from: dateFrom, date_to: dateTo } = statementData;
+    const { student, fees, bank_payments: bankPayments, online_payments: onlinePayments, waivers = [], totals, date_from: dateFrom, date_to: dateTo } = statementData;
+    const authorizedWaivers = waivers.filter((w) => w.status === "authorized");
+    const memoedWaivers = waivers.filter((w) => w.status === "memoed");
+    // Mirrors a real college billing statement's own section order:
+    // previous balance (can be a credit, shown as-is) -> current charges
+    // -> current payments -> current billed balance (before aid) ->
+    // authorized/memoed financial aid -> total amount due.
     const tableRows = [
-      ["— Fees Billed —", ""],
+      ["Previous Balance", formatFinanceAmount(totals.previous_balance)],
+      ["— Current Charges —", ""],
       ...fees.map((fee) => [`${fee.title} (Due ${formatDate(fee.due_date)})`, formatFinanceAmount(fee.amount)]),
-      ["— Payments Received —", ""],
+      ["— Current Payments —", ""],
       ...bankPayments.map((payment) => [
         `${payment.payment_method || "Bank transfer"} - ${payment.reference_code || payment.bank_reference} (${formatDate(payment.received_on || payment.created_at)})`,
         `-${formatFinanceAmount(payment.amount)}`,
@@ -2906,6 +2950,14 @@ function AdminFinanceScreen({
         `Online payment - ${payment.reference} (${formatDate(payment.created_at)})`,
         `-${formatFinanceAmount(payment.amount)}`,
       ]),
+      ["Current Billed Balance", formatFinanceAmount(totals.current_billed_balance)],
+      ...(authorizedWaivers.length || memoedWaivers.length
+        ? [
+            ["— Financial Aid / Waivers —", ""],
+            ...authorizedWaivers.map((w) => [`${w.title} (Authorized)`, `-${formatFinanceAmount(w.amount)}`]),
+            ...memoedWaivers.map((w) => [`${w.title} (Memoed - not yet applied)`, formatFinanceAmount(w.amount)]),
+          ]
+        : []),
     ];
     openFinancePrintout({
       title: "Account Statement",
@@ -2914,13 +2966,13 @@ function AdminFinanceScreen({
         ["Student", `${student.name}${student.student_id ? ` (${student.student_id})` : ""}`],
         [groupLabels.singular, student.class_name || "-"],
         ["Period", (dateFrom || dateTo) ? `${dateFrom || "Start"} to ${dateTo || "Now"}` : "Full history"],
-        ["Total Billed", formatFinanceAmount(totals.total_billed)],
-        ["Total Paid", formatFinanceAmount(totals.total_paid)],
+        ["Previous Balance", formatFinanceAmount(totals.previous_balance)],
+        ["Current Balance", formatFinanceAmount(totals.current_billed_balance)],
       ],
       tableRows,
-      totalLabel: "Balance Due",
-      total: totals.balance,
-      footer: "This statement reflects fees and payments recorded in SchoolDom as of the date generated.",
+      totalLabel: "Total Amount Due",
+      total: totals.total_amount_due,
+      footer: "This statement reflects fees, payments, and financial aid recorded in SchoolDom as of the date generated.",
     });
   };
 
@@ -3423,9 +3475,11 @@ function AdminFinanceScreen({
               {statementData ? (
                 <div className="finance-statement-result">
                   <div className="finance-statement-summary">
+                    <div><small>Previous Balance</small><strong>{formatFinanceAmount(statementData.totals.previous_balance)}</strong></div>
                     <div><small>Total Billed</small><strong>{formatFinanceAmount(statementData.totals.total_billed)}</strong></div>
                     <div><small>Total Paid</small><strong>{formatFinanceAmount(statementData.totals.total_paid)}</strong></div>
-                    <div><small>Balance</small><strong>{formatFinanceAmount(statementData.totals.balance)}</strong></div>
+                    <div><small>Current Billed Balance</small><strong>{formatFinanceAmount(statementData.totals.current_billed_balance)}</strong></div>
+                    <div><small>Total Amount Due</small><strong>{formatFinanceAmount(statementData.totals.total_amount_due)}</strong></div>
                   </div>
                   <table className="finance-statement-table">
                     <thead><tr><th>Fee</th><th>Due</th><th>Amount</th><th>Paid</th><th>Status</th></tr></thead>
@@ -3464,6 +3518,74 @@ function AdminFinanceScreen({
                       ) : null}
                     </tbody>
                   </table>
+                  <table className="finance-statement-table">
+                    <thead><tr><th>Financial Aid / Waiver</th><th>Status</th><th>Amount</th><th>Granted by</th><th><span className="visually-hidden">Actions</span></th></tr></thead>
+                    <tbody>
+                      {statementData.waivers.map((waiver) => (
+                        <tr key={waiver.id}>
+                          <td>{waiver.title}{waiver.reason ? <small> — {waiver.reason}</small> : null}</td>
+                          <td>{waiver.status === "authorized" ? "Authorized" : "Memoed (pending)"}</td>
+                          <td>{formatFinanceAmount(waiver.amount)}</td>
+                          <td>{waiver.granted_by || "-"}</td>
+                          <td className="table-action-cell">
+                            <button
+                              type="button"
+                              className="table-action danger"
+                              disabled={waiverDeleteBusyId === waiver.id}
+                              onClick={() => handleDeleteWaiver(waiver.id)}
+                            >
+                              {waiverDeleteBusyId === waiver.id ? <><Spinner size={12} /> Removing...</> : "Remove"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {!statementData.waivers.length ? <tr><td colSpan={5}>No discounts or waivers granted in this period.</td></tr> : null}
+                    </tbody>
+                  </table>
+                  <form className="panel-form-grid" onSubmit={handleGrantWaiver}>
+                    <label className="panel-field">
+                      Grant a discount/waiver
+                      <input
+                        type="text"
+                        placeholder="e.g. Sibling discount"
+                        value={waiverForm.title}
+                        onChange={(event) => setWaiverForm((current) => ({ ...current, title: event.target.value }))}
+                      />
+                    </label>
+                    <label className="panel-field">
+                      Amount
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={waiverForm.amount}
+                        onChange={(event) => setWaiverForm((current) => ({ ...current, amount: event.target.value }))}
+                      />
+                    </label>
+                    <label className="panel-field">
+                      Status
+                      <select
+                        value={waiverForm.status}
+                        onChange={(event) => setWaiverForm((current) => ({ ...current, status: event.target.value }))}
+                      >
+                        <option value="authorized">Authorized (reduces amount due now)</option>
+                        <option value="memoed">Memoed (pending, shown but not yet applied)</option>
+                      </select>
+                    </label>
+                    <label className="panel-field full">
+                      Reason (optional)
+                      <input
+                        type="text"
+                        value={waiverForm.reason}
+                        onChange={(event) => setWaiverForm((current) => ({ ...current, reason: event.target.value }))}
+                      />
+                    </label>
+                    <div className="panel-form-actions">
+                      <button type="submit" disabled={waiverBusy || !waiverForm.title.trim() || !waiverForm.amount}>
+                        {waiverBusy ? <><Spinner size={12} /> Granting...</> : "Grant"}
+                      </button>
+                    </div>
+                  </form>
                   <div className="panel-form-actions">
                     <button type="button" onClick={handleDownloadStatement}>Download Statement</button>
                   </div>
