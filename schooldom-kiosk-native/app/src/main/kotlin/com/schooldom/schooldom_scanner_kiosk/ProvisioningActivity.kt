@@ -74,11 +74,23 @@ class ProvisioningActivity : Activity() {
                     }
 
                     val (status, body) = ApiClient.rawPost("/api/device-fleet/device/provision/", payload)
-                    val data = if (body.isNotEmpty()) JSONObject(body) else JSONObject()
+                    // A 5xx response is an HTML error page, not JSON (confirmed live:
+                    // a server-side 500 during activation) - parsing it would throw
+                    // JSONException straight into the generic catch block below, which
+                    // then lies and reports this as a "network error" even though the
+                    // server was reached and answered. Parse defensively instead so a
+                    // real server-side failure is reported as what it actually is.
+                    val data = try {
+                        if (body.isNotEmpty()) JSONObject(body) else JSONObject()
+                    } catch (e: org.json.JSONException) {
+                        JSONObject()
+                    }
 
                     if (status != 201 || data.isNull("data") || !data.has("data")) {
                         val message = if (data.has("message") && !data.isNull("message")) {
                             data.getString("message")
+                        } else if (status >= 500) {
+                            "The SchoolDom server hit an error (status $status). Please try again in a moment, or contact support if it keeps happening."
                         } else {
                             "Could not activate this device. Check the key and try again."
                         }

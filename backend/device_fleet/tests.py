@@ -1,17 +1,21 @@
 """Tests for the dual-school kiosk pairing/switching feature."""
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
 
 from core.tenant import SchoolGroup, SchoolTenant
 
-from .models import Device
+from .models import Device, ProvisioningKey
 
 User = get_user_model()
 
 
 class DevicePairingTestCase(TestCase):
     def setUp(self):
+        # IdempotencyMiddleware replays a byte-identical POST from an earlier
+        # test (same ids in every fresh DB) as a JsonResponse with no .data.
+        cache.clear()
         owner = User.objects.create_user(email="owner@test.com", password="testpass123", role="school_superadmin")
         self.group = SchoolGroup.objects.create(name="Test Group", owner=owner)
         self.other_group = SchoolGroup.objects.create(name="Other Group", owner=owner)
@@ -134,3 +138,37 @@ class DevicePairingTestCase(TestCase):
         self.device.refresh_from_db()
         self.assertEqual(self.device.tenant_id, self.school_standalone.id)
         self.assertIsNone(self.device.paired_tenant_id)
+
+
+class DeviceProvisioningIdGenerationTests(TestCase):
+    """Regression test for a live production incident (2026-10-26): with
+    ATOMIC_REQUESTS=True, a device_fleet_device row never actually commits
+    when a LATER statement in the same request raises - so the Device table
+    alone understates which device_ids have truly been issued. A device's
+    scanner_user (created from that same device_id) can still exist from an
+    earlier device that was later deleted (on_delete=SET_NULL only clears
+    the FK, it never deletes the User). _next_device_id() kept recomputing
+    that same stale number forever, and every single provisioning attempt
+    failed on the same users_user_email_key UniqueViolation (confirmed live:
+    device-scn-025@scanner.schooldom.internal)."""
+
+    def setUp(self):
+        cache.clear()
+        self.key = ProvisioningKey.objects.create()
+
+    def test_next_device_id_skips_a_number_whose_scanner_email_is_already_taken(self):
+        # No Device row for SCN-001 exists (its creation never committed, or
+        # it was later deleted) - only the orphaned scanner_user survives.
+        User.objects.create_user(email="device-scn-001@scanner.schooldom.internal", password=None, role="staff")
+        self.assertEqual(Device._next_device_id(), "SCN-002")
+
+    def test_provisioning_still_succeeds_when_the_next_ids_email_is_stale(self):
+        User.objects.create_user(email="device-scn-001@scanner.schooldom.internal", password=None, role="staff")
+        client = APIClient()
+        resp = client.post(
+            "/api/device-fleet/device/provision/",
+            {"provisioning_key": self.key.key, "device_name": "Test Scanner"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["data"]["device_id"], "SCN-002")

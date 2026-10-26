@@ -12,8 +12,16 @@ described as "Part B" of the scanner spec.
 import secrets
 import uuid
 
+import django
 from django.db import models
 from django.utils import timezone
+
+# Django 5.1 renamed CheckConstraint's check= kwarg to condition= - production
+# and dev can run different Django versions, so resolving this at import
+# time keeps a single model definition working on whichever is installed.
+# See backend/exams/models.py for the same shim, added after this exact
+# mismatch took production down.
+_CHECK_CONSTRAINT_KWARG = "condition" if django.VERSION >= (5, 1) else "check"
 
 
 # Excludes 0/O and 1/I/L - characters easy to mistype or misread on a small
@@ -230,7 +238,7 @@ class Device(models.Model):
         ordering = ['device_id']
         constraints = [
             models.CheckConstraint(
-                check=models.Q(paired_tenant__isnull=True) | ~models.Q(tenant=models.F('paired_tenant')),
+                **{_CHECK_CONSTRAINT_KWARG: models.Q(paired_tenant__isnull=True) | ~models.Q(tenant=models.F('paired_tenant'))},
                 name='device_tenant_not_equal_paired_tenant',
             ),
         ]
@@ -252,7 +260,27 @@ class Device(models.Model):
                 last_n = int(last.split('-')[1])
             except (IndexError, ValueError):
                 last_n = 0
-        return f'SCN-{last_n + 1:03d}'
+
+        # ATOMIC_REQUESTS=True rolls back the whole request - including the Device
+        # row this method's caller (save()) is about to insert - whenever anything
+        # later in the same view raises (e.g. device_provision's scanner_user
+        # creation hitting a stale, already-taken email). That means a candidate
+        # number can look free by the query above yet still be "spent": a prior
+        # attempt's User row (on_delete=SET_NULL leaves it behind even if its
+        # Device row never committed, or was later deleted) already holds the
+        # matching device-scn-NNN@scanner.schooldom.internal email, so every
+        # retry recomputes the SAME number and fails on the SAME unique
+        # constraint forever (confirmed live: SCN-025, 2026-10-26). Skip past any
+        # number already claimed by either table instead of assuming the Device
+        # table alone is the source of truth for what's been issued.
+        from users.models import User
+        candidate_n = last_n + 1
+        while True:
+            candidate = f'SCN-{candidate_n:03d}'
+            email = f'device-{candidate.lower()}@scanner.schooldom.internal'
+            if not Device.objects.filter(device_id=candidate).exists() and not User.objects.filter(email=email).exists():
+                return candidate
+            candidate_n += 1
 
     @property
     def is_online(self):
