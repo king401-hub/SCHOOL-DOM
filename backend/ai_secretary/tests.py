@@ -1,6 +1,7 @@
 import time
 from decimal import Decimal
 
+from django.conf import settings
 from django.test import TestCase
 from unittest.mock import MagicMock, patch
 
@@ -253,6 +254,27 @@ class PhaseOneAdminAgentTests(TestCase):
         self.assertEqual(result["tools_called"], ["count_students"])
         self.assertIn("0 students", result["reply"])
 
+    @override_settings(AI_PROVIDER="openrouter", OPENROUTER_FALLBACK_MODELS="some/backup-model")
+    def test_openrouter_falls_back_to_the_next_model_when_the_default_times_out(self):
+        """The default model being down (a timeout here) must not surface as
+        a failure to the admin as long as a configured backup model is up -
+        see openrouter_client.fallback_model_candidates."""
+        from ai_secretary.agent import run_agent
+        from ai_chat.services.openrouter_client import OpenRouterTimeout
+
+        with patch("ai_secretary.agent.OpenRouterClient") as mock_client_cls:
+            mock_client_cls.return_value.chat.side_effect = [
+                OpenRouterTimeout("timed out"),
+                {"content": "Sure, I can help with that.", "tool_calls": []},
+            ]
+            result = run_agent("What's the best way to plan next term's curriculum?", [], self.school, self.admin)
+
+        self.assertEqual(result["reply"], "Sure, I can help with that.")
+        self.assertEqual(
+            [call.kwargs["model"] for call in mock_client_cls.call_args_list],
+            [settings.OPENROUTER_DEFAULT_MODEL, "some/backup-model"],
+        )
+
     @override_settings(AI_PROVIDER="openrouter")
     def test_openrouter_timeout_returns_friendly_message(self):
         from ai_secretary.agent import run_agent
@@ -265,8 +287,12 @@ class PhaseOneAdminAgentTests(TestCase):
         self.assertIn("taking too long", result["reply"])
         self.assertEqual(result["tools_called"], [])
 
-    @override_settings(AI_PROVIDER="openrouter")
-    def test_openrouter_insufficient_credit_returns_friendly_message(self):
+    @override_settings(AI_PROVIDER="openrouter", OPENROUTER_FALLBACK_MODELS="some/backup-model")
+    def test_openrouter_insufficient_credit_returns_friendly_message_without_trying_a_fallback(self):
+        """402 (no credit) is an account-level problem, not a per-model one -
+        every model shares the same OpenRouter account/key, so trying a
+        backup model would just fail the exact same way. Must raise on the
+        first attempt, never call a second model."""
         from ai_secretary.agent import run_agent
         from ai_chat.services.openrouter_client import OpenRouterError
 
@@ -275,6 +301,7 @@ class PhaseOneAdminAgentTests(TestCase):
             result = run_agent("What's the best way to plan next term's curriculum?", [], self.school, self.admin)
 
         self.assertIn("out of credits", result["reply"])
+        mock_client_cls.assert_called_once_with(model=settings.OPENROUTER_DEFAULT_MODEL)
 
     @override_settings(AI_PROVIDER="openrouter")
     def test_an_attached_image_switches_to_the_vision_model_and_skips_tools(self):
@@ -307,11 +334,12 @@ class PhaseOneAdminAgentTests(TestCase):
     def test_a_turn_with_no_image_keeps_using_the_default_model_and_tools(self):
         from ai_secretary.agent import run_agent
 
-        with patch("ai_secretary.agent.OpenRouterClient") as mock_client_cls:
+        with patch("ai_secretary.agent.OpenRouterClient") as mock_client_cls, \
+                override_settings(OPENROUTER_FALLBACK_MODELS=""):
             mock_client_cls.return_value.chat.return_value = {"content": "Sure, I can help with that.", "tool_calls": []}
             run_agent("What's the best way to plan next term's curriculum?", [], self.school, self.admin)
 
-        mock_client_cls.assert_called_once_with(model=None)
+        mock_client_cls.assert_called_once_with(model=settings.OPENROUTER_DEFAULT_MODEL)
         call_kwargs = mock_client_cls.return_value.chat.call_args.kwargs
         self.assertIn("tools", call_kwargs)
         sent_messages = mock_client_cls.return_value.chat.call_args.args[0]

@@ -125,6 +125,20 @@ OPENROUTER_VISION_MODEL = os.getenv('OPENROUTER_VISION_MODEL', 'qwen/qwen2.5-vl-
 # Scribe v2 instead - same OpenRouter account/billing, just a different
 # provider under the hood. Hits /audio/transcriptions, not /chat/completions.
 OPENROUTER_TRANSCRIPTION_MODEL = os.getenv('OPENROUTER_TRANSCRIPTION_MODEL', 'elevenlabs/scribe-v2')
+# Comma-separated backup models tried, in order, for a plain chat/tool-call
+# request (never for vision or transcription - those keep a single model)
+# whenever OPENROUTER_DEFAULT_MODEL's own call fails with something that
+# looks like THAT model/provider being down right now - a timeout, rate
+# limit, unknown-model, or 5xx - rather than an account-level problem (bad
+# key, no credit, blocked) that would fail identically on every model. See
+# openrouter_client.fallback_model_candidates/is_model_fallback_worthy.
+# These two are long-standing, widely available OpenRouter models chosen as
+# a reasonable default - verify current availability/pricing at
+# https://openrouter.ai/models and adjust if needed. Blank disables this
+# (today's single-model behaviour).
+OPENROUTER_FALLBACK_MODELS = os.getenv(
+    'OPENROUTER_FALLBACK_MODELS', 'meta-llama/llama-3.1-8b-instruct,mistralai/mistral-7b-instruct'
+)
 OPENROUTER_TIMEOUT = int(os.getenv('OPENROUTER_TIMEOUT', '60'))
 OPENROUTER_MAX_RETRIES = int(os.getenv('OPENROUTER_MAX_RETRIES', '3'))
 # Optional - OpenRouter only uses these for its own public leaderboard

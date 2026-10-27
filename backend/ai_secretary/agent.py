@@ -20,6 +20,8 @@ from ai_chat.services.openrouter_client import (
     OpenRouterError,
     OpenRouterTimeout,
     build_multimodal_content,
+    fallback_model_candidates,
+    is_model_fallback_worthy,
 )
 from ai_chat.services.usage import AIUsageExhausted, check_quota, consume_usage, usage_dict
 
@@ -324,11 +326,32 @@ def _call_openrouter(messages: list, use_tools: bool = True) -> dict:
         }
         for m in messages
     ]
-    client = OpenRouterClient(model=getattr(settings, "OPENROUTER_VISION_MODEL", None) if has_images else None)
     kwargs = {"max_tokens": 600, "temperature": 0.3}
-    if use_tools and not has_images:
+
+    if has_images:
+        client = OpenRouterClient(model=getattr(settings, "OPENROUTER_VISION_MODEL", None))
+        result = client.chat(openrouter_messages, **kwargs)
+        return {"message": {"content": result["content"], "tool_calls": result["tool_calls"]}}
+
+    if use_tools:
         kwargs["tools"] = TOOL_SCHEMAS
-    result = client.chat(openrouter_messages, **kwargs)
+
+    # Try the configured default model, then each configured fallback in
+    # turn, so one model/provider being down doesn't take the Secretary
+    # down with it - see fallback_model_candidates/is_model_fallback_worthy.
+    candidates = fallback_model_candidates(getattr(settings, "OPENROUTER_DEFAULT_MODEL", "qwen/qwen3.8-27b"))
+    result = None
+    for index, candidate_model in enumerate(candidates):
+        try:
+            result = OpenRouterClient(model=candidate_model).chat(openrouter_messages, **kwargs)
+            break
+        except (OpenRouterTimeout, OpenRouterError) as exc:
+            if index == len(candidates) - 1 or not is_model_fallback_worthy(exc):
+                raise
+            logger.warning(
+                "OpenRouter model %s unavailable (%s) - falling back to the next configured model.",
+                candidate_model, exc,
+            )
     return {"message": {"content": result["content"], "tool_calls": result["tool_calls"]}}
 
 

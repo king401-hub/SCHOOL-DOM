@@ -113,6 +113,40 @@ def _backoff_sleep(attempt: int, base: float = 0.5, cap: float = 8.0) -> None:
     time.sleep(min(cap, base * (2**attempt)))
 
 
+# Account-level problems (bad/missing key, no credit, blocked, malformed
+# request) fail identically no matter which model is tried next, so a
+# model-fallback loop should raise immediately on these instead of wasting
+# calls on every configured backup. Everything else below - a timeout,
+# unknown model, rate limit, or 5xx - is specific to whichever model/
+# provider OpenRouter routed THIS attempt to, and is worth retrying on the
+# next configured model.
+_ACCOUNT_LEVEL_STATUS_CODES = frozenset({400, 401, 402, 403})
+
+
+def is_model_fallback_worthy(exc: Exception) -> bool:
+    """Whether a model-fallback loop (see fallback_model_candidates) should
+    move on to the next candidate model after this exception, instead of
+    raising it straight away."""
+    if isinstance(exc, OpenRouterTimeout):
+        return True
+    if isinstance(exc, OpenRouterError):
+        if exc.code == "MISSING_API_KEY":
+            return False
+        return exc.status_code not in _ACCOUNT_LEVEL_STATUS_CODES
+    return False
+
+
+def fallback_model_candidates(primary_model: str) -> list:
+    """`[primary_model]` plus whatever's configured in
+    settings.OPENROUTER_FALLBACK_MODELS (comma-separated model slugs) that
+    isn't already `primary_model` - each OpenRouter model slug routes to a
+    different underlying provider, so trying the next one gives real
+    redundancy without a second API key. An unset/blank setting means just
+    `[primary_model]` - today's single-model behaviour, unchanged."""
+    fallbacks = [m.strip() for m in getattr(settings, "OPENROUTER_FALLBACK_MODELS", "").split(",") if m.strip()]
+    return [primary_model] + [m for m in fallbacks if m != primary_model]
+
+
 class OpenRouterClient:
     """One client = one model/config. Cheap to construct per request; holds
     no connection state between calls."""

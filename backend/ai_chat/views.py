@@ -32,6 +32,8 @@ from ai_chat.services.openrouter_client import (
     OpenRouterTimeout,
     build_multimodal_content,
     clean_data_url_images,
+    fallback_model_candidates,
+    is_model_fallback_worthy,
 )
 from ai_chat.services.usage import AIUsageExhausted, check_quota, consume_usage, usage_dict, usage_snapshot
 
@@ -243,22 +245,46 @@ def _chat_via_openrouter(messages, user, ai_start):
         for m in messages
     ]
 
-    client = OpenRouterClient(model=getattr(settings, "OPENROUTER_VISION_MODEL", None) if has_images else None)
-    stream_iter = client.stream_chat(openrouter_messages, max_tokens=1024, temperature=0.7)
-    try:
-        first_chunk = next(stream_iter, "")
-    except OpenRouterTimeout as exc:
+    # Vision keeps a single model (OpenRouter's vision catalog is too thin to
+    # pick a reliable backup); a plain-text turn tries the configured
+    # default model, then each configured fallback in turn - the first
+    # chunk of each candidate's stream is pulled here, before anything is
+    # sent to the browser, so a model/provider that's down gets swapped out
+    # cleanly instead of showing up as a broken reply. See
+    # fallback_model_candidates/is_model_fallback_worthy.
+    if has_images:
+        candidates = [getattr(settings, "OPENROUTER_VISION_MODEL", None)]
+    else:
+        candidates = fallback_model_candidates(getattr(settings, "OPENROUTER_DEFAULT_MODEL", "qwen/qwen3.8-27b"))
+
+    first_chunk, stream_iter, startup_exc = None, None, None
+    for index, candidate_model in enumerate(candidates):
+        stream_iter = OpenRouterClient(model=candidate_model).stream_chat(openrouter_messages, max_tokens=1024, temperature=0.7)
+        try:
+            first_chunk = next(stream_iter, "")
+            startup_exc = None
+            break
+        except (OpenRouterTimeout, OpenRouterError) as exc:
+            startup_exc = exc
+            if index == len(candidates) - 1 or not is_model_fallback_worthy(exc):
+                break
+            logger.warning(
+                "OpenRouter model %s unavailable (%s) - falling back to the next configured model.",
+                candidate_model, exc,
+            )
+
+    if isinstance(startup_exc, OpenRouterTimeout):
         consume_usage(user, time.monotonic() - ai_start)
-        logger.error("OpenRouter chat timed out before streaming began: %s", exc)
+        logger.error("OpenRouter chat timed out before streaming began: %s", startup_exc)
         return JsonResponse({"detail": "SchoolDom AI did not respond in time. Please try again."}, status=503)
-    except OpenRouterError as exc:
+    if isinstance(startup_exc, OpenRouterError):
         consume_usage(user, time.monotonic() - ai_start)
         logger.error(
             "OpenRouter chat failed before streaming began (status=%s, code=%s): %s",
-            exc.status_code, exc.code, exc,
+            startup_exc.status_code, startup_exc.code, startup_exc,
         )
-        status = exc.status_code if exc.status_code in (401, 402, 403, 404) else 503
-        return JsonResponse({"detail": _friendly_openrouter_message(exc)}, status=status)
+        status = startup_exc.status_code if startup_exc.status_code in (401, 402, 403, 404) else 503
+        return JsonResponse({"detail": _friendly_openrouter_message(startup_exc)}, status=status)
 
     response = StreamingHttpResponse(
         _timed_stream(_stream_openrouter_reply(first_chunk, stream_iter), user, ai_start),

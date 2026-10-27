@@ -3,12 +3,14 @@
 real API key is needed to run these)."""
 from unittest.mock import MagicMock, patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from ai_chat.services.openrouter_client import (
     OpenRouterClient,
     OpenRouterError,
     OpenRouterTimeout,
+    fallback_model_candidates,
+    is_model_fallback_worthy,
 )
 
 try:
@@ -181,3 +183,45 @@ class StreamChatTests(TestCase):
 
         with self.assertRaises(OpenRouterTimeout):
             list(_client(max_retries=0).stream_chat([{"role": "user", "content": "Hi"}]))
+
+
+class ModelFallbackTests(TestCase):
+    """is_model_fallback_worthy/fallback_model_candidates - the pieces
+    agent.py/views.py use to try a backup model when the default one is
+    down. No network calls here; see ai_secretary.tests/ai_chat.tests for
+    the end-to-end fallback behaviour."""
+
+    @override_settings(OPENROUTER_FALLBACK_MODELS="some/backup-a, some/backup-b")
+    def test_candidates_puts_primary_first_then_configured_backups(self):
+        self.assertEqual(
+            fallback_model_candidates("some/primary"),
+            ["some/primary", "some/backup-a", "some/backup-b"],
+        )
+
+    @override_settings(OPENROUTER_FALLBACK_MODELS="some/primary, some/backup")
+    def test_candidates_drops_a_backup_that_duplicates_the_primary(self):
+        self.assertEqual(fallback_model_candidates("some/primary"), ["some/primary", "some/backup"])
+
+    @override_settings(OPENROUTER_FALLBACK_MODELS="")
+    def test_candidates_is_just_the_primary_when_unset(self):
+        self.assertEqual(fallback_model_candidates("some/primary"), ["some/primary"])
+
+    def test_timeout_is_fallback_worthy(self):
+        self.assertTrue(is_model_fallback_worthy(OpenRouterTimeout("timed out")))
+
+    def test_unknown_model_and_rate_limit_and_server_error_are_fallback_worthy(self):
+        for status_code in (404, 429, 500, 502, 503):
+            self.assertTrue(
+                is_model_fallback_worthy(OpenRouterError("boom", status_code=status_code)),
+                f"status {status_code} should be fallback-worthy",
+            )
+
+    def test_account_level_errors_are_not_fallback_worthy(self):
+        for status_code in (400, 401, 402, 403):
+            self.assertFalse(
+                is_model_fallback_worthy(OpenRouterError("boom", status_code=status_code)),
+                f"status {status_code} should not be fallback-worthy - every model shares the same account.",
+            )
+
+    def test_missing_api_key_is_not_fallback_worthy(self):
+        self.assertFalse(is_model_fallback_worthy(OpenRouterError("no key", code="MISSING_API_KEY")))

@@ -1,6 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
+from django.conf import settings
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -219,7 +220,7 @@ class OpenRouterImageSupportTests(TestCase):
         self.assertEqual(user_content[0], {"type": "text", "text": "What's in this image?"})
         self.assertEqual(user_content[1]["image_url"]["url"], "data:image/png;base64,ZmFrZWJhc2U2NA==")
 
-    @override_settings(AI_PROVIDER="openrouter")
+    @override_settings(AI_PROVIDER="openrouter", OPENROUTER_FALLBACK_MODELS="")
     @patch("ai_chat.views.OpenRouterClient")
     def test_no_image_keeps_the_default_model_and_plain_string_content(self, mock_client_cls):
         mock_client_cls.return_value.stream_chat.return_value = iter(["Hello!"])
@@ -230,9 +231,34 @@ class OpenRouterImageSupportTests(TestCase):
         self.assertEqual(response.status_code, 200)
         b"".join(response.streaming_content)
 
-        mock_client_cls.assert_called_once_with(model=None)
+        mock_client_cls.assert_called_once_with(model=settings.OPENROUTER_DEFAULT_MODEL)
         sent_messages = mock_client_cls.return_value.stream_chat.call_args.args[0]
         self.assertIsInstance(sent_messages[-1]["content"], str)
+
+    @override_settings(AI_PROVIDER="openrouter", OPENROUTER_FALLBACK_MODELS="some/backup-model")
+    @patch("ai_chat.views.OpenRouterClient")
+    def test_falls_back_to_the_next_model_when_the_default_times_out(self, mock_client_cls):
+        """The default model being down (a timeout here, before any content
+        streamed) must not break the chat as long as a configured backup
+        model is up - see openrouter_client.fallback_model_candidates."""
+        from ai_chat.services.openrouter_client import OpenRouterTimeout
+
+        def _timed_out_stream():
+            raise OpenRouterTimeout("timed out")
+            yield  # pragma: no cover - needed to make this a generator function
+
+        mock_client_cls.return_value.stream_chat.side_effect = [_timed_out_stream(), iter(["Hello from backup!"])]
+
+        response = self.client.post(
+            "/api/ai/chat/", data={"messages": [{"role": "user", "content": "Hi"}]}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(b"".join(response.streaming_content).decode(), "Hello from backup!")
+
+        self.assertEqual(
+            [call.kwargs["model"] for call in mock_client_cls.call_args_list],
+            [settings.OPENROUTER_DEFAULT_MODEL, "some/backup-model"],
+        )
 
 
 class TranscribeViewTests(TestCase):
