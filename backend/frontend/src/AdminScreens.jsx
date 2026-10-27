@@ -8751,13 +8751,6 @@ function IdCardFaces({ person, school, qrDataUrl, theme, flipped }) {
             </dl>
           </section>
 
-          {brand.signature ? (
-            <div className="id-card-signature-block">
-              <img src={brand.signature} alt="Authorized signature" className="id-card-signature-img" />
-              <span>Authorized Signature</span>
-            </div>
-          ) : null}
-
           <footer className="id-card-footer id-card-front-footer">
             <strong><span>{brand.email || "SchoolDom profile verification"}</span></strong>
           </footer>
@@ -8792,6 +8785,12 @@ function IdCardFaces({ person, school, qrDataUrl, theme, flipped }) {
               <p className="id-card-back-validity">Valid only when the scan page confirms this profile as verified and active.</p>
             </div>
           </section>
+          {brand.signature ? (
+            <div className="id-card-signature-block">
+              <img src={brand.signature} alt="Authorized signature" className="id-card-signature-img" />
+              <span>Authorized Signature</span>
+            </div>
+          ) : null}
           <p className="id-card-powered-by">Powered by Schooldom</p>
         </article>
     </div>
