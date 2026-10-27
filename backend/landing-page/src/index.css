@@ -174,6 +174,22 @@ body {
 
 /* ── Themeable surface classes ───────────────────────────── */
 .sd-card { background: #ffffff; border: 1px solid rgba(20,19,16,0.08); }
+/* Frosted-glass + layered-depth variant, used selectively on a few surfaces
+   (feature/pricing cards) that pair with real perspective tilt-on-hover -
+   not a global replacement for the plain .sd-card used in forms/modals. */
+.sd-card-glass {
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(20, 19, 16, 0.08);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 1px 2px rgba(20,19,16,0.04), 0 16px 40px -14px rgba(20,19,16,0.16);
+  transition: box-shadow 0.35s ease, border-color 0.35s ease;
+  transform-style: preserve-3d;
+}
+.sd-card-glass:hover {
+  border-color: rgba(20,83,45,0.3);
+  box-shadow: 0 1px 2px rgba(20,19,16,0.05), 0 32px 70px -18px rgba(20,19,16,0.24);
+}
 .sd-card-2 { background: #fbfaf8; border: 1px solid rgba(20,19,16,0.07); }
 .sd-input { background: #ffffff; border: 1px solid rgba(20,19,16,0.16); color: #141310; }
 .sd-modal { background: #ffffff; border: 1px solid rgba(20,19,16,0.1); }

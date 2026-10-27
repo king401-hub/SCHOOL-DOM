@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { motion, useMotionValue, useSpring, useReducedMotion } from 'motion/react';
 import { ArrowRight, Play, TrendingUp, Users, DollarSign, BookOpen, CheckCircle, Bell, Star, BarChart3 } from 'lucide-react';
 import { EASE } from '../lib/reveal';
+import HeroScene from './HeroScene';
 
 /** Masked word-by-word slide-up reveal for kinetic headline entrances. */
 function SplitWords({ text, startDelay = 0, stagger = 0.045 }: { text: string; startDelay?: number; stagger?: number }) {
@@ -297,6 +298,16 @@ export default function Hero({ onDemo }: HeroProps) {
       {/* Single, calm background wash - no particles, no aurora */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] pointer-events-none -z-0"
         style={{ background: 'radial-gradient(ellipse, rgba(20,83,45,0.07) 0%, transparent 65%)', filter: 'blur(50px)' }} />
+
+      {/* Adaptive-quality 3D hero accent - a small corner object, not a full-bleed
+          background: fixed box anchored to the top-right of the hero's text area
+          (not the whole, much taller, section) so it reads as a floating accent
+          instead of a dark wall sitting over the headline/CTAs. Desktop/laptop
+          only; text sits above it (z-10). */}
+      <div className="absolute hidden md:block pointer-events-none"
+        style={{ top: '-30px', right: '-40px', width: 'min(46vw, 620px)', height: 'min(46vw, 620px)', zIndex: 1 }}>
+        <HeroScene />
+      </div>
 
       {/* Centered text block */}
       <motion.div

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Reveal, RevealGroup, revealItem, EASE } from '../lib/reveal';
 import { smoothScrollTo } from '../lib/smoothScroll';
+import { useTilt } from '../lib/tilt';
 
 const GREEN = '#14532d';
 // Brighter variant for text/icons inside the dark dashboard-mockup previews,
@@ -216,14 +217,19 @@ function ShowcaseSection({ section, idx }: { section: ShowcaseSectionData; idx: 
 function FeatureCard({ feature, wide }: { feature: FeatureGridItem; wide: boolean }) {
   const { t } = useTranslation();
   const { icon: Icon, title, desc, link } = feature;
+  const tilt = useTilt<HTMLDivElement>(6);
 
   return (
     <motion.div
+      ref={tilt.ref}
       onClick={() => goTo(link)}
+      onMouseMove={tilt.onMouseMove}
+      onMouseLeave={tilt.onMouseLeave}
       variants={revealItem}
-      whileHover={{ y: -6 }}
+      whileHover={{ y: -6, scale: 1.01 }}
       transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-      className={`group relative rounded-2xl p-6 cursor-pointer sd-card transition-colors duration-300 hover:border-[#14532d]/30 ${wide ? 'lg:col-span-2 flex items-start gap-5' : ''}`}
+      style={tilt.style}
+      className={`group relative rounded-2xl p-6 cursor-pointer sd-card-glass ${wide ? 'lg:col-span-2 flex items-start gap-5' : ''}`}
     >
       <div className={`rounded-xl flex items-center justify-center shrink-0 ${wide ? 'h-14 w-14' : 'h-12 w-12 mb-4'}`}
         style={{ background: 'rgba(20,83,45,0.08)', border: '1px solid rgba(20,83,45,0.22)' }}>

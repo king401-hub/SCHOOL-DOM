@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import { CheckCircle, ArrowRight, Star, Zap, Shield, Users, Eye, ScanLine } from 'lucide-react';
 import { Reveal } from '../lib/reveal';
+import { useTilt } from '../lib/tilt';
 
 const K12_COLOR = '#14532d';
 const NONK12_COLOR = '#0d9488';
@@ -21,6 +22,10 @@ export default function Pricing() {
     premium: t('pricing.schoolgate.featuresPremium', { returnObjects: true }) as string[],
   };
 
+  const tiltK12 = useTilt<HTMLDivElement>(5);
+  const tiltNonK12 = useTilt<HTMLDivElement>(5);
+  const tiltGate = useTilt<HTMLDivElement>(5);
+
   return (
     <section id="pricing" className="py-28 px-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
@@ -38,13 +43,16 @@ export default function Pricing() {
         <div className="grid lg:grid-cols-3 gap-6">
           {/* K-12 Card */}
           <motion.div
-            className="relative rounded-3xl p-8 overflow-hidden sd-card"
-            style={{ border: `1px solid ${K12_COLOR}40` }}
+            ref={tiltK12.ref}
+            onMouseMove={tiltK12.onMouseMove}
+            onMouseLeave={tiltK12.onMouseLeave}
+            className="relative rounded-3xl p-8 overflow-hidden sd-card-glass"
+            style={{ border: `1px solid ${K12_COLOR}40`, ...tiltK12.style }}
             initial="hidden"
             whileInView="show"
             viewport={{ once: true, amount: 0.15 }}
             variants={{ hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, delay: 0.05, ease: EASE } } }}
-            whileHover={{ y: -6 }}
+            whileHover={{ y: -6, scale: 1.01 }}
             transition={{ type: 'spring', stiffness: 280, damping: 22 }}
           >
             <div className="absolute top-4 right-4">
@@ -125,13 +133,16 @@ export default function Pricing() {
 
           {/* Non-K12 Card */}
           <motion.div
-            className="relative rounded-3xl p-8 overflow-hidden sd-card"
-            style={{ border: `1px solid ${NONK12_COLOR}40` }}
+            ref={tiltNonK12.ref}
+            onMouseMove={tiltNonK12.onMouseMove}
+            onMouseLeave={tiltNonK12.onMouseLeave}
+            className="relative rounded-3xl p-8 overflow-hidden sd-card-glass"
+            style={{ border: `1px solid ${NONK12_COLOR}40`, ...tiltNonK12.style }}
             initial="hidden"
             whileInView="show"
             viewport={{ once: true, amount: 0.15 }}
             variants={{ hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, delay: 0.15, ease: EASE } } }}
-            whileHover={{ y: -6 }}
+            whileHover={{ y: -6, scale: 1.01 }}
             transition={{ type: 'spring', stiffness: 280, damping: 22 }}
           >
             <div className="relative">
@@ -186,13 +197,16 @@ export default function Pricing() {
 
           {/* SchoolGate Card */}
           <motion.div
-            className="relative rounded-3xl p-8 overflow-hidden sd-card"
-            style={{ border: `1px solid ${GATE_COLOR}40` }}
+            ref={tiltGate.ref}
+            onMouseMove={tiltGate.onMouseMove}
+            onMouseLeave={tiltGate.onMouseLeave}
+            className="relative rounded-3xl p-8 overflow-hidden sd-card-glass"
+            style={{ border: `1px solid ${GATE_COLOR}40`, ...tiltGate.style }}
             initial="hidden"
             whileInView="show"
             viewport={{ once: true, amount: 0.15 }}
             variants={{ hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, delay: 0.25, ease: EASE } } }}
-            whileHover={{ y: -6 }}
+            whileHover={{ y: -6, scale: 1.01 }}
             transition={{ type: 'spring', stiffness: 280, damping: 22 }}
           >
             <div className="absolute top-4 right-4">
