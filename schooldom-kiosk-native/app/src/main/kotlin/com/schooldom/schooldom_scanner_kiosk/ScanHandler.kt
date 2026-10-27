@@ -172,11 +172,15 @@ object ScanHandler {
             val nowMillis = System.currentTimeMillis()
             val timeText = formatTime(nowMillis)
             val dateText = formatDate(nowMillis)
+            // Signed with the school's own name - this message is the
+            // school talking to its own parents, not a platform
+            // notification. Matches the backend's own _gate_sms_text.
+            val schoolName = KioskStore.schoolName(context) ?: "SchoolDom"
             val text = when (event) {
-                "clockout" -> "$name left school at $timeText on $dateText. -SchoolDom"
-                "early" -> "$name arrived (early) at $timeText on $dateText. -SchoolDom"
-                "late" -> "$name arrived (late) at $timeText on $dateText. -SchoolDom"
-                else -> "$name was scanned at the school gate at $timeText on $dateText. -SchoolDom"
+                "clockout" -> "$name left school at $timeText on $dateText. -$schoolName"
+                "early" -> "$name arrived (early) at $timeText on $dateText. -$schoolName"
+                "late" -> "$name arrived (late) at $timeText on $dateText. -$schoolName"
+                else -> "$name was scanned at the school gate at $timeText on $dateText. -$schoolName"
             }
             // Fire-and-forget: a card tap must still show a result within
             // SCAN_READ_TIMEOUT_MS regardless of path, offline included -
