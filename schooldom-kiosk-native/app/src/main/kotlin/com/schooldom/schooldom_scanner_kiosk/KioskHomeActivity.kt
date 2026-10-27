@@ -56,6 +56,8 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
     private lateinit var statusText: TextView
     private lateinit var settingsButton: TextView
     private lateinit var reprovisionButton: TextView
+    private lateinit var switchBranchButton: TextView
+    private var switchingBranch = false
     private lateinit var scanIcon: TextView
     private lateinit var resultBlock: LinearLayout
     private lateinit var resultIconBg: View
@@ -149,6 +151,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         statusText = findViewById(R.id.statusText)
         settingsButton = findViewById(R.id.settingsButton)
         reprovisionButton = findViewById(R.id.reprovisionButton)
+        switchBranchButton = findViewById(R.id.switchBranchButton)
         scanIcon = findViewById(R.id.scanIcon)
         resultBlock = findViewById(R.id.resultBlock)
         resultIconBg = findViewById(R.id.resultIconBg)
@@ -173,6 +176,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
 
         schoolNameText.text = KioskStore.schoolName(this) ?: "Waiting for school assignment"
         updateStatusText()
+        updateSwitchBranchButton()
 
         printerBridge = TopwisePrinterBridge(applicationContext)
         smsBridge = LocalSmsBridge(this)
@@ -193,6 +197,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
 
         reprovisionButton.setOnClickListener { confirmReProvision() }
         settingsButton.setOnClickListener { startActivity(Intent(this, GatePinActivity::class.java)) }
+        switchBranchButton.setOnClickListener { confirmSwitchBranch() }
         printButton.setOnClickListener { onPrintTapped() }
         sendSmsButton.setOnClickListener { onSendSmsTapped() }
 
@@ -532,6 +537,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
                 if (outcome.schoolName != null) {
                     schoolNameText.text = outcome.schoolName
                 }
+                updateSwitchBranchButton()
                 if (outcome.online) refreshContactsIfStale()
                 if (outcome.updateAvailable) maybePromptForUpdate(outcome)
                 AttendanceLogStore.applyServerClearSignal(this, outcome.attendanceClearedAt)
@@ -732,5 +738,78 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
                 finish()
             }
             .show()
+    }
+
+    // ------------------------------------------------------------ Branch switching
+
+    /** A terminal can be paired with a second branch (device_fleet.pair_branch_terminal
+     * sets Device.paired_tenant) - the button/data were already wired on the backend
+     * and in Heartbeat/KioskStore, but nothing ever showed it on screen, which is why a
+     * newly-paired branch never "appeared" on the terminal. */
+    private fun updateSwitchBranchButton() {
+        val pairedName = KioskStore.pairedSchoolName(this)
+        if (pairedName != null) {
+            switchBranchButton.text = "⇄ Switch to $pairedName"
+            switchBranchButton.visibility = View.VISIBLE
+        } else {
+            switchBranchButton.visibility = View.GONE
+        }
+    }
+
+    private fun confirmSwitchBranch() {
+        if (switchingBranch) return
+        val pairedId = KioskStore.pairedSchoolId(this)
+        val pairedName = KioskStore.pairedSchoolName(this) ?: return
+        if (pairedId == null) return
+        AlertDialog.Builder(this)
+            .setTitle("Switch to $pairedName?")
+            .setMessage("Attendance scans on this terminal will apply to $pairedName until you switch back.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Switch") { _, _ -> switchActiveSchool(pairedId) }
+            .show()
+    }
+
+    private fun switchActiveSchool(schoolId: String) {
+        val deviceAuthToken = KioskStore.deviceAuthToken(this) ?: return
+        switchingBranch = true
+        bgExecutor.execute {
+            var success = false
+            var message = "Could not switch branch - check the connection and try again."
+            try {
+                val payload = JSONObject().apply {
+                    put("auth_token", deviceAuthToken)
+                    put("school_id", schoolId)
+                }
+                val (statusCode, body) = ApiClient.rawPost("/api/device-fleet/device/switch-active-school/", payload)
+                val data = if (body.isNotEmpty()) JSONObject(body) else JSONObject()
+                success = statusCode == 200 && data.optBoolean("success", false)
+                if (success) {
+                    val newSchoolId = data.optString("school_id", "")
+                    val newSchoolName = data.optString("school_name", "")
+                    if (newSchoolId.isNotEmpty() && newSchoolName.isNotEmpty()) {
+                        KioskStore.setActiveSchool(this, newSchoolId, newSchoolName)
+                    }
+                    val newPairedId = if (data.has("paired_school_id") && !data.isNull("paired_school_id")) data.getString("paired_school_id") else null
+                    val newPairedName = if (data.has("paired_school_name") && !data.isNull("paired_school_name")) data.getString("paired_school_name") else null
+                    KioskStore.setPairedSchool(this, newPairedId, newPairedName)
+                } else {
+                    val serverMessage = data.optString("message", "")
+                    if (serverMessage.isNotEmpty()) message = serverMessage
+                }
+            } catch (e: Throwable) {
+                success = false
+            }
+            val finalMessage = message
+            mainHandler.post {
+                switchingBranch = false
+                if (success) {
+                    schoolNameText.text = KioskStore.schoolName(this)
+                    updateSwitchBranchButton()
+                    Toast.makeText(this, "Switched to ${KioskStore.schoolName(this)}", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, finalMessage, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 }

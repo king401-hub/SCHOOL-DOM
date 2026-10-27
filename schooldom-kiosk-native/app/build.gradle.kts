@@ -50,8 +50,8 @@ android {
         // published with its own code above this line - never lower this
         // without first confirming the backend's current "latest" scanner_kiosk
         // AppRelease.version_code and leaving real headroom above it.
-        versionCode = 1016
-        versionName = "1.0.16-native"
+        versionCode = 1017
+        versionName = "1.0.17-native"
     }
 
     signingConfigs {

@@ -33,6 +33,18 @@
             android:textStyle="bold"/>
 
         <TextView
+            android:id="@+id/switchBranchButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⇄ Switch branch"
+            android:textColor="@color/text_muted"
+            android:textSize="12sp"
+            android:padding="8dp"
+            android:visibility="gone"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <TextView
             android:id="@+id/settingsButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
