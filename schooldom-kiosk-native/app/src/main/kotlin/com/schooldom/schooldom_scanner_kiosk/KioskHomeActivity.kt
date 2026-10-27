@@ -569,7 +569,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
 
     private fun updateStatusText() {
         val parts = mutableListOf<String>()
-        parts.add(if (online) "Online" else "Offline")
+        parts.add(if (online) "📶" else "📵")
         if (pendingCount > 0) {
             parts.add(if (sessionExpired) "$pendingCount pending - tap Re-enter key" else "$pendingCount pending")
         }
