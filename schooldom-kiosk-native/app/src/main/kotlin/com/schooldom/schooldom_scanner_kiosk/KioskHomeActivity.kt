@@ -749,11 +749,22 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
     private fun updateSwitchBranchButton() {
         val pairedName = KioskStore.pairedSchoolName(this)
         if (pairedName != null) {
-            switchBranchButton.text = "⇄ Switch to $pairedName"
+            switchBranchButton.text = "🔄 ${abbreviateSchoolName(pairedName)}"
             switchBranchButton.visibility = View.VISIBLE
         } else {
             switchBranchButton.visibility = View.GONE
         }
+    }
+
+    /** Keeps the button readable at its fixed header-row width - a full branch
+     * name like "Methodist Olivet School" would otherwise force the text to
+     * shrink/ellipsize into something less clear than its own initials. The
+     * confirm dialog below always shows the full name, so nothing is lost. */
+    private fun abbreviateSchoolName(name: String): String {
+        val trimmed = name.trim()
+        if (trimmed.length <= 14) return trimmed
+        val initials = trimmed.split(Regex("\\s+")).filter { it.isNotEmpty() }.map { it.first().uppercaseChar() }.joinToString("")
+        return if (initials.length >= 2) initials else trimmed.take(13) + "…"
     }
 
     private fun confirmSwitchBranch() {
