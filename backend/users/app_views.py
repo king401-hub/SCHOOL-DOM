@@ -25,7 +25,7 @@ from django.core.signing import BadSignature, SignatureExpired
 from django.core.validators import validate_email
 from django.db import transaction as db_transaction
 from django.db.models import Avg, Count, Exists, Max, OuterRef, Q, Sum, Prefetch
-from django.http import FileResponse, HttpResponse, HttpResponseRedirect
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
@@ -43,6 +43,7 @@ from licensing.services import current_license_for
 from attendance.utils import get_frontend_base_url
 from attendance.models import AttendanceQRCode
 from apps.app.views import admin_app_installer_path, offline_cbt_installer_path
+from users import id_card_pdf
 
 from academic.models import (
     AcademicYear,
@@ -7372,6 +7373,77 @@ def id_card_qr_code(request):
             StudentProfile.objects.filter(id=person["id"], user__tenant=user.tenant).update(id_card_generated_at=timezone.now())
         response["X-Token-Used"] = "0"
         response["X-Token-Message"] = "ID card generated."
+    return response
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def id_card_bulk_export_pdf(request):
+    """Bulk ID card ZIP export for AdminIdCardsScreen's handleBulkExport.
+    Renders each selected person's card to a real, text-based PDF via a
+    headless-Chromium print (see id_card_pdf.py) - visually matching the
+    live design while also producing genuinely selectable/editable text,
+    the same quality a browser's own "Save as PDF" gives a single card,
+    just batched server-side so it works for many people in one zip."""
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only administrators can export ID cards."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    requested = request.data.get("people")
+    if not isinstance(requested, list) or not requested:
+        return Response({"success": False, "message": "Select at least one person to export."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(requested) > id_card_pdf.BULK_EXPORT_LIMIT:
+        return Response(
+            {
+                "success": False,
+                "message": f"You can export up to {id_card_pdf.BULK_EXPORT_LIMIT} cards at once - please select fewer and try again.",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    people = []
+    for item in requested:
+        if not isinstance(item, dict):
+            continue
+        try:
+            # _resolve_id_card_person raises Http404 (get_object_or_404) for
+            # a well-shaped but nonexistent id - one bad/stale entry in a
+            # large selection must not abort the whole export.
+            person = _resolve_id_card_person(user, item.get("person_type"), item.get("person_id"), request=request)
+        except Http404:
+            continue
+        if person:
+            people.append(person)
+    if not people:
+        return Response({"success": False, "message": "None of the selected people could be found."}, status=status.HTTP_404_NOT_FOUND)
+
+    brand = _school_identity_payload(user.tenant, request=request)
+    theme = brand.get("document_theme") or {}
+    qr_data_urls = {}
+    generated_student_ids = []
+    for person in people:
+        key = f'{person["person_type"]}:{person["id"]}'
+        qr_data_urls[key] = _id_card_qr_data_url(request, user.tenant, person)["qr_data_url"]
+        if person["person_type"] == "student":
+            generated_student_ids.append(person["id"])
+    if generated_student_ids:
+        StudentProfile.objects.filter(id__in=generated_student_ids, user__tenant=user.tenant).update(id_card_generated_at=timezone.now())
+
+    try:
+        zip_bytes, exported = id_card_pdf.generate_id_cards_zip(people, brand, theme, qr_data_urls)
+    except Exception:
+        logger.exception("ID card bulk PDF export failed for tenant %s", user.tenant_id)
+        return Response(
+            {"success": False, "message": "Could not generate the ID cards. Please try again, or contact support if this keeps happening."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    if not exported:
+        return Response({"success": False, "message": "Could not render any of the selected cards."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    response = HttpResponse(zip_bytes, content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="id-cards-{timezone.now().date().isoformat()}.zip"'
     return response
 
 

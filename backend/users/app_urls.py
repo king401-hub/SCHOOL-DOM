@@ -59,6 +59,7 @@ urlpatterns = [
     path("teachers/<uuid:teacher_id>/", app_views.teacher_detail, name="app_teacher_detail"),
     path("id-cards/", app_views.id_cards_snapshot, name="app_id_cards_snapshot"),
     path("id-cards/qr/", app_views.id_card_qr_code, name="app_id_card_qr_code"),
+    path("id-cards/bulk-export-pdf/", app_views.id_card_bulk_export_pdf, name="app_id_card_bulk_export_pdf"),
     path("id-cards/verify/", app_views.id_card_verify, name="app_id_card_verify"),
     path("id-cards/my/", app_views.student_my_id_card, name="app_student_my_id_card"),
     path("id-cards/scan-attendance/", app_views.id_card_scan_attendance, name="app_id_card_scan_attendance"),

@@ -5327,6 +5327,133 @@ class AdminIdCardTests(TestCase):
         self.assertEqual(response.status_code, 404, response.data)
 
 
+class IdCardBulkExportPdfTests(TestCase):
+    """AdminIdCardsScreen's "Export selected as zip" - renders each person's
+    card to a real PDF via a headless browser (see users/id_card_pdf.py) and
+    zips them up. generate_id_cards_zip itself launches a real Chromium, so
+    every test here except the one real end-to-end smoke test mocks it out -
+    these only need to prove the view's own request/response contract."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Bulk Export School", schema_name="bulk_export_school", is_active=True,
+        )
+        self.admin = User.objects.create_user(
+            email="admin@bulk-export.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client.force_authenticate(user=self.admin)
+        student_user = User.objects.create_user(
+            email="student@bulk-export.edu", password="StudentPass123", first_name="Jane", last_name="Doe",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=student_user, student_id="BLK-001", admission_number="BLKADM-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            guardian_phone="08010000001",
+        )
+
+    def _post(self, people):
+        return self.client.post("/api/app/id-cards/bulk-export-pdf/", data={"people": people}, format="json")
+
+    def test_non_admin_is_forbidden(self):
+        teacher_user = User.objects.create_user(
+            email="teacher@bulk-export.edu", password="TeacherPass123", first_name="Tom", last_name="Teach",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client.force_authenticate(user=teacher_user)
+
+        response = self._post([{"person_type": "student", "person_id": str(self.student.id)}])
+        self.assertEqual(response.status_code, 403, response.data)
+
+    def test_empty_selection_is_rejected(self):
+        response = self._post([])
+        self.assertEqual(response.status_code, 400, response.data)
+
+    def test_more_than_the_batch_limit_is_rejected(self):
+        from users import id_card_pdf
+
+        too_many = [{"person_type": "student", "person_id": str(self.student.id)}] * (id_card_pdf.BULK_EXPORT_LIMIT + 1)
+        response = self._post(too_many)
+        self.assertEqual(response.status_code, 400, response.data)
+
+    def test_every_entry_unresolvable_is_a_404(self):
+        response = self._post([{"person_type": "student", "person_id": "00000000-0000-0000-0000-000000000000"}])
+        self.assertEqual(response.status_code, 404, response.data)
+
+    @patch("users.app_views.id_card_pdf.generate_id_cards_zip")
+    def test_successful_export_returns_a_zip_and_marks_the_student_card_generated(self, mock_generate):
+        mock_generate.return_value = (b"PK\x03\x04fake-zip-bytes", 1)
+        self.assertIsNone(self.student.id_card_generated_at)
+
+        response = self._post([{"person_type": "student", "person_id": str(self.student.id)}])
+
+        self.assertEqual(response.status_code, 200, getattr(response, "data", None))
+        self.assertEqual(response["Content-Type"], "application/zip")
+        self.assertIn("attachment", response["Content-Disposition"])
+        self.assertEqual(response.content, b"PK\x03\x04fake-zip-bytes")
+        self.student.refresh_from_db()
+        self.assertIsNotNone(self.student.id_card_generated_at)
+
+        # The resolved person payload (not just the raw request body) must
+        # reach the renderer - it needs the full profile (name, photo, etc.),
+        # not just a type/id pair.
+        people_arg = mock_generate.call_args.args[0]
+        self.assertEqual(people_arg[0]["unique_id"], "BLK-001")
+
+    @patch("users.app_views.id_card_pdf.generate_id_cards_zip")
+    def test_an_unresolvable_entry_is_skipped_not_fatal_when_others_resolve(self, mock_generate):
+        mock_generate.return_value = (b"PK\x03\x04fake-zip-bytes", 1)
+
+        response = self._post([
+            {"person_type": "student", "person_id": str(self.student.id)},
+            {"person_type": "student", "person_id": "00000000-0000-0000-0000-000000000000"},
+        ])
+
+        self.assertEqual(response.status_code, 200, getattr(response, "data", None))
+        people_arg = mock_generate.call_args.args[0]
+        self.assertEqual(len(people_arg), 1)
+
+    @patch("users.app_views.id_card_pdf.generate_id_cards_zip")
+    def test_a_renderer_failure_is_a_clean_500_not_a_crash(self, mock_generate):
+        mock_generate.side_effect = RuntimeError("browser crashed")
+
+        response = self._post([{"person_type": "student", "person_id": str(self.student.id)}])
+
+        self.assertEqual(response.status_code, 500, response.data)
+        self.assertIn("message", response.data)
+
+    def test_real_render_produces_a_two_page_pdf_with_genuine_selectable_text(self):
+        """The one real (non-mocked) end-to-end test - actually launches
+        Chromium via Playwright, same as production. Needs
+        `playwright install chromium` to have been run locally; skip this
+        one test if that hasn't happened yet rather than chasing an
+        unrelated-looking failure."""
+        import io
+        import zipfile
+
+        from pypdf import PdfReader
+
+        response = self._post([{"person_type": "student", "person_id": str(self.student.id)}])
+        self.assertEqual(response.status_code, 200, getattr(response, "data", None))
+
+        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+            names = zf.namelist()
+            self.assertEqual(len(names), 1)
+            info = zf.getinfo(names[0])
+            self.assertEqual(info.compress_type, zipfile.ZIP_DEFLATED, "cards must be compressed inside the zip")
+            pdf_bytes = zf.read(names[0])
+
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        self.assertEqual(len(reader.pages), 2, "one page for the front, one for the back")
+        front_text = reader.pages[0].extract_text()
+        # get_full_name() is surname-first in this app (see
+        # test_full_name_is_surname_first_then_first_name_then_middle_name).
+        self.assertIn("Doe Jane", front_text)
+        self.assertIn("BLK-001", front_text)
+
+
 class AuthSchoolScopeTests(TestCase):
     def setUp(self):
         self.client = APIClient()
