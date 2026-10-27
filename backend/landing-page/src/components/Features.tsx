@@ -1,32 +1,27 @@
-import { useRef, useState, useEffect, type ReactElement } from 'react';
+import { type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
+import { motion } from 'motion/react';
 import {
   BookOpen, DollarSign, Users, FileText, MessageSquare,
   Briefcase, Monitor, ArrowRight, CheckCircle, QrCode
 } from 'lucide-react';
+import { Reveal, RevealGroup, revealItem, EASE } from '../lib/reveal';
+import { smoothScrollTo } from '../lib/smoothScroll';
 
 const GREEN = '#14532d';
 // Brighter variant for text/icons inside the dark dashboard-mockup previews,
 // where the deep brand green wouldn't read against a near-black surface.
 const GREEN_BRIGHT = '#4ade80';
 
+// Indices of the feature-grid tiles rendered wide (2 cols) in the bento layout.
+const WIDE_TILES = new Set([0, 4]);
+
 function goTo(link: string) {
   if (link.startsWith('#')) {
-    document.getElementById(link.slice(1))?.scrollIntoView({ behavior: 'smooth' });
+    smoothScrollTo(link);
   } else {
     window.location.href = link;
   }
-}
-
-function useVisible(threshold = 0.15) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [threshold]);
-  return { ref, visible };
 }
 
 type IconType = typeof BookOpen;
@@ -190,15 +185,11 @@ function buildShowcaseSections(t: (key: string, options?: Record<string, unknown
 
 function ShowcaseSection({ section, idx }: { section: ShowcaseSectionData; idx: number }) {
   const { t } = useTranslation();
-  const { ref, visible } = useVisible(0.15);
   const isEven = idx % 2 === 0;
 
   return (
-    <div ref={ref} className={`grid lg:grid-cols-2 gap-12 items-center ${idx > 0 ? 'mt-24' : ''}`}>
-      <div
-        className={isEven ? 'order-1' : 'order-1 lg:order-2'}
-        style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : `translateX(${isEven ? -24 : 24}px)`, transition: 'all 0.7s ease' }}
-      >
+    <div className={`grid lg:grid-cols-2 gap-12 items-center ${idx > 0 ? 'mt-24' : ''}`}>
+      <Reveal x={isEven ? -28 : 28} y={0} className={isEven ? 'order-1' : 'order-1 lg:order-2'}>
         <span className="badge mb-4">{section.badge}</span>
         <h3 className="font-display font-semibold text-3xl lg:text-4xl text-[#141310] mb-4 leading-tight">{section.title}</h3>
         <p className="text-[#5b5750] text-base leading-relaxed mb-6">{section.desc}</p>
@@ -213,55 +204,44 @@ function ShowcaseSection({ section, idx }: { section: ShowcaseSectionData; idx: 
         <button className="btn-ghost" onClick={() => goTo(section.link)}>
           {t('common.learnMore')} <ArrowRight className="h-4 w-4" />
         </button>
-      </div>
+      </Reveal>
 
-      <div
-        className={isEven ? 'order-2' : 'order-2 lg:order-1'}
-        style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : `translateX(${isEven ? 24 : -24}px)`, transition: 'all 0.7s ease 0.15s' }}
-      >
+      <Reveal x={isEven ? 28 : -28} y={0} delay={0.15} className={isEven ? 'order-2' : 'order-2 lg:order-1'}>
         {section.preview}
-      </div>
+      </Reveal>
     </div>
   );
 }
 
-function FeatureCard({ feature, index, visible }: { feature: FeatureGridItem; index: number; visible: boolean }) {
+function FeatureCard({ feature, wide }: { feature: FeatureGridItem; wide: boolean }) {
   const { t } = useTranslation();
   const { icon: Icon, title, desc, link } = feature;
 
   return (
-    <div
+    <motion.div
       onClick={() => goTo(link)}
-      className="group relative rounded-2xl p-6 cursor-pointer sd-card transition-all duration-300 hover:border-[#14532d]/30 hover:-translate-y-0.5"
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'none' : 'translateY(20px)',
-        transition: `opacity 0.5s ease ${index * 60}ms, transform 0.5s ease ${index * 60}ms`,
-      }}
+      variants={revealItem}
+      whileHover={{ y: -6 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+      className={`group relative rounded-2xl p-6 cursor-pointer sd-card transition-colors duration-300 hover:border-[#14532d]/30 ${wide ? 'lg:col-span-2 flex items-start gap-5' : ''}`}
     >
-      <div className="h-12 w-12 rounded-xl flex items-center justify-center mb-4"
+      <div className={`rounded-xl flex items-center justify-center shrink-0 ${wide ? 'h-14 w-14' : 'h-12 w-12 mb-4'}`}
         style={{ background: 'rgba(20,83,45,0.08)', border: '1px solid rgba(20,83,45,0.22)' }}>
-        <Icon className="h-5 w-5" style={{ color: GREEN }} />
+        <Icon className={wide ? 'h-6 w-6' : 'h-5 w-5'} style={{ color: GREEN }} />
       </div>
-      <h3 className="text-[#141310] font-semibold text-base mb-2">{title}</h3>
-      <p className="text-[#5b5750] text-sm leading-relaxed">{desc}</p>
-      <div className="mt-4 flex items-center gap-1 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: GREEN }}>
-        {t('common.learnMore')} <ArrowRight className="h-3 w-3" />
+      <div className="min-w-0">
+        <h3 className={`text-[#141310] font-semibold mb-2 ${wide ? 'text-lg' : 'text-base'}`}>{title}</h3>
+        <p className="text-[#5b5750] text-sm leading-relaxed">{desc}</p>
+        <div className="mt-4 flex items-center gap-1 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: GREEN }}>
+          {t('common.learnMore')} <ArrowRight className="h-3 w-3" />
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
 export default function Features() {
   const { t } = useTranslation();
-  const gridRef = useRef<HTMLDivElement>(null);
-  const [gridVisible, setGridVisible] = useState(false);
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setGridVisible(true); }, { threshold: 0.05 });
-    if (gridRef.current) obs.observe(gridRef.current);
-    return () => obs.disconnect();
-  }, []);
-
   const showcaseSections = buildShowcaseSections(t);
   const featuresGrid = buildFeaturesGrid(t);
 
@@ -274,20 +254,19 @@ export default function Features() {
         {/* Section divider */}
         <div className="section-divider my-24" />
 
-        {/* Feature grid */}
-        <div ref={gridRef}>
-          <div className="text-center mb-14"
-            style={{ opacity: gridVisible ? 1 : 0, transform: gridVisible ? 'none' : 'translateY(20px)', transition: 'all 0.7s ease' }}>
+        {/* Feature grid — asymmetric bento layout, not a uniform 3-up */}
+        <div>
+          <Reveal className="text-center mb-14">
             <span className="badge mb-4">{t('features.badge')}</span>
             <h2 className="font-display font-bold text-4xl sm:text-5xl text-[#141310] mb-4 tracking-tight">
               {t('features.title')}{' '}
               <span className="gradient-text">{t('features.titleHighlight')}</span>
             </h2>
             <p className="text-[#5b5750] max-w-xl mx-auto">{t('features.subtitle')}</p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {featuresGrid.map((f, i) => <FeatureCard key={f.title} feature={f} index={i} visible={gridVisible} />)}
-          </div>
+          </Reveal>
+          <RevealGroup className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" stagger={0.07} amount={0.05}>
+            {featuresGrid.map((f, i) => <FeatureCard key={f.title} feature={f} wide={WIDE_TILES.has(i)} />)}
+          </RevealGroup>
         </div>
       </div>
     </section>

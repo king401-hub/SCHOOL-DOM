@@ -1,6 +1,64 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { motion, useMotionValue, useSpring, useReducedMotion } from 'motion/react';
 import { ArrowRight, Play, TrendingUp, Users, DollarSign, BookOpen, CheckCircle, Bell, Star, BarChart3 } from 'lucide-react';
+import { EASE } from '../lib/reveal';
+
+/** Masked word-by-word slide-up reveal for kinetic headline entrances. */
+function SplitWords({ text, startDelay = 0, stagger = 0.045 }: { text: string; startDelay?: number; stagger?: number }) {
+  const reduced = useReducedMotion();
+  const words = text.split(' ');
+  if (reduced) return <>{text}</>;
+  return (
+    <>
+      {words.map((w, i) => (
+        <span key={i} style={{ display: 'inline-block', overflow: 'hidden', verticalAlign: 'top', paddingBottom: '0.08em' }}>
+          <motion.span
+            style={{ display: 'inline-block' }}
+            initial={{ y: '115%' }}
+            animate={{ y: 0 }}
+            transition={{ duration: 0.85, ease: EASE, delay: startDelay + i * stagger }}
+          >
+            {w}{i < words.length - 1 ? ' ' : ''}
+          </motion.span>
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** Translates an element a fraction of the way toward the cursor on hover, spring-back on leave. */
+function useMagnetic<T extends HTMLElement>(strength = 0.3) {
+  const reduced = useReducedMotion();
+  const ref = useRef<T>(null);
+  const mx = useMotionValue(0);
+  const my = useMotionValue(0);
+  const x = useSpring(mx, { stiffness: 150, damping: 14, mass: 0.2 });
+  const y = useSpring(my, { stiffness: 150, damping: 14, mass: 0.2 });
+  const onMouseMove = (e: MouseEvent) => {
+    if (reduced) return;
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    mx.set((e.clientX - r.left - r.width / 2) * strength);
+    my.set((e.clientY - r.top - r.height / 2) * strength);
+  };
+  const onMouseLeave = () => { mx.set(0); my.set(0); };
+  return { ref, style: { x, y }, onMouseMove, onMouseLeave };
+}
+
+/** Paper-grain texture: a faint fractal-noise overlay reinforcing the light paper surface. */
+function GrainOverlay() {
+  return (
+    <svg className="absolute inset-0 w-full h-full pointer-events-none select-none" style={{ opacity: 0.035, mixBlendMode: 'multiply' }} aria-hidden="true">
+      <filter id="heroGrain">
+        <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch" />
+        <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.9 0" />
+      </filter>
+      <rect width="100%" height="100%" filter="url(#heroGrain)" />
+    </svg>
+  );
+}
 
 interface HeroProps {
   onSignIn: () => void;
@@ -218,64 +276,90 @@ function DashboardFrame() {
   );
 }
 
+const fadeUp = {
+  hidden: { opacity: 0, y: 16 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: EASE } },
+};
+
 export default function Hero({ onDemo }: HeroProps) {
   const { t } = useTranslation();
-  const [in_, setIn] = useState(false);
-  useEffect(() => { setTimeout(() => setIn(true), 80); }, []);
+  const reduced = useReducedMotion();
+  const ctaPrimary = useMagnetic<HTMLAnchorElement>(0.3);
+  const ctaSecondary = useMagnetic<HTMLButtonElement>(0.3);
 
-  const anim = (delay = 0): React.CSSProperties => ({
-    opacity: in_ ? 1 : 0,
-    transform: in_ ? 'none' : 'translateY(16px)',
-    transition: `opacity 0.7s ease ${delay}ms, transform 0.7s ease ${delay}ms`,
-  });
+  const line1 = t('hero.titleLine1');
+  const line1Words = reduced ? 0 : line1.split(' ').length;
+  const line2Delay = 0.15 + line1Words * 0.045 + 0.08;
 
   return (
     <section className="relative pt-32 pb-0 overflow-hidden">
+      <GrainOverlay />
       {/* Single, calm background wash - no particles, no aurora */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] pointer-events-none -z-0"
         style={{ background: 'radial-gradient(ellipse, rgba(20,83,45,0.07) 0%, transparent 65%)', filter: 'blur(50px)' }} />
 
       {/* Centered text block */}
-      <div className="max-w-4xl mx-auto px-4 text-center relative z-10">
+      <motion.div
+        className="max-w-4xl mx-auto px-4 text-center relative z-10"
+        initial={reduced ? false : 'hidden'}
+        animate="show"
+        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.1 } } }}
+      >
         {/* Badge */}
-        <div style={anim(0)}>
+        <motion.div variants={fadeUp}>
           <span className="inline-flex items-center gap-2 badge mb-7">
             <Star className="h-3 w-3 fill-current" />
             {t('hero.badge')}
           </span>
-        </div>
+        </motion.div>
 
         {/* Headline */}
-        <div style={anim(100)}>
+        <motion.div variants={fadeUp}>
           <h1 className="font-display font-bold leading-[1.04] tracking-tight mb-6"
             style={{ fontSize: 'clamp(32px, 6.4vw, 80px)' }}>
-            <span className="text-[#141310] block">{t('hero.titleLine1')}</span>
-            <span className="text-[#141310] block">{t('hero.titleLine2')}</span>
+            <span className="text-[#141310] block"><SplitWords text={line1} startDelay={0.15} /></span>
+            <span className="text-[#141310] block"><SplitWords text={t('hero.titleLine2')} startDelay={line2Delay} /></span>
             <span className="block whitespace-nowrap" style={{ fontSize: 'clamp(23px, 5.3vw, 71px)', minHeight: '1.25em' }}>
               <TypewriterCycle />
             </span>
           </h1>
-        </div>
+        </motion.div>
 
         {/* Sub */}
-        <div style={anim(200)}>
+        <motion.div variants={fadeUp}>
           <p className="text-[#5b5750] text-lg sm:text-xl leading-relaxed max-w-2xl mx-auto mb-10">
             {t('hero.subtitle')}
           </p>
-        </div>
+        </motion.div>
 
         {/* CTAs */}
-        <div style={anim(300)} className="flex flex-wrap gap-4 justify-center mb-12">
-          <a href="/#/signup" className="btn-primary text-base px-8 py-4">
+        <motion.div variants={fadeUp} className="flex flex-wrap gap-4 justify-center mb-12">
+          <motion.a
+            ref={ctaPrimary.ref}
+            href="/#/signup"
+            className="btn-primary text-base px-8 py-4"
+            style={ctaPrimary.style}
+            onMouseMove={ctaPrimary.onMouseMove}
+            onMouseLeave={ctaPrimary.onMouseLeave}
+            whileTap={{ scale: 0.96 }}
+          >
             {t('hero.ctaPrimary')} <ArrowRight className="h-4 w-4" />
-          </a>
-          <button onClick={onDemo} className="btn-ghost text-base px-8 py-4">
+          </motion.a>
+          <motion.button
+            ref={ctaSecondary.ref}
+            onClick={onDemo}
+            className="btn-ghost text-base px-8 py-4"
+            style={ctaSecondary.style}
+            onMouseMove={ctaSecondary.onMouseMove}
+            onMouseLeave={ctaSecondary.onMouseLeave}
+            whileTap={{ scale: 0.96 }}
+          >
             <Play className="h-4 w-4" /> {t('hero.ctaSecondary')}
-          </button>
-        </div>
+          </motion.button>
+        </motion.div>
 
         {/* Social proof */}
-        <div style={anim(400)} className="flex flex-wrap items-center justify-center gap-6 mb-16">
+        <motion.div variants={fadeUp} className="flex flex-wrap items-center justify-center gap-6 mb-16">
           <div className="flex items-center gap-3">
             <div className="flex -space-x-2">
               {['BG', 'AG', 'CO', 'EK', 'OS'].map((s, i) => (
@@ -305,12 +389,16 @@ export default function Hero({ onDemo }: HeroProps) {
               <p className="text-[#8a8378] text-[10px]">{stat.l}</p>
             </div>
           ))}
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* Full-width dashboard — no tilt, flows naturally */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10"
-        style={{ opacity: in_ ? 1 : 0, transform: in_ ? 'none' : 'translateY(32px)', transition: 'all 0.9s ease 0.4s' }}>
+      <motion.div
+        className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10"
+        initial={reduced ? false : { opacity: 0, y: 32 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.9, ease: EASE, delay: 0.4 }}
+      >
 
         {/* Calm stat row above dashboard (static - no floating/bouncing) */}
         <div className="flex flex-wrap justify-center items-center gap-3 mb-4">
@@ -333,7 +421,7 @@ export default function Hero({ onDemo }: HeroProps) {
 
         {/* Gradient fade at bottom of dashboard (disappears into next section) */}
         <div className="h-20 -mt-20 relative pointer-events-none hero-fade" />
-      </div>
+      </motion.div>
     </section>
   );
 }

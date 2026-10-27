@@ -1,6 +1,8 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import Lenis from 'lenis';
+import { setLenisInstance, smoothScrollTo } from './lib/smoothScroll';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import Features from './components/Features';
@@ -39,7 +41,7 @@ function WhatsAppButton() {
 
 function HomePage() {
   const handleSignIn = () => { window.location.href = `${ADMIN_APP_URL}signin`; };
-  const handleDemo = () => { document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' }); };
+  const handleDemo = () => { smoothScrollTo('#demo'); };
 
   return (
     <>
@@ -55,6 +57,21 @@ function HomePage() {
 
 export default function App() {
   const handleSignIn = () => { window.location.href = `${ADMIN_APP_URL}signin`; };
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const lenis = new Lenis({ duration: 1.1, easing: t => 1 - Math.pow(1 - t, 3) });
+    setLenisInstance(lenis);
+    let rafId = requestAnimationFrame(function raf(time) {
+      lenis.raf(time);
+      rafId = requestAnimationFrame(raf);
+    });
+    return () => {
+      cancelAnimationFrame(rafId);
+      lenis.destroy();
+      setLenisInstance(null);
+    };
+  }, []);
 
   return (
     <HashRouter>

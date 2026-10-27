@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Mail, MapPin, Twitter, Youtube, Facebook, ArrowRight, Phone } from 'lucide-react';
+import { Reveal } from '../lib/reveal';
 
 const LINK_GROUPS = ['product', 'company', 'support'] as const;
 
@@ -84,7 +85,7 @@ export default function Footer() {
         </div>
 
         {/* CTA block */}
-        <div className="rounded-3xl p-10 mb-10 text-center relative overflow-hidden"
+        <Reveal className="rounded-3xl p-10 mb-10 text-center relative overflow-hidden"
           style={{ background: 'rgba(20,83,45,0.06)', border: '1px solid rgba(20,83,45,0.18)' }}>
           <div className="relative">
             <h3 className="font-display font-bold text-[#141310] text-2xl sm:text-3xl mb-3 tracking-tight">
@@ -95,10 +96,10 @@ export default function Footer() {
               {t('footer.ctaButton')} <ArrowRight className="h-4 w-4" />
             </a>
           </div>
-        </div>
+        </Reveal>
 
         {/* Bottom bar */}
-        <div className="border-t border-black/8 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <Reveal className="border-t border-black/8 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4" y={10} delay={0.15} duration={0.5}>
           <p className="text-[#8a8378] text-xs">
             {t('footer.copyright', { year })}
           </p>
@@ -106,7 +107,7 @@ export default function Footer() {
             <div className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
             <span className="text-[#8a8378] text-xs">{t('footer.systemsOperational')}</span>
           </div>
-        </div>
+        </Reveal>
       </div>
     </footer>
   );

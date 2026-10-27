@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X, ChevronDown } from 'lucide-react';
 import LanguageSwitcher from './LanguageSwitcher';
+import { smoothScrollTo } from '../lib/smoothScroll';
 
 interface NavbarProps {
   onSignIn: () => void;
@@ -13,6 +15,9 @@ export default function Navbar({ onSignIn }: NavbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [activeLink, setActiveLink] = useState('');
+  const navRowRef = useRef<HTMLDivElement>(null);
+  const linkRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [indicator, setIndicator] = useState<{ x: number; width: number } | null>(null);
 
   const NAV_LINKS = [
     { label: t('nav.features'), href: '#features' },
@@ -47,12 +52,26 @@ export default function Navbar({ onSignIn }: NavbarProps) {
   const scrollTo = (href: string) => {
     setMobileOpen(false);
     if (href.startsWith('#') && !href.startsWith('#/')) {
-      const id = href.slice(1);
-      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+      smoothScrollTo(href);
     } else {
       window.location.href = href;
     }
   };
+
+  const measureIndicator = useCallback(() => {
+    const row = navRowRef.current;
+    const btn = activeLink && linkRefs.current[activeLink];
+    if (!row || !btn) { setIndicator(null); return; }
+    const rowRect = row.getBoundingClientRect();
+    const btnRect = btn.getBoundingClientRect();
+    setIndicator({ x: btnRect.left - rowRect.left, width: btnRect.width });
+  }, [activeLink]);
+
+  useEffect(() => { measureIndicator(); }, [measureIndicator]);
+  useEffect(() => {
+    window.addEventListener('resize', measureIndicator);
+    return () => window.removeEventListener('resize', measureIndicator);
+  }, [measureIndicator]);
 
   return (
     <>
@@ -71,7 +90,15 @@ export default function Navbar({ onSignIn }: NavbarProps) {
             </div>
           </a>
 
-          <div className="hidden md:flex items-center gap-1">
+          <div ref={navRowRef} className="hidden md:flex items-center gap-1 relative">
+            {indicator && (
+              <motion.div
+                className="absolute top-0 h-full rounded-xl pointer-events-none"
+                style={{ background: 'rgba(20,83,45,0.08)', border: '1px solid rgba(20,83,45,0.18)' }}
+                animate={{ x: indicator.x, width: indicator.width }}
+                transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+              />
+            )}
             {NAV_LINKS.map(link => (
               <div key={link.label} className="relative"
                 onMouseEnter={() => link.children && setOpenDropdown(link.label)}
@@ -79,34 +106,37 @@ export default function Navbar({ onSignIn }: NavbarProps) {
                 {link.children ? (
                   <>
                     <button
-                      className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer text-[#5b5750] hover:text-[#141310]"
+                      className="relative flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer text-[#5b5750] hover:text-[#141310]"
                     >
                       {link.label} <ChevronDown className="h-3.5 w-3.5" />
                     </button>
-                    {openDropdown === link.label && (
-                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-44 rounded-2xl overflow-hidden shadow-xl z-50 sd-panel">
-                        {link.children.map(c => (
-                          <a key={c.label} href={c.href}
-                            className="block px-4 py-3 text-sm text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all">
-                            {c.label}
-                          </a>
-                        ))}
-                      </div>
-                    )}
+                    <AnimatePresence>
+                      {openDropdown === link.label && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                          className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-44 rounded-2xl overflow-hidden shadow-xl z-50 sd-panel"
+                        >
+                          {link.children.map(c => (
+                            <a key={c.label} href={c.href}
+                              className="block px-4 py-3 text-sm text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all">
+                              {c.label}
+                            </a>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </>
                 ) : (
                   <button
+                    ref={el => { linkRefs.current[link.href.slice(1)] = el; }}
                     onClick={() => scrollTo(link.href)}
-                    className="px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer relative"
-                    style={{
-                      color: activeLink === link.href.slice(1) ? '#14532d' : '#5b5750',
-                      background: activeLink === link.href.slice(1) ? 'rgba(20,83,45,0.08)' : 'transparent',
-                    }}
+                    className="relative px-4 py-2 rounded-xl text-sm font-medium transition-colors cursor-pointer"
+                    style={{ color: activeLink === link.href.slice(1) ? '#14532d' : '#5b5750' }}
                   >
                     {link.label}
-                    {activeLink === link.href.slice(1) && (
-                      <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style={{ background: '#14532d' }} />
-                    )}
                   </button>
                 )}
               </div>
@@ -131,12 +161,24 @@ export default function Navbar({ onSignIn }: NavbarProps) {
         </div>
       </nav>
 
+      <AnimatePresence>
       {mobileOpen && (
-        <div className="fixed inset-0 z-[99] md:hidden" onClick={() => setMobileOpen(false)}>
+        <motion.div
+          className="fixed inset-0 z-[99] md:hidden"
+          onClick={() => setMobileOpen(false)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
           <div className="absolute inset-0" style={{ background: 'rgba(20,19,16,0.4)', backdropFilter: 'blur(8px)' }} />
-          <div
+          <motion.div
             className="absolute top-[70px] left-4 right-4 rounded-2xl overflow-hidden shadow-xl sd-panel"
             onClick={e => e.stopPropagation()}
+            initial={{ opacity: 0, y: -12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -12, scale: 0.98 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
           >
             <div className="p-4 space-y-1">
               {NAV_LINKS.filter(l => !l.children).map(link => (
@@ -152,9 +194,10 @@ export default function Navbar({ onSignIn }: NavbarProps) {
               <a href="/#/signup" className="w-full btn-primary text-sm py-2.5 justify-center">{t('nav.getStarted')}</a>
               <button onClick={onSignIn} className="w-full btn-ghost text-sm py-2.5 justify-center">{t('nav.signIn')}</button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </>
   );
 }

@@ -1,6 +1,6 @@
-import { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Star, Quote } from 'lucide-react';
+import { Reveal } from '../lib/reveal';
 
 interface TestimonialData { name: string; role: string; quoteKey: string; schoolKey: string; studentsCount: number; initials: string; color: string }
 
@@ -40,30 +40,17 @@ function TestimonialCard({ item }: { item: TestimonialData }) {
   );
 }
 
-function useVisible(threshold = 0.15) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [threshold]);
-  return { ref, visible };
-}
-
 export default function Testimonials() {
   const { t } = useTranslation();
-  const { ref, visible } = useVisible(0.1);
   const row1 = TESTIMONIALS.slice(0, 4);
   const row2 = TESTIMONIALS.slice(4);
 
   return (
-    <section id="testimonials" ref={ref} className="py-28 relative overflow-hidden">
+    <section id="testimonials" className="py-28 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: 'radial-gradient(ellipse at 50% 100%, rgba(20,83,45,0.05) 0%, transparent 60%)' }} />
 
-      <div className="mb-14 px-4"
-        style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(24px)', transition: 'all 0.7s ease' }}>
+      <Reveal className="mb-14 px-4">
         <div className="text-center max-w-3xl mx-auto">
           <span className="badge badge-green mb-4"><Star className="h-3 w-3 fill-current" /> {t('testimonials.badge')}</span>
           <h2 className="font-display font-black text-4xl sm:text-5xl text-[#141310] mb-4 tracking-tight">
@@ -71,30 +58,32 @@ export default function Testimonials() {
           </h2>
           <p className="text-[#5b5750]">{t('testimonials.subtitle')}</p>
         </div>
-      </div>
+      </Reveal>
 
-      <div className="overflow-hidden mb-4"
-        style={{ maskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)', opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.3s' }}>
-        <div className="flex animate-marquee-left" style={{ width: 'max-content' }}>
-          {[...row1, ...row1].map((item, i) => <TestimonialCard key={i} item={item} />)}
+      <Reveal className="overflow-hidden mb-4" y={0} delay={0.2}
+        >
+        <div style={{ maskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)' }}>
+          <div className="flex animate-marquee-left" style={{ width: 'max-content' }}>
+            {[...row1, ...row1].map((item, i) => <TestimonialCard key={i} item={item} />)}
+          </div>
         </div>
-      </div>
+      </Reveal>
 
-      <div className="overflow-hidden"
-        style={{ maskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)', opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.5s' }}>
-        <div className="flex animate-marquee-right" style={{ width: 'max-content' }}>
-          {[...row2, ...row2].map((item, i) => <TestimonialCard key={i} item={item} />)}
+      <Reveal className="overflow-hidden" y={0} delay={0.35}>
+        <div style={{ maskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)' }}>
+          <div className="flex animate-marquee-right" style={{ width: 'max-content' }}>
+            {[...row2, ...row2].map((item, i) => <TestimonialCard key={i} item={item} />)}
+          </div>
         </div>
-      </div>
+      </Reveal>
 
-      <div className="text-center mt-12 px-4"
-        style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.7s' }}>
+      <Reveal className="text-center mt-12 px-4" y={0} delay={0.5}>
         <div className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl sd-card">
           <div className="flex">{[...Array(5)].map((_, i) => <Star key={i} className="h-4 w-4 fill-[#14532d] text-[#14532d]" />)}</div>
           <span className="text-[#141310] font-bold text-lg">4.9 / 5</span>
           <span className="text-[#8a8378] text-sm">{t('testimonials.ratingSummary')}</span>
         </div>
-      </div>
+      </Reveal>
     </section>
   );
 }

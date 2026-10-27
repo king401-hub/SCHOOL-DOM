@@ -1,19 +1,10 @@
 import { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { motion } from 'motion/react';
 import { TrendingUp, Users, DollarSign, BookOpen, Zap, Shield, Globe, Award } from 'lucide-react';
+import { Reveal, RevealGroup, revealItem } from '../lib/reveal';
 
 const GREEN = '#14532d';
-
-function useVisible(threshold = 0.15) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [threshold]);
-  return { ref, visible };
-}
 
 function AnimatedCounter({ target, prefix = '', suffix = '' }: { target: number; prefix?: string; suffix?: string }) {
   const [count, setCount] = useState(0);
@@ -57,18 +48,16 @@ const LOGOS = [
 
 export default function Demo() {
   const { t } = useTranslation();
-  const { ref, visible } = useVisible(0.1);
   const STATS = buildStats(t);
 
   return (
-    <section id="demo" ref={ref} className="py-28 px-4 relative overflow-hidden">
+    <section id="demo" className="py-28 px-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: 'radial-gradient(ellipse at 20% 50%, rgba(20,83,45,0.04) 0%, transparent 60%)' }} />
 
       <div className="max-w-7xl mx-auto">
         {/* Heading */}
-        <div className="text-center mb-16"
-          style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(20px)', transition: 'all 0.7s ease' }}>
+        <Reveal className="text-center mb-16">
           <span className="badge mb-4">
             <Globe className="h-3 w-3" /> {t('demo.badge')}
           </span>
@@ -77,20 +66,18 @@ export default function Demo() {
             <span className="gradient-text">{t('demo.titleHighlight')}</span>
           </h2>
           <p className="text-[#5b5750] max-w-xl mx-auto">{t('demo.subtitle')}</p>
-        </div>
+        </Reveal>
 
         {/* Stats grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-20">
-          {STATS.map((s, i) => {
+        <RevealGroup className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-20" stagger={0.08}>
+          {STATS.map(s => {
             const Icon = s.icon;
             return (
-              <div key={s.label}
+              <motion.div key={s.label}
+                variants={revealItem}
+                whileHover={{ y: -5 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 22 }}
                 className="premium-card p-6 relative overflow-hidden"
-                style={{
-                  opacity: visible ? 1 : 0,
-                  transform: visible ? 'none' : 'translateY(20px)',
-                  transition: `all 0.6s ease ${i * 80}ms`,
-                }}
               >
                 <Icon className="h-6 w-6 mb-3" style={{ color: GREEN }} />
                 <p className="font-display font-semibold text-3xl sm:text-4xl mb-1" style={{ color: GREEN }}>
@@ -98,13 +85,13 @@ export default function Demo() {
                 </p>
                 <p className="text-[#141310] font-semibold text-sm mb-1">{s.label}</p>
                 <p className="text-[#8a8378] text-xs">{s.desc}</p>
-              </div>
+              </motion.div>
             );
           })}
-        </div>
+        </RevealGroup>
 
         {/* Logo marquee */}
-        <div style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.5s' }}>
+        <Reveal duration={0.9} y={0}>
           <p className="text-center text-[#8a8378] text-xs uppercase tracking-widest mb-6 font-semibold">{t('demo.trustedByInstitutions')}</p>
           <div className="overflow-hidden" style={{ maskImage: 'linear-gradient(90deg, transparent, black 10%, black 90%, transparent)' }}>
             <div className="flex gap-6 animate-marquee-left" style={{ width: 'max-content' }}>
@@ -116,11 +103,10 @@ export default function Demo() {
               ))}
             </div>
           </div>
-        </div>
+        </Reveal>
 
         {/* Trust bar */}
-        <div className="mt-16 rounded-2xl p-6 flex flex-wrap items-center justify-center gap-8 sd-card"
-          style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.7s' }}>
+        <Reveal className="mt-16 rounded-2xl p-6 flex flex-wrap items-center justify-center gap-8 sd-card" y={0} duration={0.9}>
           {[
             { icon: Shield, label: t('demo.trust.ndpa') },
             { icon: Globe, label: t('demo.trust.aws') },
@@ -135,7 +121,7 @@ export default function Demo() {
               </div>
             );
           })}
-        </div>
+        </Reveal>
       </div>
     </section>
   );

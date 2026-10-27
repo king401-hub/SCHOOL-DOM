@@ -39,6 +39,9 @@ lib64/
 !schooldom-scanner-kiosk/lib/**
 !schooldom-mail-receiver/lib/
 !schooldom-mail-receiver/lib/**
+# Landing page source — same override, not a Python lib/ build dir
+!backend/landing-page/src/lib/
+!backend/landing-page/src/lib/**
 parts/
 sdist/
 var/

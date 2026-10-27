@@ -1,20 +1,10 @@
-import { useRef, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Monitor, Wifi, WifiOff, Shield, Zap, CheckCircle, Download } from 'lucide-react';
+import { Reveal } from '../lib/reveal';
 
 const GREEN = '#14532d';
 const GREEN_BRIGHT = '#4ade80';
-
-function useVisible(threshold = 0.15) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [threshold]);
-  return { ref, visible };
-}
 
 function CBTAppMockup() {
   const [question, setQuestion] = useState(0);
@@ -134,18 +124,17 @@ function buildFeatures(t: (key: string) => string): CbtFeature[] {
 
 export default function CBTSection() {
   const { t } = useTranslation();
-  const { ref, visible } = useVisible(0.1);
   const FEATURES = buildFeatures(t);
 
   return (
-    <section id="cbt" ref={ref} className="py-28 px-4 relative overflow-hidden">
+    <section id="cbt" className="py-28 px-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: 'radial-gradient(ellipse at 80% 50%, rgba(20,83,45,0.05) 0%, transparent 60%)' }} />
 
       <div className="max-w-7xl mx-auto">
         <div className="grid lg:grid-cols-2 gap-14 items-center">
           {/* Left */}
-          <div style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateX(-24px)', transition: 'all 0.7s ease' }}>
+          <Reveal x={-28} y={0}>
             <span className="badge mb-5">
               <Monitor className="h-3 w-3" /> {t('cbt.badge')}
             </span>
@@ -181,10 +170,10 @@ export default function CBTSection() {
                 {t('cbt.mobileSoon')}
               </div>
             </div>
-          </div>
+          </Reveal>
 
           {/* Right: Mockup */}
-          <div style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateX(24px)', transition: 'all 0.7s ease 0.15s' }}>
+          <Reveal x={28} y={0} delay={0.15}>
             <CBTAppMockup />
             <div className="mt-4 grid grid-cols-3 gap-3">
               {[
@@ -198,7 +187,7 @@ export default function CBTSection() {
                 </div>
               ))}
             </div>
-          </div>
+          </Reveal>
         </div>
       </div>
     </section>

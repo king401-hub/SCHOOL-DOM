@@ -1,25 +1,16 @@
-import { useRef, useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { motion } from 'motion/react';
 import { CheckCircle, ArrowRight, Star, Zap, Shield, Users, Eye, ScanLine } from 'lucide-react';
+import { Reveal } from '../lib/reveal';
 
 const K12_COLOR = '#14532d';
 const NONK12_COLOR = '#0d9488';
 const GATE_COLOR = '#4d7c0f';
-
-function useVisible(threshold = 0.15) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [threshold]);
-  return { ref, visible };
-}
+const EASE = [0.16, 1, 0.3, 1] as const;
 
 export default function Pricing() {
   const { t } = useTranslation();
-  const { ref, visible } = useVisible(0.1);
   const [kidMonitor, setKidMonitor] = useState(false);
   const [gatePlan, setGatePlan] = useState<'basic' | 'premium'>('basic');
 
@@ -31,29 +22,31 @@ export default function Pricing() {
   };
 
   return (
-    <section id="pricing" ref={ref} className="py-28 px-4 relative overflow-hidden">
+    <section id="pricing" className="py-28 px-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(20,83,45,0.05) 0%, transparent 60%)' }} />
 
       <div className="max-w-5xl mx-auto">
-        <div className="text-center mb-14"
-          style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(20px)', transition: 'all 0.7s ease' }}>
+        <Reveal className="text-center mb-14">
           <span className="badge mb-4">{t('pricing.badge')}</span>
           <h2 className="font-display font-bold text-4xl sm:text-5xl text-[#141310] mb-4 tracking-tight">
             {t('pricing.title')} <span className="gradient-text">{t('pricing.titleHighlight')}</span>
           </h2>
           <p className="text-[#5b5750] max-w-lg mx-auto">{t('pricing.subtitle')}</p>
-        </div>
+        </Reveal>
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* K-12 Card */}
-          <div className="relative rounded-3xl p-8 overflow-hidden sd-card"
-            style={{
-              border: `1px solid ${K12_COLOR}40`,
-              opacity: visible ? 1 : 0,
-              transform: visible ? 'none' : 'translateY(24px)',
-              transition: 'all 0.7s ease 0.1s',
-            }}>
+          <motion.div
+            className="relative rounded-3xl p-8 overflow-hidden sd-card"
+            style={{ border: `1px solid ${K12_COLOR}40` }}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true, amount: 0.15 }}
+            variants={{ hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, delay: 0.05, ease: EASE } } }}
+            whileHover={{ y: -6 }}
+            transition={{ type: 'spring', stiffness: 280, damping: 22 }}
+          >
             <div className="absolute top-4 right-4">
               <span className="flex items-center gap-1 badge text-[9px]">
                 <Star className="h-2.5 w-2.5 fill-current" /> {t('pricing.mostPopular')}
@@ -128,16 +121,19 @@ export default function Pricing() {
                 {t('pricing.k12.cta')} <ArrowRight className="h-4 w-4" />
               </a>
             </div>
-          </div>
+          </motion.div>
 
           {/* Non-K12 Card */}
-          <div className="relative rounded-3xl p-8 overflow-hidden sd-card"
-            style={{
-              border: `1px solid ${NONK12_COLOR}40`,
-              opacity: visible ? 1 : 0,
-              transform: visible ? 'none' : 'translateY(24px)',
-              transition: 'all 0.7s ease 0.25s',
-            }}>
+          <motion.div
+            className="relative rounded-3xl p-8 overflow-hidden sd-card"
+            style={{ border: `1px solid ${NONK12_COLOR}40` }}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true, amount: 0.15 }}
+            variants={{ hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, delay: 0.15, ease: EASE } } }}
+            whileHover={{ y: -6 }}
+            transition={{ type: 'spring', stiffness: 280, damping: 22 }}
+          >
             <div className="relative">
               <div className="flex items-center gap-3 mb-6">
                 <div className="h-11 w-11 rounded-2xl flex items-center justify-center"
@@ -186,16 +182,19 @@ export default function Pricing() {
                 {t('pricing.nonK12.cta')} <ArrowRight className="h-4 w-4 inline ml-2" />
               </a>
             </div>
-          </div>
+          </motion.div>
 
           {/* SchoolGate Card */}
-          <div className="relative rounded-3xl p-8 overflow-hidden sd-card"
-            style={{
-              border: `1px solid ${GATE_COLOR}40`,
-              opacity: visible ? 1 : 0,
-              transform: visible ? 'none' : 'translateY(24px)',
-              transition: 'all 0.7s ease 0.4s',
-            }}>
+          <motion.div
+            className="relative rounded-3xl p-8 overflow-hidden sd-card"
+            style={{ border: `1px solid ${GATE_COLOR}40` }}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true, amount: 0.15 }}
+            variants={{ hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, delay: 0.25, ease: EASE } } }}
+            whileHover={{ y: -6 }}
+            transition={{ type: 'spring', stiffness: 280, damping: 22 }}
+          >
             <div className="absolute top-4 right-4">
               <span className="badge text-[9px]" style={{ background: `${GATE_COLOR}22`, border: `1px solid ${GATE_COLOR}50`, color: GATE_COLOR }}>
                 {t('pricing.new')}
@@ -255,12 +254,11 @@ export default function Pricing() {
                 {t('pricing.schoolgate.cta')} <ArrowRight className="h-4 w-4 inline ml-2" />
               </a>
             </div>
-          </div>
+          </motion.div>
         </div>
 
         {/* Guarantees row */}
-        <div className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-4"
-          style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.5s' }}>
+        <Reveal className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-4" y={0} delay={0.3}>
           {[
             { icon: Shield, label: t('pricing.guarantees.noSetupFee') },
             { icon: Zap, label: t('pricing.guarantees.startIn4Min') },
@@ -275,7 +273,7 @@ export default function Pricing() {
               </div>
             );
           })}
-        </div>
+        </Reveal>
       </div>
     </section>
   );
