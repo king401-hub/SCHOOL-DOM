@@ -60,20 +60,20 @@ function Stepper({ step, stepLabels }: { step: number; stepLabels: string[] }) {
   return (
     <div className="mb-8">
       <div className="flex items-center gap-3 mb-3">
-        <div className="h-8 w-8 rounded-lg flex items-center justify-center font-display font-black text-sm text-white shrink-0"
-          style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)' }}>
+        <div className="h-8 w-8 rounded-lg flex items-center justify-center font-display font-black text-sm text-[#f5f4f1] shrink-0"
+          style={{ background: '#141310' }}>
           {step}
         </div>
         <div>
-          <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold">{t('signup.onboardingProgress')}</p>
-          <p className="text-white text-sm font-bold">{stepLabels[step - 1]}</p>
+          <p className="text-[#8a8378] text-[10px] uppercase tracking-wider font-semibold">{t('signup.onboardingProgress')}</p>
+          <p className="text-[#141310] text-sm font-bold">{stepLabels[step - 1]}</p>
         </div>
       </div>
       <div className="flex gap-1.5">
         {stepLabels.map((_, i) => (
-          <div key={i} className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+          <div key={i} className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: 'rgba(20,19,16,0.1)' }}>
             <div className="h-full rounded-full transition-all duration-500"
-              style={{ width: i <= step - 1 ? '100%' : '0%', background: '#c9a24e' }} />
+              style={{ width: i <= step - 1 ? '100%' : '0%', background: '#14532d' }} />
           </div>
         ))}
       </div>
@@ -162,7 +162,7 @@ export default function SignUpPage() {
     return isProprietor ? schoolGroupName.trim().length >= 3 : schoolName.trim().length >= 3;
   }, [isProprietor, schoolGroupName, schoolName, certified]);
 
-  const inputCls = 'w-full px-4 py-3 text-sm rounded-xl sd-input placeholder-slate-600';
+  const inputCls = 'w-full px-4 py-3 text-sm rounded-xl sd-input';
   const errorBox = (msg: string) => (
     <div className="p-3.5 rounded-xl text-sm" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171' }}>
       {msg}
@@ -299,13 +299,13 @@ export default function SignUpPage() {
             initial={{ scale: 0 }} animate={{ scale: 1 }}
             transition={{ type: 'spring', stiffness: 400, damping: 14, delay: 0.1 }}
             className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-5"
-            style={{ background: 'rgba(201,162,78,0.15)', border: '1px solid rgba(201,162,78,0.3)' }}>
-            <CheckCircle2 className="h-8 w-8" style={{ color: '#c9a24e' }} />
+            style={{ background: 'rgba(20,83,45,0.12)', border: '1px solid rgba(20,83,45,0.3)' }}>
+            <CheckCircle2 className="h-8 w-8" style={{ color: '#14532d' }} />
           </motion.div>
-          <h1 className="font-display font-black text-white text-2xl mb-2">{t('signup.activated.title')}</h1>
-          <p className="text-slate-400 text-sm mb-6">
+          <h1 className="font-display font-black text-[#141310] text-2xl mb-2">{t('signup.activated.title')}</h1>
+          <p className="text-[#5b5750] text-sm mb-6">
             {schoolCode
-              ? <Trans i18nKey="signup.activated.withCode" values={{ code: schoolCode }} components={{ bold: <strong className="text-white" /> }} />
+              ? <Trans i18nKey="signup.activated.withCode" values={{ code: schoolCode }} components={{ bold: <strong className="text-[#141310]" /> }} />
               : t('signup.activated.withoutCode')}
           </p>
           <a href={ADMIN_APP_URL} className="btn-primary w-full justify-center py-3.5 text-base">
@@ -319,10 +319,10 @@ export default function SignUpPage() {
   return (
     <div className="signup-shell min-h-screen pt-24 pb-20 px-4 relative">
       <div className="absolute top-0 inset-x-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(201,162,78,0.05) 0%, transparent 50%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(20,83,45,0.06) 0%, transparent 50%)' }} />
 
       <div className="max-w-3xl mx-auto" style={{ animation: 'fadeInUp 0.6s ease' }}>
-        <a href="/" className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-300 text-sm mb-8 transition-colors">
+        <a href="/" className="inline-flex items-center gap-2 text-[#5b5750] hover:text-[#141310] text-sm mb-8 transition-colors">
           <ArrowLeft className="h-4 w-4" /> {t('signup.backToHome')}
         </a>
 
@@ -333,12 +333,12 @@ export default function SignUpPage() {
           {step === 1 && (
             <motion.div key="step1" {...stepMotion} className="space-y-6">
               <div>
-                <h1 className="font-display font-black text-white text-2xl mb-1">{t('signup.step1.title')}</h1>
-                <p className="text-slate-400 text-sm">{t('signup.step1.subtitle')}</p>
+                <h1 className="font-display font-black text-[#141310] text-2xl mb-1">{t('signup.step1.title')}</h1>
+                <p className="text-[#5b5750] text-sm">{t('signup.step1.subtitle')}</p>
               </div>
 
               <div>
-                <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold mb-3">{t('signup.step1.chooseRole')}</p>
+                <p className="text-[#8a8378] text-[10px] uppercase tracking-wider font-semibold mb-3">{t('signup.step1.chooseRole')}</p>
                 <div className="grid sm:grid-cols-2 gap-3">
                   {ROLES.map(r => {
                     const Icon = r.icon;
@@ -346,21 +346,21 @@ export default function SignUpPage() {
                     return (
                       <button key={r.value} type="button" onClick={() => setRole(r.value)}
                         className="relative w-full text-left flex items-start gap-3 p-4 rounded-2xl transition-all sd-card cursor-pointer"
-                        style={{ borderColor: active ? 'rgba(201,162,78,0.4)' : undefined, background: active ? 'rgba(201,162,78,0.06)' : undefined }}>
+                        style={{ borderColor: active ? 'rgba(20,83,45,0.4)' : undefined, background: active ? 'rgba(20,83,45,0.05)' : undefined }}>
                         <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0"
-                          style={{ background: active ? 'rgba(201,162,78,0.15)' : 'rgba(255,255,255,0.04)', border: active ? '1px solid rgba(201,162,78,0.3)' : '1px solid rgba(255,255,255,0.06)' }}>
-                          <Icon className="h-4 w-4" style={{ color: active ? '#c9a24e' : '#64748b' }} />
+                          style={{ background: active ? 'rgba(20,83,45,0.12)' : 'rgba(20,19,16,0.04)', border: active ? '1px solid rgba(20,83,45,0.3)' : '1px solid rgba(20,19,16,0.07)' }}>
+                          <Icon className="h-4 w-4" style={{ color: active ? '#14532d' : '#8a8378' }} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-white text-sm font-semibold">{r.title}</p>
-                          <p className="text-slate-500 text-xs mt-0.5">{r.desc}</p>
+                          <p className="text-[#141310] text-sm font-semibold">{r.title}</p>
+                          <p className="text-[#8a8378] text-xs mt-0.5">{r.desc}</p>
                         </div>
                         {active && (
                           <motion.span
                             initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                             transition={{ type: 'spring', stiffness: 500, damping: 15 }}
                             className="absolute top-3 right-3">
-                            <CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: '#c9a24e' }} />
+                            <CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: '#14532d' }} />
                           </motion.span>
                         )}
                       </button>
@@ -370,47 +370,47 @@ export default function SignUpPage() {
               </div>
 
               <div>
-                <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold mb-3">{t('signup.step1.contactDetails')}</p>
+                <p className="text-[#8a8378] text-[10px] uppercase tracking-wider font-semibold mb-3">{t('signup.step1.contactDetails')}</p>
                 <div className="space-y-4">
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step1.fullName')}</label>
+                      <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step1.fullName')}</label>
                       <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}
                         placeholder={t('signup.step1.fullNamePlaceholder')} autoComplete="name" className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step1.middleName')}</label>
+                      <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step1.middleName')}</label>
                       <input type="text" value={middleName} onChange={e => setMiddleName(e.target.value)}
                         placeholder={t('signup.step1.middleNamePlaceholder')} autoComplete="additional-name" className={inputCls} />
                     </div>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step1.email')}</label>
+                      <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step1.email')}</label>
                       <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                         placeholder={t('signup.step1.emailPlaceholder')} autoComplete="email" className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step1.phone')}</label>
+                      <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step1.phone')}</label>
                       <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
                         placeholder={t('signup.step1.phonePlaceholder')} autoComplete="tel" className={inputCls} />
                     </div>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step1.password')}</label>
+                      <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step1.password')}</label>
                       <div className="relative">
                         <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
                           placeholder={t('signup.step1.passwordPlaceholder')} autoComplete="new-password" className={inputCls} />
                         <button type="button" onClick={() => setShowPassword(s => !s)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8a8378] hover:text-[#141310] cursor-pointer"
                           aria-label={showPassword ? t('signup.step1.hidePassword') : t('signup.step1.showPassword')}>
                           {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
                       </div>
                     </div>
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step1.confirmPassword')}</label>
+                      <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step1.confirmPassword')}</label>
                       <input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
                         placeholder={t('signup.step1.confirmPasswordPlaceholder')} autoComplete="new-password" className={inputCls} />
                     </div>
@@ -433,48 +433,48 @@ export default function SignUpPage() {
           {step === 2 && (
             <motion.div key="step2" {...stepMotion} className="space-y-6">
               <div>
-                <h1 className="font-display font-black text-white text-2xl mb-1">
+                <h1 className="font-display font-black text-[#141310] text-2xl mb-1">
                   {isProprietor ? t('signup.step2.titleProprietor') : t('signup.step2.titleSchool')}
                 </h1>
-                <p className="text-slate-400 text-sm">
+                <p className="text-[#5b5750] text-sm">
                   {isProprietor ? t('signup.step2.subtitleProprietor') : t('signup.step2.subtitleSchool')}
                 </p>
               </div>
 
               {isProprietor ? (
                 <div>
-                  <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step2.groupName')}</label>
+                  <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step2.groupName')}</label>
                   <input type="text" value={schoolGroupName} onChange={e => setSchoolGroupName(e.target.value)}
                     placeholder={t('signup.step2.groupNamePlaceholder')} className={inputCls} />
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step2.schoolName')}</label>
+                    <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step2.schoolName')}</label>
                     <input type="text" value={schoolName} onChange={e => setSchoolName(e.target.value)}
                       placeholder={t('signup.step2.schoolNamePlaceholder')} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step2.tier')}</label>
+                    <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step2.tier')}</label>
                     <select value={schoolType} onChange={e => setSchoolType(e.target.value as SchoolType)} className={inputCls}>
                       <option value="k12">{t('signup.step2.tierK12')}</option>
                       <option value="non_k12">{t('signup.step2.tierNonK12')}</option>
                     </select>
-                    <p className="text-slate-500 text-xs mt-1.5">{t('signup.step2.tierHelp')}</p>
+                    <p className="text-[#8a8378] text-xs mt-1.5">{t('signup.step2.tierHelp')}</p>
                   </div>
                   <div>
-                    <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step2.whatDoYouNeed')}</label>
+                    <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step2.whatDoYouNeed')}</label>
                     <select value={product} onChange={e => setProduct(e.target.value as Product)} className={inputCls}>
                       <option value="full">{t('signup.step2.productFull')}</option>
                       <option value="schoolgate">{t('signup.step2.productSchoolgate')}</option>
                     </select>
-                    <p className="text-slate-500 text-xs mt-1.5">
+                    <p className="text-[#8a8378] text-xs mt-1.5">
                       {t('signup.step2.productHelp')}
                     </p>
                   </div>
                   {product === 'schoolgate' && (
                     <div>
-                      <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step2.schoolgatePlan')}</label>
+                      <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step2.schoolgatePlan')}</label>
                       <select value={schoolgatePlan} onChange={e => setSchoolgatePlan(e.target.value as SchoolGatePlan)} className={inputCls}>
                         <option value="basic">{t('signup.step2.schoolgateBasic')}</option>
                         <option value="premium">{t('signup.step2.schoolgatePremium')}</option>
@@ -482,14 +482,14 @@ export default function SignUpPage() {
                     </div>
                   )}
                   <div>
-                    <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step2.address')}</label>
+                    <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step2.address')}</label>
                     <input type="text" value={address} onChange={e => setAddress(e.target.value)}
                       placeholder={t('signup.step2.addressPlaceholder')} className={inputCls} />
                   </div>
                 </div>
               )}
 
-              <label className="flex items-start gap-3 text-slate-400 text-xs cursor-pointer">
+              <label className="flex items-start gap-3 text-[#5b5750] text-xs cursor-pointer">
                 <input type="checkbox" checked={certified} onChange={e => setCertified(e.target.checked)} className="mt-0.5" />
                 <span>{isProprietor ? t('signup.step2.certifyOrg') : t('signup.step2.certifySchool')}</span>
               </label>
@@ -513,18 +513,18 @@ export default function SignUpPage() {
           {step === 3 && (
             <motion.form key="step3" {...stepMotion} onSubmit={handleVerifyOtp} className="space-y-6">
               <div>
-                <h1 className="font-display font-black text-white text-2xl mb-1">{t('signup.step3.title')}</h1>
-                <p className="text-slate-400 text-sm">
-                  <Trans i18nKey="signup.step3.subtitle" values={{ email }} components={{ bold: <strong className="text-white" /> }} />
+                <h1 className="font-display font-black text-[#141310] text-2xl mb-1">{t('signup.step3.title')}</h1>
+                <p className="text-[#5b5750] text-sm">
+                  <Trans i18nKey="signup.step3.subtitle" values={{ email }} components={{ bold: <strong className="text-[#141310]" /> }} />
                 </p>
               </div>
 
               {schoolCode && (
                 <div className="rounded-2xl p-4 flex items-center justify-between gap-3"
-                  style={{ background: 'rgba(201,162,78,0.06)', border: '1px solid rgba(201,162,78,0.2)' }}>
+                  style={{ background: 'rgba(20,83,45,0.05)', border: '1px solid rgba(20,83,45,0.18)' }}>
                   <div>
-                    <p className="text-slate-500 text-[10px] uppercase tracking-wider">{t('signup.step3.schoolCodeLabel')}</p>
-                    <p className="font-display font-black text-lg" style={{ color: '#c9a24e' }}>{schoolCode}</p>
+                    <p className="text-[#8a8378] text-[10px] uppercase tracking-wider">{t('signup.step3.schoolCodeLabel')}</p>
+                    <p className="font-display font-black text-lg" style={{ color: '#14532d' }}>{schoolCode}</p>
                   </div>
                   <button type="button" onClick={copyCode} className="btn-ghost text-xs py-2 px-3">
                     {codeCopied ? <><Check className="h-3.5 w-3.5" /> {t('signup.step3.copied')}</> : <><Copy className="h-3.5 w-3.5" /> {t('signup.step3.copy')}</>}
@@ -533,12 +533,12 @@ export default function SignUpPage() {
               )}
 
               <div>
-                <label className="block text-slate-500 text-xs mb-1.5">{t('signup.step3.verificationCode')}</label>
+                <label className="block text-[#8a8378] text-xs mb-1.5">{t('signup.step3.verificationCode')}</label>
                 <input type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={otpCode}
                   onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="000000" autoComplete="one-time-code"
                   className={`${inputCls} text-center tracking-[0.5em] font-mono text-lg`} />
-                <p className="text-slate-500 text-xs mt-1.5">{t('signup.step3.codeExpires', { minutes: Math.max(Math.ceil(otpExpiresIn / 60), 1) })}</p>
+                <p className="text-[#8a8378] text-xs mt-1.5">{t('signup.step3.codeExpires', { minutes: Math.max(Math.ceil(otpExpiresIn / 60), 1) })}</p>
               </div>
 
               {error && errorBox(error)}

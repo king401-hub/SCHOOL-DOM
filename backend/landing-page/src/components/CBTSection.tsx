@@ -2,7 +2,8 @@ import { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Monitor, Wifi, WifiOff, Shield, Zap, CheckCircle, Download } from 'lucide-react';
 
-const GOLD = '#c9a24e';
+const GREEN = '#14532d';
+const GREEN_BRIGHT = '#4ade80';
 
 function useVisible(threshold = 0.15) {
   const ref = useRef<HTMLDivElement>(null);
@@ -43,7 +44,7 @@ function CBTAppMockup() {
     <div className="rounded-2xl overflow-hidden border border-white/8 shadow-2xl keep-dark"
       style={{ background: 'rgba(16,14,11,0.96)' }}>
       {/* Title bar */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5" style={{ background: 'rgba(201,162,78,0.05)' }}>
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5" style={{ background: 'rgba(74,222,128,0.05)' }}>
         <div className="flex gap-1.5">
           <div className="w-3 h-3 rounded-full bg-red-500/70" />
           <div className="w-3 h-3 rounded-full bg-yellow-500/70" />
@@ -64,18 +65,18 @@ function CBTAppMockup() {
             <div className="flex gap-0.5 mt-1.5">
               {[...Array(20)].map((_, i) => (
                 <div key={i} className="h-1.5 flex-1 rounded-full transition-all"
-                  style={{ background: i <= question ? GOLD : 'rgba(255,255,255,0.06)' }} />
+                  style={{ background: i <= question ? GREEN_BRIGHT : 'rgba(255,255,255,0.06)' }} />
               ))}
             </div>
           </div>
           <div className="text-right">
-            <p className="font-mono font-bold text-lg" style={{ color: timeLeft < 600 ? '#f87171' : GOLD }}>{fmt(timeLeft)}</p>
+            <p className="font-mono font-bold text-lg" style={{ color: timeLeft < 600 ? '#f87171' : GREEN_BRIGHT }}>{fmt(timeLeft)}</p>
             <p className="text-slate-600 text-[9px]">remaining</p>
           </div>
         </div>
 
         {/* Question */}
-        <div className="rounded-xl p-4 mb-4" style={{ background: 'rgba(201,162,78,0.05)', border: '1px solid rgba(201,162,78,0.18)' }}>
+        <div className="rounded-xl p-4 mb-4" style={{ background: 'rgba(74,222,128,0.05)', border: '1px solid rgba(74,222,128,0.18)' }}>
           <p className="text-white text-sm font-medium leading-relaxed">{q.text}</p>
         </div>
 
@@ -139,7 +140,7 @@ export default function CBTSection() {
   return (
     <section id="cbt" ref={ref} className="py-28 px-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 80% 50%, rgba(201,162,78,0.04) 0%, transparent 60%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 80% 50%, rgba(20,83,45,0.05) 0%, transparent 60%)' }} />
 
       <div className="max-w-7xl mx-auto">
         <div className="grid lg:grid-cols-2 gap-14 items-center">
@@ -148,11 +149,11 @@ export default function CBTSection() {
             <span className="badge mb-5">
               <Monitor className="h-3 w-3" /> {t('cbt.badge')}
             </span>
-            <h2 className="font-display font-semibold text-4xl sm:text-5xl text-white leading-tight mb-5">
+            <h2 className="font-display font-bold text-4xl sm:text-5xl text-[#141310] leading-tight mb-5 tracking-tight">
               {t('cbt.title')}{' '}
               <span className="gradient-text-reverse">{t('cbt.titleHighlight')}</span>
             </h2>
-            <p className="text-slate-400 text-base leading-relaxed mb-8">
+            <p className="text-[#5b5750] text-base leading-relaxed mb-8">
               {t('cbt.subtitle')}
             </p>
 
@@ -160,10 +161,10 @@ export default function CBTSection() {
               {FEATURES.map(f => {
                 const Icon = f.icon;
                 return (
-                  <div key={f.title} className="rounded-xl p-4 hover:border-white/10 transition-all sd-card">
-                    <Icon className="h-5 w-5 mb-2" style={{ color: GOLD }} />
-                    <p className="text-white text-sm font-semibold mb-1">{f.title}</p>
-                    <p className="text-slate-500 text-xs leading-relaxed">{f.desc}</p>
+                  <div key={f.title} className="rounded-xl p-4 hover:border-[#14532d]/25 transition-all sd-card">
+                    <Icon className="h-5 w-5 mb-2" style={{ color: GREEN }} />
+                    <p className="text-[#141310] text-sm font-semibold mb-1">{f.title}</p>
+                    <p className="text-[#5b5750] text-xs leading-relaxed">{f.desc}</p>
                   </div>
                 );
               })}
@@ -171,12 +172,12 @@ export default function CBTSection() {
 
             <div className="flex flex-wrap gap-3">
               <div className="flex items-center gap-2 px-4 py-3 rounded-xl border text-sm"
-                style={{ background: 'rgba(201,162,78,0.06)', borderColor: 'rgba(201,162,78,0.2)', color: GOLD }}>
+                style={{ background: 'rgba(20,83,45,0.06)', borderColor: 'rgba(20,83,45,0.2)', color: GREEN }}>
                 <Monitor className="h-4 w-4" />
                 {t('cbt.includedBadge')}
               </div>
-              <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-white/8 text-slate-400 text-sm">
-                <Wifi className="h-4 w-4 text-emerald-400" />
+              <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-black/10 text-[#5b5750] text-sm">
+                <Wifi className="h-4 w-4 text-emerald-600" />
                 {t('cbt.mobileSoon')}
               </div>
             </div>
@@ -192,8 +193,8 @@ export default function CBTSection() {
                 { val: '2.8s', label: t('cbt.statSubmitSpeed') },
               ].map(s => (
                 <div key={s.label} className="rounded-xl p-3 text-center sd-card">
-                  <p className="font-display font-semibold text-xl" style={{ color: GOLD }}>{s.val}</p>
-                  <p className="text-slate-500 text-[10px]">{s.label}</p>
+                  <p className="font-display font-semibold text-xl" style={{ color: GREEN }}>{s.val}</p>
+                  <p className="text-[#8a8378] text-[10px]">{s.label}</p>
                 </div>
               ))}
             </div>

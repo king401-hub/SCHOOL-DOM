@@ -7,11 +7,11 @@ const CATEGORY_KEYS = ['pricing', 'cbt', 'finance', 'setup', 'security'] as cons
 type CategoryKey = (typeof CATEGORY_KEYS)[number];
 
 const CATEGORY_COLORS: Record<CategoryKey, string> = {
-  pricing: '#c9a24e',
-  cbt: '#c9a24e',
-  finance: '#c9a24e',
-  setup: '#c9a24e',
-  security: '#c9a24e',
+  pricing: '#14532d',
+  cbt: '#14532d',
+  finance: '#14532d',
+  setup: '#14532d',
+  security: '#14532d',
 };
 
 interface FaqItem { q: string; a: string }
@@ -29,19 +29,19 @@ function buildFaqs(t: (key: string, options?: Record<string, unknown>) => any): 
 function AccordionItem({ q, a, color }: { q: string; a: string; color: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="border-b border-white/5 last:border-0">
+    <div className="border-b border-black/8 last:border-0">
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between py-4 text-left cursor-pointer gap-4"
       >
-        <span className="text-white text-sm font-medium leading-relaxed">{q}</span>
+        <span className="text-[#141310] text-sm font-medium leading-relaxed">{q}</span>
         <ChevronDown
           className="h-4 w-4 shrink-0 transition-transform duration-200"
           style={{ color, transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
         />
       </button>
       <div className="overflow-hidden transition-all duration-300" style={{ maxHeight: open ? 400 : 0 }}>
-        <p className="text-slate-400 text-sm leading-relaxed pb-5">{a}</p>
+        <p className="text-[#5b5750] text-sm leading-relaxed pb-5">{a}</p>
       </div>
     </div>
   );
@@ -67,32 +67,32 @@ export default function FAQPage() {
   return (
     <div className="min-h-screen pt-24 pb-20 px-4 relative">
       <div className="absolute top-0 inset-x-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(201,162,78,0.05) 0%, transparent 50%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(20,83,45,0.06) 0%, transparent 50%)' }} />
 
       <div className="max-w-3xl mx-auto">
         {/* Back */}
-        <a href="/" className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-300 text-sm mb-8 transition-colors">
+        <a href="/" className="inline-flex items-center gap-2 text-[#5b5750] hover:text-[#141310] text-sm mb-8 transition-colors">
           <ArrowLeft className="h-4 w-4" /> {t('common.backToHome')}
         </a>
 
         {/* Header */}
         <div className="text-center mb-12">
           <span className="badge badge-green mb-4">{t('faq.badge')}</span>
-          <h1 className="font-display font-black text-4xl sm:text-5xl text-white mb-4">
+          <h1 className="font-display font-bold text-4xl sm:text-5xl text-[#141310] mb-4 tracking-tight">
             {t('faq.title')} <span className="gradient-text">{t('faq.titleHighlight')}</span>
           </h1>
-          <p className="text-slate-400">{t('faq.intro')} <a href="/#/contact" className="hover:underline" style={{ color: '#c9a24e' }}>{t('faq.contactUs')}</a></p>
+          <p className="text-[#5b5750]">{t('faq.intro')} <a href="/#/contact" className="hover:underline" style={{ color: '#14532d' }}>{t('faq.contactUs')}</a></p>
         </div>
 
         {/* Search */}
         <div className="relative mb-6">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8a8378]" />
           <input
             type="text"
             placeholder={t('faq.searchPlaceholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-11 pr-4 py-3.5 rounded-2xl text-sm sd-input placeholder-slate-600"
+            className="w-full pl-11 pr-4 py-3.5 rounded-2xl text-sm sd-input"
           />
         </div>
 
@@ -104,9 +104,9 @@ export default function FAQPage() {
               onClick={() => setActiveCategory(cat.key)}
               className="px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer sd-card-2"
               style={{
-                background: activeCategory === cat.key ? 'rgba(201,162,78,0.1)' : undefined,
-                borderColor: activeCategory === cat.key ? 'rgba(201,162,78,0.3)' : undefined,
-                color: activeCategory === cat.key ? '#c9a24e' : undefined,
+                background: activeCategory === cat.key ? 'rgba(20,83,45,0.1)' : undefined,
+                borderColor: activeCategory === cat.key ? 'rgba(20,83,45,0.3)' : undefined,
+                color: activeCategory === cat.key ? '#14532d' : undefined,
               }}
             >
               {cat.label}
@@ -127,16 +127,16 @@ export default function FAQPage() {
           ))}
           {filtered.length === 0 && (
             <div className="text-center py-16">
-              <p className="text-slate-500">{t('faq.noResults')} <a href="/#/contact" className="hover:underline" style={{ color: '#c9a24e' }}>{t('faq.askDirectly')}</a></p>
+              <p className="text-[#8a8378]">{t('faq.noResults')} <a href="/#/contact" className="hover:underline" style={{ color: '#14532d' }}>{t('faq.askDirectly')}</a></p>
             </div>
           )}
         </div>
 
         {/* Still have questions */}
         <div className="mt-14 rounded-2xl p-8 text-center"
-          style={{ background: 'rgba(201,162,78,0.07)', border: '1px solid rgba(201,162,78,0.2)' }}>
-          <h3 className="font-display font-semibold text-white text-xl mb-2">{t('faq.stillQuestionsTitle')}</h3>
-          <p className="text-slate-400 text-sm mb-5">{t('faq.stillQuestionsSubtitle')}</p>
+          style={{ background: 'rgba(20,83,45,0.06)', border: '1px solid rgba(20,83,45,0.18)' }}>
+          <h3 className="font-display font-semibold text-[#141310] text-xl mb-2">{t('faq.stillQuestionsTitle')}</h3>
+          <p className="text-[#5b5750] text-sm mb-5">{t('faq.stillQuestionsSubtitle')}</p>
           <a href="/#/contact" className="btn-primary inline-flex">
             {t('faq.contactSupport')} <ArrowLeft className="h-4 w-4 rotate-180" />
           </a>

@@ -62,12 +62,12 @@ export default function Navbar({ onSignIn }: NavbarProps) {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between">
           <a href="/" className="flex items-center gap-3 group">
-            <div className="h-9 w-9 rounded-xl overflow-hidden border border-white/10 group-hover:border-[#c9a24e]/40 transition-all">
+            <div className="h-9 w-9 rounded-xl overflow-hidden border border-black/10 group-hover:border-[#14532d]/40 transition-all">
               <img src="/schooldom-favicon.jpeg" alt="Schooldom" className="w-full h-full object-cover" />
             </div>
             <div className="flex flex-col leading-none">
-              <span className="font-display font-bold text-white text-lg tracking-tight">Schooldom</span>
-              <span className="text-[9px] font-semibold uppercase tracking-[0.15em]" style={{ color: '#c9a24e' }}>Academy</span>
+              <span className="font-display font-bold text-[#141310] text-lg tracking-tight">Schooldom</span>
+              <span className="text-[9px] font-semibold uppercase tracking-[0.15em]" style={{ color: '#14532d' }}>Academy</span>
             </div>
           </a>
 
@@ -79,15 +79,15 @@ export default function Navbar({ onSignIn }: NavbarProps) {
                 {link.children ? (
                   <>
                     <button
-                      className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer text-slate-400 hover:text-white"
+                      className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer text-[#5b5750] hover:text-[#141310]"
                     >
                       {link.label} <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                     {openDropdown === link.label && (
-                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-44 rounded-2xl overflow-hidden shadow-2xl z-50 sd-panel">
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-44 rounded-2xl overflow-hidden shadow-xl z-50 sd-panel">
                         {link.children.map(c => (
                           <a key={c.label} href={c.href}
-                            className="block px-4 py-3 text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all">
+                            className="block px-4 py-3 text-sm text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all">
                             {c.label}
                           </a>
                         ))}
@@ -99,13 +99,13 @@ export default function Navbar({ onSignIn }: NavbarProps) {
                     onClick={() => scrollTo(link.href)}
                     className="px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer relative"
                     style={{
-                      color: activeLink === link.href.slice(1) ? '#c9a24e' : '#94a3b8',
-                      background: activeLink === link.href.slice(1) ? 'rgba(201,162,78,0.08)' : 'transparent',
+                      color: activeLink === link.href.slice(1) ? '#14532d' : '#5b5750',
+                      background: activeLink === link.href.slice(1) ? 'rgba(20,83,45,0.08)' : 'transparent',
                     }}
                   >
                     {link.label}
                     {activeLink === link.href.slice(1) && (
-                      <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style={{ background: '#c9a24e' }} />
+                      <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style={{ background: '#14532d' }} />
                     )}
                   </button>
                 )}
@@ -122,7 +122,7 @@ export default function Navbar({ onSignIn }: NavbarProps) {
           <div className="md:hidden flex items-center gap-2">
             <LanguageSwitcher />
             <button
-              className="p-2 rounded-xl border border-white/8 text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+              className="p-2 rounded-xl border border-black/10 text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all cursor-pointer"
               onClick={() => setMobileOpen(o => !o)}
             >
               {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -133,22 +133,22 @@ export default function Navbar({ onSignIn }: NavbarProps) {
 
       {mobileOpen && (
         <div className="fixed inset-0 z-[99] md:hidden" onClick={() => setMobileOpen(false)}>
-          <div className="absolute inset-0" style={{ background: 'rgba(3,7,18,0.6)', backdropFilter: 'blur(8px)' }} />
+          <div className="absolute inset-0" style={{ background: 'rgba(20,19,16,0.4)', backdropFilter: 'blur(8px)' }} />
           <div
-            className="absolute top-[70px] left-4 right-4 rounded-2xl overflow-hidden shadow-2xl sd-panel"
+            className="absolute top-[70px] left-4 right-4 rounded-2xl overflow-hidden shadow-xl sd-panel"
             onClick={e => e.stopPropagation()}
           >
             <div className="p-4 space-y-1">
               {NAV_LINKS.filter(l => !l.children).map(link => (
                 <button key={link.label} onClick={() => scrollTo(link.href)}
-                  className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all cursor-pointer">
+                  className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all cursor-pointer">
                   {link.label}
                 </button>
               ))}
-              <a href="/#/faq" className="block px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">{t('nav.faq')}</a>
-              <a href="/#/contact" className="block px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">{t('nav.contact')}</a>
+              <a href="/#/faq" className="block px-4 py-3 rounded-xl text-sm font-medium text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all">{t('nav.faq')}</a>
+              <a href="/#/contact" className="block px-4 py-3 rounded-xl text-sm font-medium text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all">{t('nav.contact')}</a>
             </div>
-            <div className="p-4 border-t border-white/5 space-y-2">
+            <div className="p-4 border-t border-black/8 space-y-2">
               <a href="/#/signup" className="w-full btn-primary text-sm py-2.5 justify-center">{t('nav.getStarted')}</a>
               <button onClick={onSignIn} className="w-full btn-ghost text-sm py-2.5 justify-center">{t('nav.signIn')}</button>
             </div>

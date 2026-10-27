@@ -76,7 +76,7 @@ function DashboardFrame() {
   return (
     <div
       className="w-full rounded-2xl overflow-hidden border border-white/10 keep-dark"
-      style={{ background: 'rgba(14,12,10,0.98)', boxShadow: '0 60px 120px rgba(0,0,0,0.6)' }}
+      style={{ background: 'rgba(14,12,10,0.98)', boxShadow: '0 50px 100px rgba(20,19,16,0.18)' }}
     >
       {/* Browser chrome */}
       <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/5"
@@ -95,7 +95,7 @@ function DashboardFrame() {
           <div className="w-2 h-2 rounded-full bg-emerald-500" />
           <span className="text-[10px] text-slate-500">Live</span>
           <div className="w-7 h-7 rounded-full ml-2 flex items-center justify-center text-xs font-bold"
-            style={{ background: '#c9a24e', color: '#15120c' }}>A</div>
+            style={{ background: '#14532d', color: '#f5f4f1' }}>A</div>
         </div>
       </div>
 
@@ -108,10 +108,10 @@ function DashboardFrame() {
             <button key={i}
               className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
               style={{
-                background: i === 0 ? 'rgba(201,162,78,0.15)' : 'transparent',
-                border: i === 0 ? '1px solid rgba(201,162,78,0.3)' : '1px solid transparent',
+                background: i === 0 ? 'rgba(20,83,45,0.18)' : 'transparent',
+                border: i === 0 ? '1px solid rgba(20,83,45,0.35)' : '1px solid transparent',
               }}>
-              <Icon className="h-4 w-4" style={{ color: i === 0 ? '#c9a24e' : '#4a453d' }} />
+              <Icon className="h-4 w-4" style={{ color: i === 0 ? '#4ade80' : '#4a453d' }} />
             </button>
           ))}
         </div>
@@ -149,8 +149,8 @@ function DashboardFrame() {
                   <p className="text-slate-500 text-[10px]">Weekly exam score averages</p>
                 </div>
                 <div className="flex items-center gap-1.5 text-[9px] font-bold px-2 py-1 rounded-full"
-                  style={{ background: 'rgba(201,162,78,0.1)', color: '#c9a24e', border: '1px solid rgba(201,162,78,0.25)' }}>
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#c9a24e' }} />LIVE
+                  style={{ background: 'rgba(74,222,128,0.1)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.25)' }}>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#4ade80' }} />LIVE
                 </div>
               </div>
               <div className="flex-1 flex items-end gap-1.5">
@@ -160,7 +160,7 @@ function DashboardFrame() {
                       <div className="absolute bottom-0 left-0 right-0 rounded-t-md transition-all duration-700"
                         style={{
                           height: `${prog > 0 ? h : 0}%`,
-                          background: 'linear-gradient(to top, #8a6c2e, #c9a24e)',
+                          background: 'linear-gradient(to top, #14532d, #4ade80)',
                           opacity: 0.85,
                           transitionDelay: `${i * 35}ms`,
                         }} />
@@ -186,12 +186,12 @@ function DashboardFrame() {
                     <div key={i}
                       className="flex items-start gap-3 px-4 py-2.5 transition-all duration-500 border-b border-white/3 last:border-0"
                       style={{
-                        background: isFocus ? 'rgba(201,162,78,0.05)' : 'transparent',
+                        background: isFocus ? 'rgba(74,222,128,0.06)' : 'transparent',
                         opacity: isFocus ? 1 : 0.35,
                       }}>
                       <div className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
-                        style={{ background: 'rgba(201,162,78,0.12)' }}>
-                        <Icon className="h-3.5 w-3.5" style={{ color: '#c9a24e' }} />
+                        style={{ background: 'rgba(74,222,128,0.12)' }}>
+                        <Icon className="h-3.5 w-3.5" style={{ color: '#4ade80' }} />
                       </div>
                       <div className="min-w-0">
                         <p className="text-white text-[10px] font-medium leading-snug">{item.msg}</p>
@@ -206,7 +206,7 @@ function DashboardFrame() {
                 {[{ l: 'Pass Rate', v: '94%' }, { l: 'Attendance', v: '91.2%' }].map(s => (
                   <div key={s.l} className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.03)' }}>
                     <p className="text-slate-600 text-[8px]">{s.l}</p>
-                    <p className="font-bold text-sm font-mono" style={{ color: '#c9a24e' }}>{s.v}</p>
+                    <p className="font-bold text-sm font-mono" style={{ color: '#4ade80' }}>{s.v}</p>
                   </div>
                 ))}
               </div>
@@ -233,7 +233,7 @@ export default function Hero({ onDemo }: HeroProps) {
     <section className="relative pt-32 pb-0 overflow-hidden">
       {/* Single, calm background wash - no particles, no aurora */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] pointer-events-none -z-0"
-        style={{ background: 'radial-gradient(ellipse, rgba(201,162,78,0.06) 0%, transparent 65%)', filter: 'blur(50px)' }} />
+        style={{ background: 'radial-gradient(ellipse, rgba(20,83,45,0.07) 0%, transparent 65%)', filter: 'blur(50px)' }} />
 
       {/* Centered text block */}
       <div className="max-w-4xl mx-auto px-4 text-center relative z-10">
@@ -247,11 +247,11 @@ export default function Hero({ onDemo }: HeroProps) {
 
         {/* Headline */}
         <div style={anim(100)}>
-          <h1 className="font-display font-semibold leading-[1.1] tracking-tight mb-6"
-            style={{ fontSize: 'clamp(30px, 6vw, 76px)' }}>
-            <span className="text-white block">{t('hero.titleLine1')}</span>
-            <span className="text-white block">{t('hero.titleLine2')}</span>
-            <span className="block whitespace-nowrap" style={{ fontSize: 'clamp(22px, 5vw, 68px)', minHeight: '1.25em' }}>
+          <h1 className="font-display font-bold leading-[1.04] tracking-tight mb-6"
+            style={{ fontSize: 'clamp(32px, 6.4vw, 80px)' }}>
+            <span className="text-[#141310] block">{t('hero.titleLine1')}</span>
+            <span className="text-[#141310] block">{t('hero.titleLine2')}</span>
+            <span className="block whitespace-nowrap" style={{ fontSize: 'clamp(23px, 5.3vw, 71px)', minHeight: '1.25em' }}>
               <TypewriterCycle />
             </span>
           </h1>
@@ -259,7 +259,7 @@ export default function Hero({ onDemo }: HeroProps) {
 
         {/* Sub */}
         <div style={anim(200)}>
-          <p className="text-slate-400 text-lg sm:text-xl leading-relaxed max-w-2xl mx-auto mb-10">
+          <p className="text-[#5b5750] text-lg sm:text-xl leading-relaxed max-w-2xl mx-auto mb-10">
             {t('hero.subtitle')}
           </p>
         </div>
@@ -279,30 +279,30 @@ export default function Hero({ onDemo }: HeroProps) {
           <div className="flex items-center gap-3">
             <div className="flex -space-x-2">
               {['BG', 'AG', 'CO', 'EK', 'OS'].map((s, i) => (
-                <div key={i} className="w-8 h-8 rounded-full border-2 border-[#0b0a09] flex items-center justify-center text-[9px] font-bold"
-                  style={{ background: ['#c9a24e', '#a98b4a', '#8a7246', '#6f5e3f', '#574c37'][i], color: '#15120c', zIndex: 5 - i }}>
+                <div key={i} className="w-8 h-8 rounded-full border-2 border-[#f5f4f1] flex items-center justify-center text-[9px] font-bold"
+                  style={{ background: ['#14532d', '#1d6b3c', '#2f7d4f', '#4a8f62', '#6ba47d'][i], color: '#f5f4f1', zIndex: 5 - i }}>
                   {s}
                 </div>
               ))}
             </div>
             <div className="text-left">
               <div className="flex items-center gap-0.5 mb-0.5">
-                {[...Array(5)].map((_, i) => <Star key={i} className="h-3 w-3 fill-[#c9a24e] text-[#c9a24e]" />)}
+                {[...Array(5)].map((_, i) => <Star key={i} className="h-3 w-3 fill-[#14532d] text-[#14532d]" />)}
               </div>
-              <p className="text-slate-500 text-xs">{t('hero.trustedBy')}</p>
+              <p className="text-[#5b5750] text-xs">{t('hero.trustedBy')}</p>
             </div>
           </div>
-          <div className="w-px h-8 bg-white/10 hidden sm:block" />
+          <div className="w-px h-8 bg-black/10 hidden sm:block" />
           {[
             { v: 300, s: '+', l: t('hero.statSchools') },
             { v: 95000, s: '+', l: t('hero.statStudents') },
             { v: 450, p: '₦', s: 'M+', l: t('hero.statProcessed') },
           ].map(stat => (
             <div key={stat.l} className="text-center">
-              <p className="font-display font-semibold text-xl" style={{ color: '#c9a24e' }}>
+              <p className="font-display font-semibold text-xl" style={{ color: '#14532d' }}>
                 <AnimatedNum to={stat.v} prefix={stat.p} suffix={stat.s} />
               </p>
-              <p className="text-slate-600 text-[10px]">{stat.l}</p>
+              <p className="text-[#8a8378] text-[10px]">{stat.l}</p>
             </div>
           ))}
         </div>
@@ -322,8 +322,8 @@ export default function Hero({ onDemo }: HeroProps) {
             const Icon = chip.icon;
             return (
               <div key={i} className="inline-flex items-center gap-2 px-4 py-2 rounded-full sd-panel">
-                <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: '#c9a24e' }} />
-                <span className="text-white text-xs font-medium">{chip.label}</span>
+                <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: '#14532d' }} />
+                <span className="text-[#141310] text-xs font-medium">{chip.label}</span>
               </div>
             );
           })}

@@ -5,7 +5,10 @@ import {
   Briefcase, Monitor, ArrowRight, CheckCircle, QrCode
 } from 'lucide-react';
 
-const GOLD = '#c9a24e';
+const GREEN = '#14532d';
+// Brighter variant for text/icons inside the dark dashboard-mockup previews,
+// where the deep brand green wouldn't read against a near-black surface.
+const GREEN_BRIGHT = '#4ade80';
 
 function goTo(link: string) {
   if (link.startsWith('#')) {
@@ -54,10 +57,11 @@ function buildShowcaseSections(t: (key: string, options?: Record<string, unknown
     desc: t('features.showcase.finance.desc'),
     points: t('features.showcase.finance.points', { returnObjects: true }) as string[],
     preview: (
-      <div className="rounded-2xl overflow-hidden sd-card">
+      <div className="rounded-2xl overflow-hidden border border-white/10 keep-dark" style={{ background: 'rgba(15,13,11,0.97)' }}>
         <div className="p-4 border-b border-white/5 flex items-center justify-between">
           <span className="text-white text-sm font-semibold">Fee Collection Dashboard</span>
-          <span className="badge text-[9px]">Live</span>
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-semibold uppercase tracking-[0.08em]"
+            style={{ color: GREEN_BRIGHT, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)' }}>Live</span>
         </div>
         <div className="p-4 space-y-3">
           {[
@@ -69,7 +73,7 @@ function buildShowcaseSections(t: (key: string, options?: Record<string, unknown
             <div key={i} className="flex items-center justify-between py-2 border-b border-white/4 last:border-0">
               <div className="flex items-center gap-3">
                 <div className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold"
-                  style={{ background: 'rgba(201,162,78,0.15)', color: GOLD }}>{r.name[0]}</div>
+                  style={{ background: 'rgba(74,222,128,0.15)', color: GREEN_BRIGHT }}>{r.name[0]}</div>
                 <div>
                   <p className="text-white text-xs font-medium">{r.name}</p>
                   <p className="text-slate-500 text-[10px]">Term 2 · SS3</p>
@@ -87,9 +91,9 @@ function buildShowcaseSections(t: (key: string, options?: Record<string, unknown
               { label: 'Pending', val: '₦1.8M' },
               { label: 'Students', val: '842' },
             ].map(s => (
-              <div key={s.label} className="rounded-xl p-2.5 text-center sd-card-2">
-                <p className="font-bold font-mono text-sm" style={{ color: GOLD }}>{s.val}</p>
-                <p className="text-slate-600 text-[9px]">{s.label}</p>
+              <div key={s.label} className="rounded-xl p-2.5 text-center" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <p className="font-bold font-mono text-sm" style={{ color: GREEN_BRIGHT }}>{s.val}</p>
+                <p className="text-slate-500 text-[9px]">{s.label}</p>
               </div>
             ))}
           </div>
@@ -104,20 +108,21 @@ function buildShowcaseSections(t: (key: string, options?: Record<string, unknown
     desc: t('features.showcase.cbt.desc'),
     points: t('features.showcase.cbt.points', { returnObjects: true }) as string[],
     preview: (
-      <div className="rounded-2xl overflow-hidden sd-card">
+      <div className="rounded-2xl overflow-hidden border border-white/10 keep-dark" style={{ background: 'rgba(15,13,11,0.97)' }}>
         <div className="p-4 border-b border-white/5 flex items-center justify-between">
           <span className="text-white text-sm font-semibold">CBT — English SS3 (Term 2)</span>
           <div className="flex items-center gap-2">
-            <span className="font-mono text-xs" style={{ color: GOLD }}>01:24:33</span>
-            <span className="badge text-[9px]">LIVE</span>
+            <span className="font-mono text-xs" style={{ color: GREEN_BRIGHT }}>01:24:33</span>
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-semibold uppercase tracking-[0.08em]"
+              style={{ color: GREEN_BRIGHT, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)' }}>LIVE</span>
           </div>
         </div>
         <div className="p-4">
           <div className="grid grid-cols-2 gap-3 mb-4">
             {[{ l: 'Active', v: '127' }, { l: 'Submitted', v: '43' }, { l: 'Avg Progress', v: '68%' }, { l: 'Offline', v: '12' }].map(s => (
-              <div key={s.l} className="rounded-xl p-3 sd-card-2">
+              <div key={s.l} className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <p className="text-slate-500 text-[9px]">{s.l}</p>
-                <p className="font-bold text-lg font-mono" style={{ color: GOLD }}>{s.v}</p>
+                <p className="font-bold text-lg font-mono" style={{ color: GREEN_BRIGHT }}>{s.v}</p>
               </div>
             ))}
           </div>
@@ -126,10 +131,10 @@ function buildShowcaseSections(t: (key: string, options?: Record<string, unknown
             {['Bello Fatima', 'Chidi Okonkwo', 'Ngozi Eze', 'Tunde A.'].map((name, i) => (
               <div key={name} className="flex items-center gap-3">
                 <span className="text-slate-500 text-[9px] w-20 truncate">{name}</span>
-                <div className="flex-1 h-1.5 rounded-full sd-track">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${[78, 95, 62, 88][i]}%`, background: GOLD }} />
+                <div className="flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${[78, 95, 62, 88][i]}%`, background: GREEN_BRIGHT }} />
                 </div>
-                <span className="text-[9px] font-mono w-8 text-right" style={{ color: GOLD }}>{[78, 95, 62, 88][i]}%</span>
+                <span className="text-[9px] font-mono w-8 text-right" style={{ color: GREEN_BRIGHT }}>{[78, 95, 62, 88][i]}%</span>
               </div>
             ))}
           </div>
@@ -144,20 +149,20 @@ function buildShowcaseSections(t: (key: string, options?: Record<string, unknown
     desc: t('features.showcase.attendance.desc'),
     points: t('features.showcase.attendance.points', { returnObjects: true }) as string[],
     preview: (
-      <div className="rounded-2xl overflow-hidden sd-card">
+      <div className="rounded-2xl overflow-hidden border border-white/10 keep-dark" style={{ background: 'rgba(15,13,11,0.97)' }}>
         <div className="p-4 border-b border-white/5 flex items-center justify-between">
           <span className="text-white text-sm font-semibold">Attendance — JSS2A</span>
           <div className="flex items-center gap-1.5">
-            <QrCode className="h-3.5 w-3.5" style={{ color: GOLD }} />
-            <span className="text-[9px]" style={{ color: GOLD }}>Scanning</span>
+            <QrCode className="h-3.5 w-3.5" style={{ color: GREEN_BRIGHT }} />
+            <span className="text-[9px]" style={{ color: GREEN_BRIGHT }}>Scanning</span>
           </div>
         </div>
         <div className="p-4">
           <div className="grid grid-cols-4 gap-2 mb-4">
-            {[{ l: 'Present', v: '38', c: '#34d399' }, { l: 'Late', v: '3', c: '#fbbf24' }, { l: 'Absent', v: '4', c: '#f87171' }, { l: 'Rate', v: '93%', c: GOLD }].map(s => (
-              <div key={s.l} className="rounded-xl p-2 text-center sd-card-2">
+            {[{ l: 'Present', v: '38', c: '#34d399' }, { l: 'Late', v: '3', c: '#fbbf24' }, { l: 'Absent', v: '4', c: '#f87171' }, { l: 'Rate', v: '93%', c: GREEN_BRIGHT }].map(s => (
+              <div key={s.l} className="rounded-xl p-2 text-center" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <p className="font-bold text-base font-mono" style={{ color: s.c }}>{s.v}</p>
-                <p className="text-slate-600 text-[8px]">{s.l}</p>
+                <p className="text-slate-500 text-[8px]">{s.l}</p>
               </div>
             ))}
           </div>
@@ -195,12 +200,12 @@ function ShowcaseSection({ section, idx }: { section: ShowcaseSectionData; idx: 
         style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : `translateX(${isEven ? -24 : 24}px)`, transition: 'all 0.7s ease' }}
       >
         <span className="badge mb-4">{section.badge}</span>
-        <h3 className="font-display font-semibold text-3xl lg:text-4xl text-white mb-4 leading-tight">{section.title}</h3>
-        <p className="text-slate-400 text-base leading-relaxed mb-6">{section.desc}</p>
+        <h3 className="font-display font-semibold text-3xl lg:text-4xl text-[#141310] mb-4 leading-tight">{section.title}</h3>
+        <p className="text-[#5b5750] text-base leading-relaxed mb-6">{section.desc}</p>
         <ul className="space-y-2.5 mb-8">
           {section.points.map(p => (
-            <li key={p} className="flex items-center gap-3 text-slate-300 text-sm">
-              <CheckCircle className="h-4 w-4 shrink-0" style={{ color: GOLD }} />
+            <li key={p} className="flex items-center gap-3 text-[#3a362f] text-sm">
+              <CheckCircle className="h-4 w-4 shrink-0" style={{ color: GREEN }} />
               {p}
             </li>
           ))}
@@ -227,7 +232,7 @@ function FeatureCard({ feature, index, visible }: { feature: FeatureGridItem; in
   return (
     <div
       onClick={() => goTo(link)}
-      className="group relative rounded-2xl p-6 cursor-pointer sd-card transition-all duration-300 hover:border-[#c9a24e]/30 hover:-translate-y-0.5"
+      className="group relative rounded-2xl p-6 cursor-pointer sd-card transition-all duration-300 hover:border-[#14532d]/30 hover:-translate-y-0.5"
       style={{
         opacity: visible ? 1 : 0,
         transform: visible ? 'none' : 'translateY(20px)',
@@ -235,12 +240,12 @@ function FeatureCard({ feature, index, visible }: { feature: FeatureGridItem; in
       }}
     >
       <div className="h-12 w-12 rounded-xl flex items-center justify-center mb-4"
-        style={{ background: 'rgba(201,162,78,0.12)', border: '1px solid rgba(201,162,78,0.25)' }}>
-        <Icon className="h-5 w-5" style={{ color: GOLD }} />
+        style={{ background: 'rgba(20,83,45,0.08)', border: '1px solid rgba(20,83,45,0.22)' }}>
+        <Icon className="h-5 w-5" style={{ color: GREEN }} />
       </div>
-      <h3 className="text-white font-semibold text-base mb-2">{title}</h3>
-      <p className="text-slate-500 text-sm leading-relaxed">{desc}</p>
-      <div className="mt-4 flex items-center gap-1 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: GOLD }}>
+      <h3 className="text-[#141310] font-semibold text-base mb-2">{title}</h3>
+      <p className="text-[#5b5750] text-sm leading-relaxed">{desc}</p>
+      <div className="mt-4 flex items-center gap-1 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: GREEN }}>
         {t('common.learnMore')} <ArrowRight className="h-3 w-3" />
       </div>
     </div>
@@ -274,11 +279,11 @@ export default function Features() {
           <div className="text-center mb-14"
             style={{ opacity: gridVisible ? 1 : 0, transform: gridVisible ? 'none' : 'translateY(20px)', transition: 'all 0.7s ease' }}>
             <span className="badge mb-4">{t('features.badge')}</span>
-            <h2 className="font-display font-semibold text-4xl sm:text-5xl text-white mb-4">
+            <h2 className="font-display font-bold text-4xl sm:text-5xl text-[#141310] mb-4 tracking-tight">
               {t('features.title')}{' '}
               <span className="gradient-text">{t('features.titleHighlight')}</span>
             </h2>
-            <p className="text-slate-400 max-w-xl mx-auto">{t('features.subtitle')}</p>
+            <p className="text-[#5b5750] max-w-xl mx-auto">{t('features.subtitle')}</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {featuresGrid.map((f, i) => <FeatureCard key={f.title} feature={f} index={i} visible={gridVisible} />)}

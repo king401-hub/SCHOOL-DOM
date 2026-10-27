@@ -1,16 +1,19 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800;900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-display: "Fraunces", "Georgia", serif;
+  --font-display: "Inter Tight", "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
-  /* Single refined accent (warm gold) - replaces the old green/blue/violet
-     rainbow system. Status colors (success/danger/warning in dashboard
-     mockups) are semantic, not brand, and stay as plain Tailwind utility
-     colors (text-emerald-400, text-red-400, etc.) rather than tokens here. */
-  --color-brand-gold: #c9a24e;
+  /* Light paper base + ink type, in the spirit of the Asher Vale reference
+     (near-white ground, huge black display type, almost no color). The one
+     brand touch is SchoolDom's own green, darkened so it reads as ink, not
+     as a bright UI accent. Status colors (success/danger/warning in
+     dashboard mockups) stay as plain Tailwind utility colors. */
+  --color-paper: #f5f4f1;
+  --color-ink: #141310;
+  --color-brand-green: #14532d;
 }
 
 html {
@@ -25,41 +28,41 @@ html, body {
 }
 
 body {
-  background: #0b0a09;
-  color: #f3efe9;
+  background: #f5f4f1;
+  color: #141310;
   font-family: "Inter", system-ui, sans-serif;
 }
 
 /* --- Scrollbar --- */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(201,162,78,0.25); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(201,162,78,0.45); }
+::-webkit-scrollbar-thumb { background: rgba(20,83,45,0.25); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(20,83,45,0.45); }
 
 /* --- Typography utilities --- */
-.font-display { font-family: "Fraunces", "Georgia", serif; }
+.font-display { font-family: "Inter Tight", "Inter", system-ui, sans-serif; }
 .font-mono { font-family: "JetBrains Mono", monospace; }
 
 .gradient-text, .gradient-text-reverse {
-  color: #c9a24e;
+  color: #14532d;
 }
 
-/* --- Glassmorphism --- */
+/* --- Glassmorphism (now a light frosted surface, not dark glass) --- */
 .glass {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(20, 19, 16, 0.08);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
 
 .glass-hover:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(20, 19, 16, 0.14);
 }
 
 /* --- Brand backgrounds --- */
-.bg-brand { background: #c9a24e; }
-.bg-brand-subtle { background: rgba(201,162,78,0.08); }
+.bg-brand { background: #14532d; }
+.bg-brand-subtle { background: rgba(20,83,45,0.07); }
 
 /* --- Button styles --- */
 .btn-primary {
@@ -70,14 +73,14 @@ body {
   border-radius: 0.5rem;
   font-weight: 600;
   font-size: 0.9rem;
-  color: #15120c;
-  background: #c9a24e;
+  color: #f5f4f1;
+  background: #141310;
   border: none;
   cursor: pointer;
   transition: opacity 0.2s, transform 0.2s;
 }
 .btn-primary:hover {
-  opacity: 0.9;
+  opacity: 0.85;
   transform: translateY(-1px);
 }
 
@@ -89,27 +92,27 @@ body {
   border-radius: 0.5rem;
   font-weight: 500;
   font-size: 0.9rem;
-  color: #d8d2c7;
+  color: #141310;
   background: transparent;
-  border: 1px solid rgba(255,255,255,0.14);
+  border: 1px solid rgba(20,19,16,0.18);
   cursor: pointer;
   transition: all 0.2s;
 }
 .btn-ghost:hover {
-  color: #f3efe9;
-  background: rgba(255,255,255,0.04);
-  border-color: rgba(255,255,255,0.22);
+  color: #141310;
+  background: rgba(20,19,16,0.04);
+  border-color: rgba(20,19,16,0.3);
 }
 
 /* --- Card --- */
 .premium-card {
-  background: rgba(255,255,255,0.025);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: #ffffff;
+  border: 1px solid rgba(20,19,16,0.08);
   border-radius: 0.75rem;
   transition: border-color 0.3s, transform 0.3s;
 }
 .premium-card:hover {
-  border-color: rgba(201,162,78,0.3);
+  border-color: rgba(20,83,45,0.35);
   transform: translateY(-2px);
 }
 
@@ -138,7 +141,7 @@ body {
 .section-divider {
   width: 100%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(201,162,78,0.35), transparent);
+  background: linear-gradient(90deg, transparent, rgba(20,19,16,0.14), transparent);
 }
 
 /* --- Tag / Badge (single tone now - badge-green/badge-blue both resolve
@@ -153,9 +156,9 @@ body {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #c9a24e;
-  background: rgba(201,162,78,0.08);
-  border: 1px solid rgba(201,162,78,0.25);
+  color: #14532d;
+  background: rgba(20,83,45,0.07);
+  border: 1px solid rgba(20,83,45,0.22);
 }
 
 /* Tailwind dark variant (kept - component files still reference it) */
@@ -163,46 +166,47 @@ body {
 
 /* App root surface */
 .app-root {
-  background: #0b0a09;
-  color: #f3efe9;
+  background: #f5f4f1;
+  color: #141310;
   min-height: 100vh;
   overflow-x: clip;
 }
 
 /* ── Themeable surface classes ───────────────────────────── */
-.sd-card { background: rgba(255, 255, 255, 0.025); border: 1px solid rgba(255, 255, 255, 0.08); }
-.sd-card-2 { background: rgba(255, 255, 255, 0.035); border: 1px solid rgba(255, 255, 255, 0.07); }
-.sd-input { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); color: #f3efe9; }
-.sd-modal { background: #171410; border: 1px solid rgba(255, 255, 255, 0.1); }
-.sd-panel { background: rgba(20, 17, 13, 0.94); border: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
-.sd-track { background: rgba(255, 255, 255, 0.08); }
+.sd-card { background: #ffffff; border: 1px solid rgba(20,19,16,0.08); }
+.sd-card-2 { background: #fbfaf8; border: 1px solid rgba(20,19,16,0.07); }
+.sd-input { background: #ffffff; border: 1px solid rgba(20,19,16,0.16); color: #141310; }
+.sd-modal { background: #ffffff; border: 1px solid rgba(20,19,16,0.1); }
+.sd-panel { background: rgba(255, 255, 255, 0.92); border: 1px solid rgba(20,19,16,0.08); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.sd-track { background: rgba(20,19,16,0.08); }
 .nav-scrolled {
-  background: rgba(11, 10, 9, 0.88);
+  background: rgba(245, 244, 241, 0.86);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(20,19,16,0.07);
 }
-.hero-fade { background: linear-gradient(to bottom, transparent, #0b0a09); }
+.hero-fade { background: linear-gradient(to bottom, transparent, #f5f4f1); }
 
-/* keep-dark: product mockups stay on the same dark surface regardless of
-   surrounding context - kept for Hero/CBT/Features preview components. */
+/* keep-dark: product mockups stay on a dark surface regardless of the
+   surrounding light page, the same way Asher Vale's own project tiles sit
+   dark-on-light - kept for Hero/CBT/Features preview components. */
 .keep-dark { color-scheme: dark; }
 
 /* Perspective grid overlay (used sparingly, no longer behind the aurora) */
 .perspective-grid {
   background-image:
-    linear-gradient(rgba(201,162,78,0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(201,162,78,0.05) 1px, transparent 1px);
+    linear-gradient(rgba(20,19,16,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20,19,16,0.05) 1px, transparent 1px);
   background-size: 56px 56px;
 }
 
 /* Input focus ring */
 input:focus, select:focus, textarea:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(201,162,78,0.35);
+  box-shadow: 0 0 0 2px rgba(20,83,45,0.35);
 }
-input::placeholder, textarea::placeholder { color: #6b645b; }
-select option { color: #0b0a09; background: #f3efe9; }
+input::placeholder, textarea::placeholder { color: #8a8378; }
+select option { color: #141310; background: #ffffff; }
 
 /* --- Spinner --- */
 @keyframes sd-spin { to { transform: rotate(360deg); } }
@@ -218,7 +222,7 @@ select option { color: #0b0a09; background: #f3efe9; }
   animation: sd-spin 0.65s linear infinite;
 }
 
-.signup-shell { background: #0b0a09; }
+.signup-shell { background: #f5f4f1; }
 
 /* --- RTL (Arabic) --- */
 [dir="rtl"] .badge.absolute,

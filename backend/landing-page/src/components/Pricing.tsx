@@ -2,9 +2,9 @@ import { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle, ArrowRight, Star, Zap, Shield, Users, Eye, ScanLine } from 'lucide-react';
 
-const K12_COLOR = '#c9a24e';
-const NONK12_COLOR = '#8a7246';
-const GATE_COLOR = '#a86a4a';
+const K12_COLOR = '#14532d';
+const NONK12_COLOR = '#0d9488';
+const GATE_COLOR = '#4d7c0f';
 
 function useVisible(threshold = 0.15) {
   const ref = useRef<HTMLDivElement>(null);
@@ -33,16 +33,16 @@ export default function Pricing() {
   return (
     <section id="pricing" ref={ref} className="py-28 px-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(201,162,78,0.04) 0%, transparent 60%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(20,83,45,0.05) 0%, transparent 60%)' }} />
 
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-14"
           style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(20px)', transition: 'all 0.7s ease' }}>
           <span className="badge mb-4">{t('pricing.badge')}</span>
-          <h2 className="font-display font-semibold text-4xl sm:text-5xl text-white mb-4">
+          <h2 className="font-display font-bold text-4xl sm:text-5xl text-[#141310] mb-4 tracking-tight">
             {t('pricing.title')} <span className="gradient-text">{t('pricing.titleHighlight')}</span>
           </h2>
-          <p className="text-slate-400 max-w-lg mx-auto">{t('pricing.subtitle')}</p>
+          <p className="text-[#5b5750] max-w-lg mx-auto">{t('pricing.subtitle')}</p>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
@@ -67,8 +67,8 @@ export default function Pricing() {
                   <Users className="h-5 w-5" style={{ color: K12_COLOR }} />
                 </div>
                 <div>
-                  <h3 className="font-display font-semibold text-white text-xl">{t('pricing.k12.name')}</h3>
-                  <p className="text-slate-500 text-xs">{t('pricing.k12.tagline')}</p>
+                  <h3 className="font-display font-semibold text-[#141310] text-xl">{t('pricing.k12.name')}</h3>
+                  <p className="text-[#8a8378] text-xs">{t('pricing.k12.tagline')}</p>
                 </div>
               </div>
 
@@ -76,11 +76,11 @@ export default function Pricing() {
                 <div className="flex items-end gap-2">
                   <span className="font-display font-semibold text-5xl" style={{ color: K12_COLOR }}>₦500</span>
                   <div className="mb-2">
-                    <p className="text-white text-sm font-semibold">{t('pricing.k12.perTerm')}</p>
-                    <p className="text-slate-500 text-xs">{t('pricing.k12.termLength')}</p>
+                    <p className="text-[#141310] text-sm font-semibold">{t('pricing.k12.perTerm')}</p>
+                    <p className="text-[#8a8378] text-xs">{t('pricing.k12.termLength')}</p>
                   </div>
                 </div>
-                <p className="text-slate-500 text-xs mt-2">{t('pricing.k12.flatRate')}</p>
+                <p className="text-[#8a8378] text-xs mt-2">{t('pricing.k12.flatRate')}</p>
               </div>
 
               {/* Child Monitor Toggle */}
@@ -93,23 +93,23 @@ export default function Pricing() {
                   <div className="flex items-center gap-3">
                     <Eye className="h-4 w-4 shrink-0" style={{ color: kidMonitor ? K12_COLOR : '#5a554d' }} />
                     <div>
-                      <p className="text-white text-sm font-semibold">{t('pricing.childMonitor.title')}</p>
-                      <p className="text-slate-500 text-[10px]">{t('pricing.childMonitor.desc')}</p>
+                      <p className="text-[#141310] text-sm font-semibold">{t('pricing.childMonitor.title')}</p>
+                      <p className="text-[#8a8378] text-[10px]">{t('pricing.childMonitor.desc')}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-xs font-mono font-bold" style={{ color: K12_COLOR }}>{t('pricing.childMonitor.price')}</span>
                     <button onClick={() => setKidMonitor(k => !k)}
                       className="relative h-6 w-11 rounded-full transition-all cursor-pointer shrink-0"
-                      style={{ background: kidMonitor ? K12_COLOR : 'rgba(255,255,255,0.12)' }}>
+                      style={{ background: kidMonitor ? K12_COLOR : 'rgba(20,19,16,0.14)' }}>
                       <div className="absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200"
                         style={{ left: kidMonitor ? 24 : 4 }} />
                     </button>
                   </div>
                 </div>
                 {kidMonitor && (
-                  <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
-                    <span className="text-slate-400 text-xs">{t('pricing.childMonitor.totalPerTerm')}</span>
+                  <div className="mt-3 pt-3 border-t border-black/8 flex items-center justify-between">
+                    <span className="text-[#8a8378] text-xs">{t('pricing.childMonitor.totalPerTerm')}</span>
                     <span className="font-display font-semibold text-lg" style={{ color: K12_COLOR }}>₦1,500</span>
                   </div>
                 )}
@@ -117,7 +117,7 @@ export default function Pricing() {
 
               <ul className="space-y-2.5 mb-8">
                 {K12_FEATURES.map(f => (
-                  <li key={f} className="flex items-center gap-3 text-slate-300 text-sm">
+                  <li key={f} className="flex items-center gap-3 text-[#3a362f] text-sm">
                     <CheckCircle className="h-4 w-4 shrink-0" style={{ color: K12_COLOR }} />
                     {f}
                   </li>
@@ -145,8 +145,8 @@ export default function Pricing() {
                   <Zap className="h-5 w-5" style={{ color: NONK12_COLOR }} />
                 </div>
                 <div>
-                  <h3 className="font-display font-semibold text-white text-xl">{t('pricing.nonK12.name')}</h3>
-                  <p className="text-slate-500 text-xs">{t('pricing.nonK12.tagline')}</p>
+                  <h3 className="font-display font-semibold text-[#141310] text-xl">{t('pricing.nonK12.name')}</h3>
+                  <p className="text-[#8a8378] text-xs">{t('pricing.nonK12.tagline')}</p>
                 </div>
               </div>
 
@@ -154,26 +154,26 @@ export default function Pricing() {
                 <div className="flex items-end gap-2">
                   <span className="font-display font-semibold text-5xl" style={{ color: NONK12_COLOR }}>₦200</span>
                   <div className="mb-2">
-                    <p className="text-white text-sm font-semibold">{t('pricing.nonK12.perMonth')}</p>
-                    <p className="text-slate-500 text-xs">{t('pricing.nonK12.billedMonthly')}</p>
+                    <p className="text-[#141310] text-sm font-semibold">{t('pricing.nonK12.perMonth')}</p>
+                    <p className="text-[#8a8378] text-xs">{t('pricing.nonK12.billedMonthly')}</p>
                   </div>
                 </div>
-                <p className="text-slate-500 text-xs mt-2">{t('pricing.nonK12.flatRate')}</p>
+                <p className="text-[#8a8378] text-xs mt-2">{t('pricing.nonK12.flatRate')}</p>
               </div>
 
               <div className="h-[120px] mb-6 rounded-2xl flex items-center px-4 sd-card">
                 <div className="flex items-center gap-3">
-                  <Shield className="h-5 w-5 text-slate-500" />
+                  <Shield className="h-5 w-5 text-[#8a8378]" />
                   <div>
-                    <p className="text-white text-sm font-semibold">{t('pricing.nonK12.fullAccess')}</p>
-                    <p className="text-slate-500 text-xs mt-1">{t('pricing.nonK12.fullAccessDesc')}</p>
+                    <p className="text-[#141310] text-sm font-semibold">{t('pricing.nonK12.fullAccess')}</p>
+                    <p className="text-[#8a8378] text-xs mt-1">{t('pricing.nonK12.fullAccessDesc')}</p>
                   </div>
                 </div>
               </div>
 
               <ul className="space-y-2.5 mb-8">
                 {NON_K12_FEATURES.map(f => (
-                  <li key={f} className="flex items-center gap-3 text-slate-300 text-sm">
+                  <li key={f} className="flex items-center gap-3 text-[#3a362f] text-sm">
                     <CheckCircle className="h-4 w-4 shrink-0" style={{ color: NONK12_COLOR }} />
                     {f}
                   </li>
@@ -181,7 +181,7 @@ export default function Pricing() {
               </ul>
 
               <a href="/#/signup?tier=non_k12"
-                className="w-full py-4 rounded-2xl font-semibold text-base text-white cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
+                className="w-full py-4 rounded-2xl font-semibold text-base text-[#141310] cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
                 style={{ background: `${NONK12_COLOR}22`, border: `1px solid ${NONK12_COLOR}55` }}>
                 {t('pricing.nonK12.cta')} <ArrowRight className="h-4 w-4 inline ml-2" />
               </a>
@@ -209,8 +209,8 @@ export default function Pricing() {
                   <ScanLine className="h-5 w-5" style={{ color: GATE_COLOR }} />
                 </div>
                 <div>
-                  <h3 className="font-display font-semibold text-white text-xl">{t('pricing.schoolgate.name')}</h3>
-                  <p className="text-slate-500 text-xs">{t('pricing.schoolgate.tagline')}</p>
+                  <h3 className="font-display font-semibold text-[#141310] text-xl">{t('pricing.schoolgate.name')}</h3>
+                  <p className="text-[#8a8378] text-xs">{t('pricing.schoolgate.tagline')}</p>
                 </div>
               </div>
 
@@ -234,15 +234,15 @@ export default function Pricing() {
                     ₦{gatePlan === 'premium' ? '1,500' : '700'}
                   </span>
                   <div className="mb-2">
-                    <p className="text-white text-sm font-semibold">{t('pricing.schoolgate.perStudentTerm')}</p>
+                    <p className="text-[#141310] text-sm font-semibold">{t('pricing.schoolgate.perStudentTerm')}</p>
                   </div>
                 </div>
-                <p className="text-slate-500 text-xs mt-2">{t('pricing.schoolgate.deviceFee')}</p>
+                <p className="text-[#8a8378] text-xs mt-2">{t('pricing.schoolgate.deviceFee')}</p>
               </div>
 
               <ul className="space-y-2.5 mb-8">
                 {SCHOOLGATE_FEATURES[gatePlan].map(f => (
-                  <li key={f} className="flex items-center gap-3 text-slate-300 text-sm">
+                  <li key={f} className="flex items-center gap-3 text-[#3a362f] text-sm">
                     <CheckCircle className="h-4 w-4 shrink-0" style={{ color: GATE_COLOR }} />
                     {f}
                   </li>
@@ -250,7 +250,7 @@ export default function Pricing() {
               </ul>
 
               <a href={`/#/signup?product=schoolgate&plan=${gatePlan}`}
-                className="w-full py-4 rounded-2xl font-semibold text-base text-white cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
+                className="w-full py-4 rounded-2xl font-semibold text-base text-[#141310] cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
                 style={{ background: `${GATE_COLOR}22`, border: `1px solid ${GATE_COLOR}55` }}>
                 {t('pricing.schoolgate.cta')} <ArrowRight className="h-4 w-4 inline ml-2" />
               </a>
@@ -270,8 +270,8 @@ export default function Pricing() {
             const Icon = g.icon;
             return (
               <div key={g.label} className="flex items-center gap-2 justify-center px-4 py-3 rounded-xl sd-card">
-                <Icon className="h-4 w-4 shrink-0" style={{ color: '#c9a24e' }} />
-                <span className="text-slate-400 text-xs">{g.label}</span>
+                <Icon className="h-4 w-4 shrink-0" style={{ color: '#14532d' }} />
+                <span className="text-[#8a8378] text-xs">{g.label}</span>
               </div>
             );
           })}
