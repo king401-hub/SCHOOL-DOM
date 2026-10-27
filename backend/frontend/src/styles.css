@@ -25697,6 +25697,57 @@ body[data-theme="dark"] .qr-scanner-copy p {
   }
 }
 
+/* Bulk ID card export - every selected person's card is captured
+   individually (html2canvas, one PDF per person: front page + back page)
+   and packaged into one zip file, so export quality never depends on a
+   mobile browser's own (wildly inconsistent) print-to-PDF rendering - see
+   IdCardBulkPrintArea and AdminIdCardsScreen's handleBulkExport. Rendered
+   fully laid out (never display:none - a hidden element has no box for
+   html2canvas to capture) but pushed off-screen, never seen by the admin. */
+.id-card-bulk-print-area {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: max-content;
+  background: #ffffff;
+  /* Same fallback values .id-card-print-area's own CSS rule provides for
+     the single-card preview - themeToCssVars() only ever overrides
+     --id-card-teal/--id-card-green (see AppShared.jsx), so without these,
+     bulk items (wrapped in .id-card-bulk-print-item, not .id-card-print-area)
+     would have no --id-card-ink/--id-card-muted/--id-card-line at all. */
+  --id-card-ink: #102033;
+  --id-card-muted: #64748b;
+  --id-card-line: #dbe5f0;
+  --id-card-teal: #0f3d5e;
+  --id-card-green: #0f8a55;
+}
+
+/* Every face captured here is read straight off the DOM, never through the
+   interactive on-screen flip (3D transform + backface-visibility:hidden) -
+   html2canvas doesn't reliably support 3D transform contexts, so this area
+   always lays both faces out flat and visible, the same override the old
+   print path only ever applied under @media print. */
+.id-card-bulk-print-item {
+  display: grid;
+  grid-template-columns: 3.375in 3.375in;
+  gap: 0.18in;
+}
+
+.id-card-bulk-print-item .id-card-flip-inner {
+  display: contents;
+  transform: none !important;
+}
+
+.id-card-bulk-print-item .id-card-face {
+  position: relative;
+  inset: auto;
+  backface-visibility: visible;
+}
+
+.id-card-bulk-print-item .id-card-back {
+  transform: none;
+}
+
 .document-workspace {
   --doc-ink: #102033;
   --doc-muted: #64748b;
