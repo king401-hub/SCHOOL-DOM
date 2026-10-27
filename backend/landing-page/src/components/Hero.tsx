@@ -297,115 +297,125 @@ export default function Hero({ onDemo }: HeroProps) {
       <GrainOverlay />
       {/* Single, calm background wash - no particles, no aurora */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] pointer-events-none -z-0"
-        style={{ background: 'radial-gradient(ellipse, rgba(20,83,45,0.07) 0%, transparent 65%)', filter: 'blur(50px)' }} />
+        style={{ background: 'radial-gradient(ellipse, rgba(var(--c-green-rgb),0.07) 0%, transparent 65%)', filter: 'blur(50px)' }} />
 
-      {/* Adaptive-quality 3D hero accent - a small corner object, not a full-bleed
-          background: fixed box anchored to the top-right of the hero's text area
-          (not the whole, much taller, section) so it reads as a floating accent
-          instead of a dark wall sitting over the headline/CTAs. Desktop/laptop
-          only; text sits above it (z-10). */}
-      <div className="absolute hidden md:block pointer-events-none"
-        style={{ top: '-30px', right: '-40px', width: 'min(46vw, 620px)', height: 'min(46vw, 620px)', zIndex: 1 }}>
-        <HeroScene />
-      </div>
-
-      {/* Centered text block */}
-      <motion.div
-        className="max-w-4xl mx-auto px-4 text-center relative z-10"
-        initial={reduced ? false : 'hidden'}
-        animate="show"
-        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.1 } } }}
-      >
-        {/* Badge */}
-        <motion.div variants={fadeUp}>
-          <span className="inline-flex items-center gap-2 badge mb-7">
-            <Star className="h-3 w-3 fill-current" />
-            {t('hero.badge')}
-          </span>
-        </motion.div>
-
-        {/* Headline */}
-        <motion.div variants={fadeUp}>
-          <h1 className="font-display font-bold leading-[1.04] tracking-tight mb-6"
-            style={{ fontSize: 'clamp(32px, 6.4vw, 80px)' }}>
-            <span className="text-[#141310] block"><SplitWords text={line1} startDelay={0.15} /></span>
-            <span className="text-[#141310] block"><SplitWords text={t('hero.titleLine2')} startDelay={line2Delay} /></span>
-            <span className="block whitespace-nowrap" style={{ fontSize: 'clamp(23px, 5.3vw, 71px)', minHeight: '1.25em' }}>
-              <TypewriterCycle />
-            </span>
-          </h1>
-        </motion.div>
-
-        {/* Sub */}
-        <motion.div variants={fadeUp}>
-          <p className="text-[#5b5750] text-lg sm:text-xl leading-relaxed max-w-2xl mx-auto mb-10">
-            {t('hero.subtitle')}
-          </p>
-        </motion.div>
-
-        {/* CTAs */}
-        <motion.div variants={fadeUp} className="flex flex-wrap gap-4 justify-center mb-12">
-          <motion.a
-            ref={ctaPrimary.ref}
-            href="/#/signup"
-            className="btn-primary text-base px-8 py-4"
-            style={ctaPrimary.style}
-            onMouseMove={ctaPrimary.onMouseMove}
-            onMouseLeave={ctaPrimary.onMouseLeave}
-            whileTap={{ scale: 0.96 }}
+      {/* Asymmetric split: copy on the left, the adaptive-quality 3D scene
+          large and dominant on the right (md+) - not a small object tucked
+          behind the text. On mobile the 3D column is hidden outright: the
+          capability gate in deviceCapability.ts already routes touch devices
+          to a static fallback rather than real WebGL, so there is nothing
+          live to show there anyway, and the hero stays focused on the copy. */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 relative z-10">
+        <div className="grid md:grid-cols-2 gap-10 lg:gap-14 items-center">
+          <motion.div
+            className="text-center md:text-left"
+            initial={reduced ? false : 'hidden'}
+            animate="show"
+            variants={{ hidden: {}, show: { transition: { staggerChildren: 0.1 } } }}
           >
-            {t('hero.ctaPrimary')} <ArrowRight className="h-4 w-4" />
-          </motion.a>
-          <motion.button
-            ref={ctaSecondary.ref}
-            onClick={onDemo}
-            className="btn-ghost text-base px-8 py-4"
-            style={ctaSecondary.style}
-            onMouseMove={ctaSecondary.onMouseMove}
-            onMouseLeave={ctaSecondary.onMouseLeave}
-            whileTap={{ scale: 0.96 }}
-          >
-            <Play className="h-4 w-4" /> {t('hero.ctaSecondary')}
-          </motion.button>
-        </motion.div>
+            {/* Badge */}
+            <motion.div variants={fadeUp}>
+              <span className="inline-flex items-center gap-2 badge mb-7">
+                <Star className="h-3 w-3 fill-current" />
+                {t('hero.badge')}
+              </span>
+            </motion.div>
 
-        {/* Social proof */}
-        <motion.div variants={fadeUp} className="flex flex-wrap items-center justify-center gap-6 mb-16">
-          <div className="flex items-center gap-3">
-            <div className="flex -space-x-2">
-              {['BG', 'AG', 'CO', 'EK', 'OS'].map((s, i) => (
-                <div key={i} className="w-8 h-8 rounded-full border-2 border-[#f5f4f1] flex items-center justify-center text-[9px] font-bold"
-                  style={{ background: ['#14532d', '#1d6b3c', '#2f7d4f', '#4a8f62', '#6ba47d'][i], color: '#f5f4f1', zIndex: 5 - i }}>
-                  {s}
+            {/* Headline */}
+            <motion.div variants={fadeUp}>
+              <h1 className="font-display font-bold leading-[1.04] tracking-tight mb-6"
+                style={{ fontSize: 'clamp(30px, 4vw, 58px)' }}>
+                <span className="text-[var(--c-ink)] block"><SplitWords text={line1} startDelay={0.15} /></span>
+                <span className="text-[var(--c-ink)] block"><SplitWords text={t('hero.titleLine2')} startDelay={line2Delay} /></span>
+                <span className="block" style={{ fontSize: 'clamp(22px, 3.3vw, 48px)', minHeight: '2.3em' }}>
+                  <TypewriterCycle />
+                </span>
+              </h1>
+            </motion.div>
+
+            {/* Sub */}
+            <motion.div variants={fadeUp}>
+              <p className="text-[var(--c-muted)] text-lg sm:text-xl leading-relaxed mb-10 mx-auto md:mx-0 max-w-xl">
+                {t('hero.subtitle')}
+              </p>
+            </motion.div>
+
+            {/* CTAs */}
+            <motion.div variants={fadeUp} className="flex flex-wrap gap-4 justify-center md:justify-start mb-12">
+              <motion.a
+                ref={ctaPrimary.ref}
+                href="/#/signup"
+                className="btn-primary text-base px-8 py-4"
+                style={ctaPrimary.style}
+                onMouseMove={ctaPrimary.onMouseMove}
+                onMouseLeave={ctaPrimary.onMouseLeave}
+                whileTap={{ scale: 0.96 }}
+              >
+                {t('hero.ctaPrimary')} <ArrowRight className="h-4 w-4" />
+              </motion.a>
+              <motion.button
+                ref={ctaSecondary.ref}
+                onClick={onDemo}
+                className="btn-ghost text-base px-8 py-4"
+                style={ctaSecondary.style}
+                onMouseMove={ctaSecondary.onMouseMove}
+                onMouseLeave={ctaSecondary.onMouseLeave}
+                whileTap={{ scale: 0.96 }}
+              >
+                <Play className="h-4 w-4" /> {t('hero.ctaSecondary')}
+              </motion.button>
+            </motion.div>
+
+            {/* Social proof */}
+            <motion.div variants={fadeUp} className="flex flex-wrap items-center justify-center md:justify-start gap-6">
+              <div className="flex items-center gap-3">
+                <div className="flex -space-x-2">
+                  {['BG', 'AG', 'CO', 'EK', 'OS'].map((s, i) => (
+                    <div key={i} className="w-8 h-8 rounded-full border-2 border-[var(--c-paper)] flex items-center justify-center text-[9px] font-bold"
+                      style={{ background: ['var(--c-green)', '#1d6b3c', '#2f7d4f', '#4a8f62', '#6ba47d'][i], color: 'var(--c-paper)', zIndex: 5 - i }}>
+                      {s}
+                    </div>
+                  ))}
+                </div>
+                <div className="text-left">
+                  <div className="flex items-center gap-0.5 mb-0.5">
+                    {[...Array(5)].map((_, i) => <Star key={i} className="h-3 w-3 fill-[var(--c-green)] text-[var(--c-green)]" />)}
+                  </div>
+                  <p className="text-[var(--c-muted)] text-xs">{t('hero.trustedBy')}</p>
+                </div>
+              </div>
+              <div className="w-px h-8 bg-[var(--c-ink)]/10 hidden sm:block" />
+              {[
+                { v: 300, s: '+', l: t('hero.statSchools') },
+                { v: 95000, s: '+', l: t('hero.statStudents') },
+                { v: 450, p: '₦', s: 'M+', l: t('hero.statProcessed') },
+              ].map(stat => (
+                <div key={stat.l} className="text-center md:text-left">
+                  <p className="font-display font-semibold text-xl" style={{ color: 'var(--c-green)' }}>
+                    <AnimatedNum to={stat.v} prefix={stat.p} suffix={stat.s} />
+                  </p>
+                  <p className="text-[var(--c-subtle)] text-[10px]">{stat.l}</p>
                 </div>
               ))}
-            </div>
-            <div className="text-left">
-              <div className="flex items-center gap-0.5 mb-0.5">
-                {[...Array(5)].map((_, i) => <Star key={i} className="h-3 w-3 fill-[#14532d] text-[#14532d]" />)}
-              </div>
-              <p className="text-[#5b5750] text-xs">{t('hero.trustedBy')}</p>
-            </div>
-          </div>
-          <div className="w-px h-8 bg-black/10 hidden sm:block" />
-          {[
-            { v: 300, s: '+', l: t('hero.statSchools') },
-            { v: 95000, s: '+', l: t('hero.statStudents') },
-            { v: 450, p: '₦', s: 'M+', l: t('hero.statProcessed') },
-          ].map(stat => (
-            <div key={stat.l} className="text-center">
-              <p className="font-display font-semibold text-xl" style={{ color: '#14532d' }}>
-                <AnimatedNum to={stat.v} prefix={stat.p} suffix={stat.s} />
-              </p>
-              <p className="text-[#8a8378] text-[10px]">{stat.l}</p>
-            </div>
-          ))}
-        </motion.div>
-      </motion.div>
+            </motion.div>
+          </motion.div>
 
-      {/* Full-width dashboard — no tilt, flows naturally */}
+          {/* Right: the live/adaptive 3D scene, large and dominant - desktop/laptop only */}
+          <motion.div
+            className="relative hidden md:block"
+            style={{ aspectRatio: '1 / 1', minHeight: 420 }}
+            initial={reduced ? false : { opacity: 0, scale: 0.94 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 1, ease: EASE, delay: 0.25 }}
+          >
+            <HeroScene />
+          </motion.div>
+        </div>
+      </div>
+
+      {/* Full-width dashboard — separate from the split hero above, flows naturally */}
       <motion.div
-        className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10"
+        className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10 mt-20"
         initial={reduced ? false : { opacity: 0, y: 32 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.9, ease: EASE, delay: 0.4 }}
@@ -421,8 +431,8 @@ export default function Hero({ onDemo }: HeroProps) {
             const Icon = chip.icon;
             return (
               <div key={i} className="inline-flex items-center gap-2 px-4 py-2 rounded-full sd-panel">
-                <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: '#14532d' }} />
-                <span className="text-[#141310] text-xs font-medium">{chip.label}</span>
+                <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--c-green)' }} />
+                <span className="text-[var(--c-ink)] text-xs font-medium">{chip.label}</span>
               </div>
             );
           })}

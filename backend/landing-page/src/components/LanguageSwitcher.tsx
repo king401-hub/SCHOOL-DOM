@@ -37,7 +37,7 @@ export default function LanguageSwitcher({ className = '', align = 'right' }: La
         onClick={() => setOpen(o => !o)}
         aria-label="Change language"
         aria-expanded={open}
-        className="h-9 px-3 rounded-xl border border-black/10 flex items-center gap-1.5 text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all cursor-pointer shrink-0 text-xs font-semibold"
+        className="h-9 px-3 rounded-xl border border-[var(--c-ink)]/10 flex items-center gap-1.5 text-[var(--c-muted)] hover:text-[var(--c-ink)] hover:bg-[var(--c-ink)]/5 transition-all cursor-pointer shrink-0 text-xs font-semibold"
       >
         <Globe className="h-4 w-4" />
         <span className="uppercase">{current}</span>
@@ -50,10 +50,10 @@ export default function LanguageSwitcher({ className = '', align = 'right' }: La
             <button
               key={code}
               onClick={() => { i18n.changeLanguage(code); setOpen(false); }}
-              className="w-full flex items-center justify-between px-4 py-3 text-sm text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all cursor-pointer"
+              className="w-full flex items-center justify-between px-4 py-3 text-sm text-[var(--c-muted)] hover:text-[var(--c-ink)] hover:bg-[var(--c-ink)]/5 transition-all cursor-pointer"
             >
               {LANGUAGE_LABELS[code]}
-              {current === code && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: '#14532d' }} />}
+              {current === code && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--c-green)' }} />}
             </button>
           ))}
         </div>

@@ -5,15 +5,63 @@
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-display: "Inter Tight", "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
+}
 
-  /* Light paper base + ink type, in the spirit of the Asher Vale reference
-     (near-white ground, huge black display type, almost no color). The one
-     brand touch is SchoolDom's own green, darkened so it reads as ink, not
-     as a bright UI accent. Status colors (success/danger/warning in
-     dashboard mockups) stay as plain Tailwind utility colors. */
-  --color-paper: #f5f4f1;
-  --color-ink: #141310;
-  --color-brand-green: #14532d;
+/* ── Theme tokens ─────────────────────────────────────────
+   Light is the default (bare :root). Dark values apply either
+   from the OS preference (no stored choice yet, the media-query
+   block) or an explicit [data-theme="dark"] set by the toggle in
+   Navbar.tsx (persisted to localStorage) - both blocks carry
+   identical values so they can't drift apart. The *-rgb triplets
+   back the rgba(var(--c-x-rgb), alpha) borders/overlays used
+   throughout the component files; they invert the same way the
+   solid tokens do. #4ade80 used inside .keep-dark product mockups
+   (DashboardFrame, Features' previews, CBTAppMockup) is NOT a
+   theme token - those surfaces stay dark regardless of site theme
+   by design, the same way Asher Vale's own project tiles are dark
+   images sitting on its light page. */
+:root {
+  --c-paper: #f5f4f1;
+  --c-surface: #ffffff;
+  --c-surface-2: #fbfaf8;
+  --c-ink: #141310;
+  --c-muted: #5b5750;
+  --c-subtle: #8a8378;
+  --c-green: #14532d;
+  --c-paper-rgb: 245, 244, 241;
+  --c-surface-rgb: 255, 255, 255;
+  --c-ink-rgb: 20, 19, 16;
+  --c-green-rgb: 20, 83, 45;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-paper: #121110;
+    --c-surface: #1c1a17;
+    --c-surface-2: #191716;
+    --c-ink: #f5f4f1;
+    --c-muted: #b4afa5;
+    --c-subtle: #857f73;
+    --c-green: #4ade80;
+    --c-paper-rgb: 18, 17, 16;
+    --c-surface-rgb: 28, 26, 23;
+    --c-ink-rgb: 245, 244, 241;
+    --c-green-rgb: 74, 222, 128;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --c-paper: #121110;
+  --c-surface: #1c1a17;
+  --c-surface-2: #191716;
+  --c-ink: #f5f4f1;
+  --c-muted: #b4afa5;
+  --c-subtle: #857f73;
+  --c-green: #4ade80;
+  --c-paper-rgb: 18, 17, 16;
+  --c-surface-rgb: 28, 26, 23;
+  --c-ink-rgb: 245, 244, 241;
+  --c-green-rgb: 74, 222, 128;
+  color-scheme: dark;
 }
 
 html {
@@ -28,41 +76,42 @@ html, body {
 }
 
 body {
-  background: #f5f4f1;
-  color: #141310;
+  background: var(--c-paper);
+  color: var(--c-ink);
   font-family: "Inter", system-ui, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* --- Scrollbar --- */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(20,83,45,0.25); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(20,83,45,0.45); }
+::-webkit-scrollbar-thumb { background: rgba(var(--c-green-rgb), 0.25); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(var(--c-green-rgb), 0.45); }
 
 /* --- Typography utilities --- */
 .font-display { font-family: "Inter Tight", "Inter", system-ui, sans-serif; }
 .font-mono { font-family: "JetBrains Mono", monospace; }
 
 .gradient-text, .gradient-text-reverse {
-  color: #14532d;
+  color: var(--c-green);
 }
 
-/* --- Glassmorphism (now a light frosted surface, not dark glass) --- */
+/* --- Glassmorphism (frosted surface, inverts with theme) --- */
 .glass {
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(20, 19, 16, 0.08);
+  background: rgba(var(--c-paper-rgb), 0.55);
+  border: 1px solid rgba(var(--c-ink-rgb), 0.08);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
 
 .glass-hover:hover {
-  background: rgba(255, 255, 255, 0.8);
-  border-color: rgba(20, 19, 16, 0.14);
+  background: rgba(var(--c-paper-rgb), 0.8);
+  border-color: rgba(var(--c-ink-rgb), 0.14);
 }
 
 /* --- Brand backgrounds --- */
-.bg-brand { background: #14532d; }
-.bg-brand-subtle { background: rgba(20,83,45,0.07); }
+.bg-brand { background: var(--c-green); }
+.bg-brand-subtle { background: rgba(var(--c-green-rgb), 0.07); }
 
 /* --- Button styles --- */
 .btn-primary {
@@ -73,8 +122,8 @@ body {
   border-radius: 0.5rem;
   font-weight: 600;
   font-size: 0.9rem;
-  color: #f5f4f1;
-  background: #141310;
+  color: var(--c-paper);
+  background: var(--c-ink);
   border: none;
   cursor: pointer;
   transition: opacity 0.2s, transform 0.2s;
@@ -92,27 +141,27 @@ body {
   border-radius: 0.5rem;
   font-weight: 500;
   font-size: 0.9rem;
-  color: #141310;
+  color: var(--c-ink);
   background: transparent;
-  border: 1px solid rgba(20,19,16,0.18);
+  border: 1px solid rgba(var(--c-ink-rgb), 0.18);
   cursor: pointer;
   transition: all 0.2s;
 }
 .btn-ghost:hover {
-  color: #141310;
-  background: rgba(20,19,16,0.04);
-  border-color: rgba(20,19,16,0.3);
+  color: var(--c-ink);
+  background: rgba(var(--c-ink-rgb), 0.04);
+  border-color: rgba(var(--c-ink-rgb), 0.3);
 }
 
 /* --- Card --- */
 .premium-card {
-  background: #ffffff;
-  border: 1px solid rgba(20,19,16,0.08);
+  background: var(--c-surface);
+  border: 1px solid rgba(var(--c-ink-rgb), 0.08);
   border-radius: 0.75rem;
   transition: border-color 0.3s, transform 0.3s;
 }
 .premium-card:hover {
-  border-color: rgba(20,83,45,0.35);
+  border-color: rgba(var(--c-green-rgb), 0.35);
   transform: translateY(-2px);
 }
 
@@ -141,7 +190,7 @@ body {
 .section-divider {
   width: 100%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(20,19,16,0.14), transparent);
+  background: linear-gradient(90deg, transparent, rgba(var(--c-ink-rgb), 0.14), transparent);
 }
 
 /* --- Tag / Badge (single tone now - badge-green/badge-blue both resolve
@@ -156,9 +205,9 @@ body {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #14532d;
-  background: rgba(20,83,45,0.07);
-  border: 1px solid rgba(20,83,45,0.22);
+  color: var(--c-green);
+  background: rgba(var(--c-green-rgb), 0.07);
+  border: 1px solid rgba(var(--c-green-rgb), 0.22);
 }
 
 /* Tailwind dark variant (kept - component files still reference it) */
@@ -166,63 +215,63 @@ body {
 
 /* App root surface */
 .app-root {
-  background: #f5f4f1;
-  color: #141310;
+  background: var(--c-paper);
+  color: var(--c-ink);
   min-height: 100vh;
   overflow-x: clip;
 }
 
 /* ── Themeable surface classes ───────────────────────────── */
-.sd-card { background: #ffffff; border: 1px solid rgba(20,19,16,0.08); }
+.sd-card { background: var(--c-surface); border: 1px solid rgba(var(--c-ink-rgb), 0.08); }
 /* Frosted-glass + layered-depth variant, used selectively on a few surfaces
    (feature/pricing cards) that pair with real perspective tilt-on-hover -
    not a global replacement for the plain .sd-card used in forms/modals. */
 .sd-card-glass {
-  background: rgba(255, 255, 255, 0.62);
-  border: 1px solid rgba(20, 19, 16, 0.08);
+  background: rgba(var(--c-paper-rgb), 0.62);
+  border: 1px solid rgba(var(--c-ink-rgb), 0.08);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  box-shadow: 0 1px 2px rgba(20,19,16,0.04), 0 16px 40px -14px rgba(20,19,16,0.16);
+  box-shadow: 0 1px 2px rgba(var(--c-ink-rgb), 0.04), 0 16px 40px -14px rgba(var(--c-ink-rgb), 0.16);
   transition: box-shadow 0.35s ease, border-color 0.35s ease;
   transform-style: preserve-3d;
 }
 .sd-card-glass:hover {
-  border-color: rgba(20,83,45,0.3);
-  box-shadow: 0 1px 2px rgba(20,19,16,0.05), 0 32px 70px -18px rgba(20,19,16,0.24);
+  border-color: rgba(var(--c-green-rgb), 0.3);
+  box-shadow: 0 1px 2px rgba(var(--c-ink-rgb), 0.05), 0 32px 70px -18px rgba(var(--c-ink-rgb), 0.24);
 }
-.sd-card-2 { background: #fbfaf8; border: 1px solid rgba(20,19,16,0.07); }
-.sd-input { background: #ffffff; border: 1px solid rgba(20,19,16,0.16); color: #141310; }
-.sd-modal { background: #ffffff; border: 1px solid rgba(20,19,16,0.1); }
-.sd-panel { background: rgba(255, 255, 255, 0.92); border: 1px solid rgba(20,19,16,0.08); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
-.sd-track { background: rgba(20,19,16,0.08); }
+.sd-card-2 { background: var(--c-surface-2); border: 1px solid rgba(var(--c-ink-rgb), 0.07); }
+.sd-input { background: var(--c-surface); border: 1px solid rgba(var(--c-ink-rgb), 0.16); color: var(--c-ink); }
+.sd-modal { background: var(--c-surface); border: 1px solid rgba(var(--c-ink-rgb), 0.1); }
+.sd-panel { background: rgba(var(--c-surface-rgb), 0.92); border: 1px solid rgba(var(--c-ink-rgb), 0.08); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.sd-track { background: rgba(var(--c-ink-rgb), 0.08); }
 .nav-scrolled {
-  background: rgba(245, 244, 241, 0.86);
+  background: rgba(var(--c-paper-rgb), 0.86);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border-bottom: 1px solid rgba(20,19,16,0.07);
+  border-bottom: 1px solid rgba(var(--c-ink-rgb), 0.07);
 }
-.hero-fade { background: linear-gradient(to bottom, transparent, #f5f4f1); }
+.hero-fade { background: linear-gradient(to bottom, transparent, var(--c-paper)); }
 
 /* keep-dark: product mockups stay on a dark surface regardless of the
-   surrounding light page, the same way Asher Vale's own project tiles sit
+   surrounding page theme, the same way Asher Vale's own project tiles sit
    dark-on-light - kept for Hero/CBT/Features preview components. */
 .keep-dark { color-scheme: dark; }
 
 /* Perspective grid overlay (used sparingly, no longer behind the aurora) */
 .perspective-grid {
   background-image:
-    linear-gradient(rgba(20,19,16,0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(20,19,16,0.05) 1px, transparent 1px);
+    linear-gradient(rgba(var(--c-ink-rgb), 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--c-ink-rgb), 0.05) 1px, transparent 1px);
   background-size: 56px 56px;
 }
 
 /* Input focus ring */
 input:focus, select:focus, textarea:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(20,83,45,0.35);
+  box-shadow: 0 0 0 2px rgba(var(--c-green-rgb), 0.35);
 }
-input::placeholder, textarea::placeholder { color: #8a8378; }
-select option { color: #141310; background: #ffffff; }
+input::placeholder, textarea::placeholder { color: var(--c-subtle); }
+select option { color: var(--c-ink); background: var(--c-surface); }
 
 /* --- Spinner --- */
 @keyframes sd-spin { to { transform: rotate(360deg); } }
@@ -238,7 +287,28 @@ select option { color: #141310; background: #ffffff; }
   animation: sd-spin 0.65s linear infinite;
 }
 
-.signup-shell { background: #f5f4f1; }
+.signup-shell { background: var(--c-paper); }
+
+/* --- Theme toggle button (Navbar) --- */
+.theme-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(var(--c-ink-rgb), 0.12);
+  background: transparent;
+  color: var(--c-muted);
+  cursor: pointer;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s;
+}
+.theme-toggle:hover {
+  color: var(--c-ink);
+  background: rgba(var(--c-ink-rgb), 0.05);
+  border-color: rgba(var(--c-ink-rgb), 0.22);
+}
 
 /* --- RTL (Arabic) --- */
 [dir="rtl"] .badge.absolute,

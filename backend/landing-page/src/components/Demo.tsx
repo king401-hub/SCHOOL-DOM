@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import { TrendingUp, Users, DollarSign, BookOpen, Zap, Shield, Globe, Award } from 'lucide-react';
 import { Reveal, RevealGroup, revealItem } from '../lib/reveal';
 
-const GREEN = '#14532d';
+const GREEN = 'var(--c-green)';
 
 function AnimatedCounter({ target, prefix = '', suffix = '' }: { target: number; prefix?: string; suffix?: string }) {
   const [count, setCount] = useState(0);
@@ -53,7 +53,7 @@ export default function Demo() {
   return (
     <section id="demo" className="py-28 px-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 20% 50%, rgba(20,83,45,0.04) 0%, transparent 60%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 20% 50%, rgba(var(--c-green-rgb),0.04) 0%, transparent 60%)' }} />
 
       <div className="max-w-7xl mx-auto">
         {/* Heading */}
@@ -61,11 +61,11 @@ export default function Demo() {
           <span className="badge mb-4">
             <Globe className="h-3 w-3" /> {t('demo.badge')}
           </span>
-          <h2 className="font-display font-bold text-4xl sm:text-5xl text-[#141310] mb-4 tracking-tight">
+          <h2 className="font-display font-bold text-4xl sm:text-5xl text-[var(--c-ink)] mb-4 tracking-tight">
             {t('demo.title')}{' '}
             <span className="gradient-text">{t('demo.titleHighlight')}</span>
           </h2>
-          <p className="text-[#5b5750] max-w-xl mx-auto">{t('demo.subtitle')}</p>
+          <p className="text-[var(--c-muted)] max-w-xl mx-auto">{t('demo.subtitle')}</p>
         </Reveal>
 
         {/* Stats grid */}
@@ -83,8 +83,8 @@ export default function Demo() {
                 <p className="font-display font-semibold text-3xl sm:text-4xl mb-1" style={{ color: GREEN }}>
                   <AnimatedCounter target={s.value} prefix={s.prefix} suffix={s.suffix} />
                 </p>
-                <p className="text-[#141310] font-semibold text-sm mb-1">{s.label}</p>
-                <p className="text-[#8a8378] text-xs">{s.desc}</p>
+                <p className="text-[var(--c-ink)] font-semibold text-sm mb-1">{s.label}</p>
+                <p className="text-[var(--c-subtle)] text-xs">{s.desc}</p>
               </motion.div>
             );
           })}
@@ -92,13 +92,13 @@ export default function Demo() {
 
         {/* Logo marquee */}
         <Reveal duration={0.9} y={0}>
-          <p className="text-center text-[#8a8378] text-xs uppercase tracking-widest mb-6 font-semibold">{t('demo.trustedByInstitutions')}</p>
+          <p className="text-center text-[var(--c-subtle)] text-xs uppercase tracking-widest mb-6 font-semibold">{t('demo.trustedByInstitutions')}</p>
           <div className="overflow-hidden" style={{ maskImage: 'linear-gradient(90deg, transparent, black 10%, black 90%, transparent)' }}>
             <div className="flex gap-6 animate-marquee-left" style={{ width: 'max-content' }}>
               {[...LOGOS, ...LOGOS].map((logo, i) => (
                 <div key={i} className="flex items-center gap-2 px-5 py-3 rounded-xl shrink-0 sd-card">
                   <div className="w-2 h-2 rounded-full" style={{ background: GREEN }} />
-                  <span className="text-[#5b5750] text-xs font-medium whitespace-nowrap">{logo}</span>
+                  <span className="text-[var(--c-muted)] text-xs font-medium whitespace-nowrap">{logo}</span>
                 </div>
               ))}
             </div>
@@ -117,7 +117,7 @@ export default function Demo() {
             return (
               <div key={item.label} className="flex items-center gap-2">
                 <Icon className="h-4 w-4" style={{ color: GREEN }} />
-                <span className="text-[#5b5750] text-sm">{item.label}</span>
+                <span className="text-[var(--c-muted)] text-sm">{item.label}</span>
               </div>
             );
           })}

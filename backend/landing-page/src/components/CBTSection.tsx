@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Monitor, Wifi, WifiOff, Shield, Zap, CheckCircle, Download } from 'lucide-react';
 import { Reveal } from '../lib/reveal';
 
-const GREEN = '#14532d';
+const GREEN = 'var(--c-green)';
 const GREEN_BRIGHT = '#4ade80';
 
 function CBTAppMockup() {
@@ -129,7 +129,7 @@ export default function CBTSection() {
   return (
     <section id="cbt" className="py-28 px-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 80% 50%, rgba(20,83,45,0.05) 0%, transparent 60%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 80% 50%, rgba(var(--c-green-rgb),0.05) 0%, transparent 60%)' }} />
 
       <div className="max-w-7xl mx-auto">
         <div className="grid lg:grid-cols-2 gap-14 items-center">
@@ -138,11 +138,11 @@ export default function CBTSection() {
             <span className="badge mb-5">
               <Monitor className="h-3 w-3" /> {t('cbt.badge')}
             </span>
-            <h2 className="font-display font-bold text-4xl sm:text-5xl text-[#141310] leading-tight mb-5 tracking-tight">
+            <h2 className="font-display font-bold text-4xl sm:text-5xl text-[var(--c-ink)] leading-tight mb-5 tracking-tight">
               {t('cbt.title')}{' '}
               <span className="gradient-text-reverse">{t('cbt.titleHighlight')}</span>
             </h2>
-            <p className="text-[#5b5750] text-base leading-relaxed mb-8">
+            <p className="text-[var(--c-muted)] text-base leading-relaxed mb-8">
               {t('cbt.subtitle')}
             </p>
 
@@ -150,10 +150,10 @@ export default function CBTSection() {
               {FEATURES.map(f => {
                 const Icon = f.icon;
                 return (
-                  <div key={f.title} className="rounded-xl p-4 hover:border-[#14532d]/25 transition-all sd-card">
+                  <div key={f.title} className="rounded-xl p-4 hover:border-[var(--c-green)]/25 transition-all sd-card">
                     <Icon className="h-5 w-5 mb-2" style={{ color: GREEN }} />
-                    <p className="text-[#141310] text-sm font-semibold mb-1">{f.title}</p>
-                    <p className="text-[#5b5750] text-xs leading-relaxed">{f.desc}</p>
+                    <p className="text-[var(--c-ink)] text-sm font-semibold mb-1">{f.title}</p>
+                    <p className="text-[var(--c-muted)] text-xs leading-relaxed">{f.desc}</p>
                   </div>
                 );
               })}
@@ -161,11 +161,11 @@ export default function CBTSection() {
 
             <div className="flex flex-wrap gap-3">
               <div className="flex items-center gap-2 px-4 py-3 rounded-xl border text-sm"
-                style={{ background: 'rgba(20,83,45,0.06)', borderColor: 'rgba(20,83,45,0.2)', color: GREEN }}>
+                style={{ background: 'rgba(var(--c-green-rgb),0.06)', borderColor: 'rgba(var(--c-green-rgb),0.2)', color: GREEN }}>
                 <Monitor className="h-4 w-4" />
                 {t('cbt.includedBadge')}
               </div>
-              <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-black/10 text-[#5b5750] text-sm">
+              <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[var(--c-ink)]/10 text-[var(--c-muted)] text-sm">
                 <Wifi className="h-4 w-4 text-emerald-600" />
                 {t('cbt.mobileSoon')}
               </div>
@@ -183,7 +183,7 @@ export default function CBTSection() {
               ].map(s => (
                 <div key={s.label} className="rounded-xl p-3 text-center sd-card">
                   <p className="font-display font-semibold text-xl" style={{ color: GREEN }}>{s.val}</p>
-                  <p className="text-[#8a8378] text-[10px]">{s.label}</p>
+                  <p className="text-[var(--c-subtle)] text-[10px]">{s.label}</p>
                 </div>
               ))}
             </div>

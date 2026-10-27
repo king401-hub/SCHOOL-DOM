@@ -9,7 +9,7 @@ import { Reveal, RevealGroup, revealItem, EASE } from '../lib/reveal';
 import { smoothScrollTo } from '../lib/smoothScroll';
 import { useTilt } from '../lib/tilt';
 
-const GREEN = '#14532d';
+const GREEN = 'var(--c-green)';
 // Brighter variant for text/icons inside the dark dashboard-mockup previews,
 // where the deep brand green wouldn't read against a near-black surface.
 const GREEN_BRIGHT = '#4ade80';
@@ -192,11 +192,11 @@ function ShowcaseSection({ section, idx }: { section: ShowcaseSectionData; idx: 
     <div className={`grid lg:grid-cols-2 gap-12 items-center ${idx > 0 ? 'mt-24' : ''}`}>
       <Reveal x={isEven ? -28 : 28} y={0} className={isEven ? 'order-1' : 'order-1 lg:order-2'}>
         <span className="badge mb-4">{section.badge}</span>
-        <h3 className="font-display font-semibold text-3xl lg:text-4xl text-[#141310] mb-4 leading-tight">{section.title}</h3>
-        <p className="text-[#5b5750] text-base leading-relaxed mb-6">{section.desc}</p>
+        <h3 className="font-display font-semibold text-3xl lg:text-4xl text-[var(--c-ink)] mb-4 leading-tight">{section.title}</h3>
+        <p className="text-[var(--c-muted)] text-base leading-relaxed mb-6">{section.desc}</p>
         <ul className="space-y-2.5 mb-8">
           {section.points.map(p => (
-            <li key={p} className="flex items-center gap-3 text-[#3a362f] text-sm">
+            <li key={p} className="flex items-center gap-3 text-[var(--c-ink)] text-sm">
               <CheckCircle className="h-4 w-4 shrink-0" style={{ color: GREEN }} />
               {p}
             </li>
@@ -232,12 +232,12 @@ function FeatureCard({ feature, wide }: { feature: FeatureGridItem; wide: boolea
       className={`group relative rounded-2xl p-6 cursor-pointer sd-card-glass ${wide ? 'lg:col-span-2 flex items-start gap-5' : ''}`}
     >
       <div className={`rounded-xl flex items-center justify-center shrink-0 ${wide ? 'h-14 w-14' : 'h-12 w-12 mb-4'}`}
-        style={{ background: 'rgba(20,83,45,0.08)', border: '1px solid rgba(20,83,45,0.22)' }}>
+        style={{ background: 'rgba(var(--c-green-rgb),0.08)', border: '1px solid rgba(var(--c-green-rgb),0.22)' }}>
         <Icon className={wide ? 'h-6 w-6' : 'h-5 w-5'} style={{ color: GREEN }} />
       </div>
       <div className="min-w-0">
-        <h3 className={`text-[#141310] font-semibold mb-2 ${wide ? 'text-lg' : 'text-base'}`}>{title}</h3>
-        <p className="text-[#5b5750] text-sm leading-relaxed">{desc}</p>
+        <h3 className={`text-[var(--c-ink)] font-semibold mb-2 ${wide ? 'text-lg' : 'text-base'}`}>{title}</h3>
+        <p className="text-[var(--c-muted)] text-sm leading-relaxed">{desc}</p>
         <div className="mt-4 flex items-center gap-1 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: GREEN }}>
           {t('common.learnMore')} <ArrowRight className="h-3 w-3" />
         </div>
@@ -264,11 +264,11 @@ export default function Features() {
         <div>
           <Reveal className="text-center mb-14">
             <span className="badge mb-4">{t('features.badge')}</span>
-            <h2 className="font-display font-bold text-4xl sm:text-5xl text-[#141310] mb-4 tracking-tight">
+            <h2 className="font-display font-bold text-4xl sm:text-5xl text-[var(--c-ink)] mb-4 tracking-tight">
               {t('features.title')}{' '}
               <span className="gradient-text">{t('features.titleHighlight')}</span>
             </h2>
-            <p className="text-[#5b5750] max-w-xl mx-auto">{t('features.subtitle')}</p>
+            <p className="text-[var(--c-muted)] max-w-xl mx-auto">{t('features.subtitle')}</p>
           </Reveal>
           <RevealGroup className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" stagger={0.07} amount={0.05}>
             {featuresGrid.map((f, i) => <FeatureCard key={f.title} feature={f} wide={WIDE_TILES.has(i)} />)}

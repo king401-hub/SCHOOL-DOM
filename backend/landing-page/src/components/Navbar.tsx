@@ -1,9 +1,36 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, ChevronDown } from 'lucide-react';
+import { Menu, X, ChevronDown, Sun, Moon } from 'lucide-react';
 import LanguageSwitcher from './LanguageSwitcher';
 import { smoothScrollTo } from '../lib/smoothScroll';
+import { useTheme } from '../lib/theme';
+
+function ThemeToggle() {
+  const { theme, toggle } = useTheme();
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      className="theme-toggle"
+      aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+      title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={theme}
+          initial={{ opacity: 0, rotate: -90, scale: 0.6 }}
+          animate={{ opacity: 1, rotate: 0, scale: 1 }}
+          exit={{ opacity: 0, rotate: 90, scale: 0.6 }}
+          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+          style={{ display: 'inline-flex' }}
+        >
+          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </motion.span>
+      </AnimatePresence>
+    </button>
+  );
+}
 
 interface NavbarProps {
   onSignIn: () => void;
@@ -81,12 +108,12 @@ export default function Navbar({ onSignIn }: NavbarProps) {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between">
           <a href="/" className="flex items-center gap-3 group">
-            <div className="h-9 w-9 rounded-xl overflow-hidden border border-black/10 group-hover:border-[#14532d]/40 transition-all">
+            <div className="h-9 w-9 rounded-xl overflow-hidden border border-[var(--c-ink)]/10 group-hover:border-[var(--c-green)]/40 transition-all">
               <img src="/schooldom-favicon.jpeg" alt="Schooldom" className="w-full h-full object-cover" />
             </div>
             <div className="flex flex-col leading-none">
-              <span className="font-display font-bold text-[#141310] text-lg tracking-tight">Schooldom</span>
-              <span className="text-[9px] font-semibold uppercase tracking-[0.15em]" style={{ color: '#14532d' }}>Academy</span>
+              <span className="font-display font-bold text-[var(--c-ink)] text-lg tracking-tight">Schooldom</span>
+              <span className="text-[9px] font-semibold uppercase tracking-[0.15em]" style={{ color: 'var(--c-green)' }}>Academy</span>
             </div>
           </a>
 
@@ -94,7 +121,7 @@ export default function Navbar({ onSignIn }: NavbarProps) {
             {indicator && (
               <motion.div
                 className="absolute top-0 h-full rounded-xl pointer-events-none"
-                style={{ background: 'rgba(20,83,45,0.08)', border: '1px solid rgba(20,83,45,0.18)' }}
+                style={{ background: 'rgba(var(--c-green-rgb),0.08)', border: '1px solid rgba(var(--c-green-rgb),0.18)' }}
                 animate={{ x: indicator.x, width: indicator.width }}
                 transition={{ type: 'spring', stiffness: 420, damping: 34 }}
               />
@@ -106,7 +133,7 @@ export default function Navbar({ onSignIn }: NavbarProps) {
                 {link.children ? (
                   <>
                     <button
-                      className="relative flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer text-[#5b5750] hover:text-[#141310]"
+                      className="relative flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer text-[var(--c-muted)] hover:text-[var(--c-ink)]"
                     >
                       {link.label} <ChevronDown className="h-3.5 w-3.5" />
                     </button>
@@ -121,7 +148,7 @@ export default function Navbar({ onSignIn }: NavbarProps) {
                         >
                           {link.children.map(c => (
                             <a key={c.label} href={c.href}
-                              className="block px-4 py-3 text-sm text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all">
+                              className="block px-4 py-3 text-sm text-[var(--c-muted)] hover:text-[var(--c-ink)] hover:bg-[var(--c-ink)]/5 transition-all">
                               {c.label}
                             </a>
                           ))}
@@ -134,7 +161,7 @@ export default function Navbar({ onSignIn }: NavbarProps) {
                     ref={el => { linkRefs.current[link.href.slice(1)] = el; }}
                     onClick={() => scrollTo(link.href)}
                     className="relative px-4 py-2 rounded-xl text-sm font-medium transition-colors cursor-pointer"
-                    style={{ color: activeLink === link.href.slice(1) ? '#14532d' : '#5b5750' }}
+                    style={{ color: activeLink === link.href.slice(1) ? 'var(--c-green)' : 'var(--c-muted)' }}
                   >
                     {link.label}
                   </button>
@@ -144,15 +171,17 @@ export default function Navbar({ onSignIn }: NavbarProps) {
           </div>
 
           <div className="hidden md:flex items-center gap-3">
+            <ThemeToggle />
             <LanguageSwitcher />
             <button onClick={onSignIn} className="btn-ghost text-sm px-5 py-2">{t('nav.signIn')}</button>
             <a href="/#/signup" className="btn-primary text-sm px-5 py-2">{t('nav.getStarted')}</a>
           </div>
 
           <div className="md:hidden flex items-center gap-2">
+            <ThemeToggle />
             <LanguageSwitcher />
             <button
-              className="p-2 rounded-xl border border-black/10 text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all cursor-pointer"
+              className="p-2 rounded-xl border border-[var(--c-ink)]/10 text-[var(--c-muted)] hover:text-[var(--c-ink)] hover:bg-[var(--c-ink)]/5 transition-all cursor-pointer"
               onClick={() => setMobileOpen(o => !o)}
             >
               {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -171,7 +200,7 @@ export default function Navbar({ onSignIn }: NavbarProps) {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
         >
-          <div className="absolute inset-0" style={{ background: 'rgba(20,19,16,0.4)', backdropFilter: 'blur(8px)' }} />
+          <div className="absolute inset-0" style={{ background: 'rgba(var(--c-ink-rgb),0.4)', backdropFilter: 'blur(8px)' }} />
           <motion.div
             className="absolute top-[70px] left-4 right-4 rounded-2xl overflow-hidden shadow-xl sd-panel"
             onClick={e => e.stopPropagation()}
@@ -183,14 +212,14 @@ export default function Navbar({ onSignIn }: NavbarProps) {
             <div className="p-4 space-y-1">
               {NAV_LINKS.filter(l => !l.children).map(link => (
                 <button key={link.label} onClick={() => scrollTo(link.href)}
-                  className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all cursor-pointer">
+                  className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium text-[var(--c-muted)] hover:text-[var(--c-ink)] hover:bg-[var(--c-ink)]/5 transition-all cursor-pointer">
                   {link.label}
                 </button>
               ))}
-              <a href="/#/faq" className="block px-4 py-3 rounded-xl text-sm font-medium text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all">{t('nav.faq')}</a>
-              <a href="/#/contact" className="block px-4 py-3 rounded-xl text-sm font-medium text-[#5b5750] hover:text-[#141310] hover:bg-black/5 transition-all">{t('nav.contact')}</a>
+              <a href="/#/faq" className="block px-4 py-3 rounded-xl text-sm font-medium text-[var(--c-muted)] hover:text-[var(--c-ink)] hover:bg-[var(--c-ink)]/5 transition-all">{t('nav.faq')}</a>
+              <a href="/#/contact" className="block px-4 py-3 rounded-xl text-sm font-medium text-[var(--c-muted)] hover:text-[var(--c-ink)] hover:bg-[var(--c-ink)]/5 transition-all">{t('nav.contact')}</a>
             </div>
-            <div className="p-4 border-t border-black/8 space-y-2">
+            <div className="p-4 border-t border-[var(--c-ink)]/8 space-y-2">
               <a href="/#/signup" className="w-full btn-primary text-sm py-2.5 justify-center">{t('nav.getStarted')}</a>
               <button onClick={onSignIn} className="w-full btn-ghost text-sm py-2.5 justify-center">{t('nav.signIn')}</button>
             </div>

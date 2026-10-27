@@ -14,10 +14,10 @@ function linkify(text: string, keyPrefix: string): ReactNode[] {
   const parts = text.split(new RegExp(`(${MAIL}|${NDPC})`, 'g'));
   return parts.map((part, i) => {
     if (part === MAIL) {
-      return <a key={`${keyPrefix}-${i}`} href={`mailto:${MAIL}`} className="hover:underline" style={{ color: '#14532d' }}>{part}</a>;
+      return <a key={`${keyPrefix}-${i}`} href={`mailto:${MAIL}`} className="hover:underline" style={{ color: 'var(--c-green)' }}>{part}</a>;
     }
     if (part === NDPC) {
-      return <a key={`${keyPrefix}-${i}`} href={`http://${NDPC}`} target="_blank" rel="noreferrer" className="hover:underline" style={{ color: '#14532d' }}>{part}</a>;
+      return <a key={`${keyPrefix}-${i}`} href={`http://${NDPC}`} target="_blank" rel="noreferrer" className="hover:underline" style={{ color: 'var(--c-green)' }}>{part}</a>;
     }
     return part;
   });
@@ -27,7 +27,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode {
   const boldParts = text.split(/(\*\*[^*]+\*\*)/g);
   return boldParts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={`${keyPrefix}-b-${i}`} className="text-[#141310]">{linkify(part.slice(2, -2), `${keyPrefix}-b-${i}`)}</strong>;
+      return <strong key={`${keyPrefix}-b-${i}`} className="text-[var(--c-ink)]">{linkify(part.slice(2, -2), `${keyPrefix}-b-${i}`)}</strong>;
     }
     return <span key={`${keyPrefix}-s-${i}`}>{linkify(part, `${keyPrefix}-s-${i}`)}</span>;
   });
@@ -47,23 +47,23 @@ export default function PrivacyPage() {
   return (
     <div className="min-h-screen pt-24 pb-20 px-4 relative">
       <div className="absolute top-0 inset-x-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(20,83,45,0.06) 0%, transparent 50%)' }} />
+        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(var(--c-green-rgb),0.06) 0%, transparent 50%)' }} />
 
       <div className="max-w-3xl mx-auto">
-        <a href="/" className="inline-flex items-center gap-2 text-[#5b5750] hover:text-[#141310] text-sm mb-8 transition-colors">
+        <a href="/" className="inline-flex items-center gap-2 text-[var(--c-muted)] hover:text-[var(--c-ink)] text-sm mb-8 transition-colors">
           <ArrowLeft className="h-4 w-4" /> {t('common.backToHome')}
         </a>
 
         <div className="text-center mb-12">
           <span className="badge badge-green mb-4">{t('privacy.badge')}</span>
-          <h1 className="font-display font-bold text-4xl sm:text-5xl text-[#141310] mb-4 tracking-tight">
+          <h1 className="font-display font-bold text-4xl sm:text-5xl text-[var(--c-ink)] mb-4 tracking-tight">
             {t('privacy.title')} <span className="gradient-text">{t('privacy.titleHighlight')}</span>
           </h1>
-          <p className="text-[#5b5750]">{t('privacy.lastUpdated')}</p>
+          <p className="text-[var(--c-muted)]">{t('privacy.lastUpdated')}</p>
         </div>
 
         <div className="rounded-2xl p-6 sd-card mb-6">
-          <p className="text-[#5b5750] text-sm leading-relaxed">
+          <p className="text-[var(--c-muted)] text-sm leading-relaxed">
             {t('privacy.intro')}
           </p>
         </div>
@@ -71,8 +71,8 @@ export default function PrivacyPage() {
         <div className="space-y-6">
           {sections.map((section, sIdx) => (
             <div key={section.title} className="rounded-2xl p-6 sd-card">
-              <h2 className="font-bold text-[#141310] text-lg mb-3">{section.title}</h2>
-              <div className="text-[#5b5750] text-sm leading-relaxed space-y-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-2 [&_li]:marker:text-[#14532d]">
+              <h2 className="font-bold text-[var(--c-ink)] text-lg mb-3">{section.title}</h2>
+              <div className="text-[var(--c-muted)] text-sm leading-relaxed space-y-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-2 [&_li]:marker:text-[var(--c-green)]">
                 {(section.paragraphs || []).map((p, i) => (
                   <p key={`p-${i}`}>{renderInline(p, `s${sIdx}-p${i}`)}</p>
                 ))}
@@ -92,9 +92,9 @@ export default function PrivacyPage() {
         </div>
 
         <div className="mt-10 rounded-2xl p-8 text-center"
-          style={{ background: 'rgba(20,83,45,0.06)', border: '1px solid rgba(20,83,45,0.16)' }}>
-          <h3 className="font-display font-black text-[#141310] text-xl mb-2">{t('privacy.questionsTitle')}</h3>
-          <p className="text-[#5b5750] text-sm mb-5">{t('privacy.questionsSubtitle')}</p>
+          style={{ background: 'rgba(var(--c-green-rgb),0.06)', border: '1px solid rgba(var(--c-green-rgb),0.16)' }}>
+          <h3 className="font-display font-black text-[var(--c-ink)] text-xl mb-2">{t('privacy.questionsTitle')}</h3>
+          <p className="text-[var(--c-muted)] text-sm mb-5">{t('privacy.questionsSubtitle')}</p>
           <a href="/#/contact" className="btn-primary inline-flex">
             {t('privacy.contactUs')} <ArrowLeft className="h-4 w-4 rotate-180" />
           </a>
