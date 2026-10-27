@@ -8818,25 +8818,291 @@ export function IdCardPreview({ person, school, qrDataUrl, theme }) {
   );
 }
 
-/** Renders every selected person's card off-screen (see the
- * .id-card-bulk-print-area/-item CSS - laid out, just pushed out of view,
- * never display:none, since html2canvas can't capture a box with no
- * layout) so AdminIdCardsScreen's handleBulkExport can capture each
- * person's front/back faces individually and package them into one zip,
- * one PDF per person. */
-function IdCardBulkPrintArea({ people, school, qrByKey, theme }) {
-  return (
-    <div className="id-card-bulk-print-area">
-      {people.map((person) => {
-        const key = `${person.person_type}:${person.id}`;
-        return (
-          <div key={key} className="id-card-bulk-print-item">
-            <IdCardFaces person={person} school={school} qrDataUrl={qrByKey[key] || ""} theme={theme} flipped={false} />
-          </div>
-        );
-      })}
-    </div>
-  );
+// Standard CR80 card size (matches .id-card-preview-card's own CSS) - used
+// directly as the PDF page size for the bulk ZIP export below, so each
+// file is already a print-ready, correctly-proportioned card.
+const ID_CARD_WIDTH_IN = 3.375;
+const ID_CARD_HEIGHT_IN = 2.125;
+const ID_CARD_MARGIN_IN = 0.1;
+
+/** Fetches a (possibly cross-origin) image URL - or reads an already-local
+ * data URL, e.g. a QR code - and re-encodes it as a PNG data URL plus its
+ * natural size via an offscreen canvas. This normalizes whatever format the
+ * source is (JPEG/WEBP/etc.) into something jsPDF.addImage always accepts,
+ * and gives drawContainImage enough to scale it without distortion. Needs
+ * the same crossOrigin="anonymous" support the old html2canvas-based
+ * export's useCORS option relied on for a remote URL, so this is no more
+ * restrictive than before. Resolves null (never throws) on failure -
+ * callers fall back to an initials/"QR" placeholder, the same way the
+ * on-screen card does for a missing photo. */
+function loadIdCardImage(url) {
+  return new Promise((resolve) => {
+    if (!url) {
+      resolve(null);
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const width = img.naturalWidth || img.width;
+        const height = img.naturalHeight || img.height;
+        if (!width || !height) {
+          resolve(null);
+          return;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0);
+        resolve({ dataUrl: canvas.toDataURL("image/png"), width, height });
+      } catch {
+        resolve(null); // tainted canvas - source sent no CORS headers
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+/** Draws `imageInfo` (from loadIdCardImage) scaled to fit inside the given
+ * box without distorting its aspect ratio, centered within it. */
+function drawContainImage(doc, imageInfo, x, y, boxW, boxH) {
+  if (!imageInfo) return false;
+  const scale = Math.min(boxW / imageInfo.width, boxH / imageInfo.height);
+  const w = imageInfo.width * scale;
+  const h = imageInfo.height * scale;
+  doc.addImage(imageInfo.dataUrl, "PNG", x + (boxW - w) / 2, y + (boxH - h) / 2, w, h);
+  return true;
+}
+
+// jsPDF only ships Helvetica/Times/Courier - maps a school's chosen
+// font_family (any CSS/Google font name) to whichever of those three reads
+// closest, since the exported card can no longer rely on the browser's own
+// font stack now that it's real PDF text instead of a screenshot.
+function pdfFontFamily(fontFamily) {
+  const normalized = String(fontFamily || "").toLowerCase();
+  if (/times|georgia|serif|garamond|cambria/.test(normalized)) return "times";
+  if (/courier|mono|consolas/.test(normalized)) return "courier";
+  return "helvetica";
+}
+
+function setPdfTextStyle(doc, fontFamily, { style = "normal", size = 6, color = "#111827" } = {}) {
+  doc.setFont(fontFamily, style);
+  doc.setFontSize(size);
+  doc.setTextColor(color);
+}
+
+/** jsPDF has no native text-overflow handling - shortens `text` with a
+ * trailing ellipsis if it would exceed `maxWidth` at the font/size/style
+ * already set on `doc`. */
+function truncateToWidth(doc, text, maxWidth) {
+  const value = String(text ?? "");
+  if (!maxWidth || doc.getTextWidth(value) <= maxWidth) return value;
+  let truncated = value;
+  while (truncated.length > 1 && doc.getTextWidth(`${truncated}…`) > maxWidth) {
+    truncated = truncated.slice(0, -1);
+  }
+  return `${truncated}…`;
+}
+
+function drawLabelValue(doc, fontFamily, label, value, x, y, maxWidth) {
+  setPdfTextStyle(doc, fontFamily, { style: "normal", size: 5.5, color: "#6b7280" });
+  const labelText = `${label}: `;
+  doc.text(labelText, x, y);
+  const labelWidth = doc.getTextWidth(labelText);
+  setPdfTextStyle(doc, fontFamily, { style: "bold", size: 6, color: "#111827" });
+  doc.text(truncateToWidth(doc, value || "-", maxWidth ? maxWidth - labelWidth : undefined), x + labelWidth, y);
+}
+
+/** Front/back share the same logo + school name + motto + subtitle header -
+ * drawn once here so both faces can never drift out of sync. */
+function drawIdCardHeader(doc, { fontFamily, theme, brand, logoInfo, subtitle }) {
+  const x = ID_CARD_MARGIN_IN;
+  const y = ID_CARD_MARGIN_IN;
+  const logoSize = 0.28;
+
+  if (logoInfo) {
+    drawContainImage(doc, logoInfo, x, y, logoSize, logoSize);
+  } else {
+    doc.setFillColor(theme.primary_color);
+    doc.circle(x + logoSize / 2, y + logoSize / 2, logoSize / 2, "F");
+    setPdfTextStyle(doc, fontFamily, { style: "bold", size: 7, color: "#ffffff" });
+    doc.text(brand.initials, x + logoSize / 2, y + logoSize / 2 + 0.025, { align: "center" });
+  }
+
+  const textX = x + logoSize + 0.1;
+  const maxWidth = ID_CARD_WIDTH_IN - ID_CARD_MARGIN_IN - textX - 0.9; // leaves room for the front's ribbon
+  setPdfTextStyle(doc, fontFamily, { style: "bold", size: 7.5, color: theme.secondary_color });
+  doc.text(truncateToWidth(doc, brand.name, maxWidth), textX, y + 0.11);
+
+  let nextY = y + 0.11;
+  if (brand.motto) {
+    setPdfTextStyle(doc, fontFamily, { style: "italic", size: 5, color: "#64748b" });
+    nextY += 0.1;
+    doc.text(truncateToWidth(doc, brand.motto, maxWidth), textX, nextY);
+  }
+  setPdfTextStyle(doc, fontFamily, { style: "normal", size: 4.5, color: "#94a3b8" });
+  nextY += 0.095;
+  doc.text(truncateToWidth(doc, subtitle, maxWidth), textX, nextY);
+
+  doc.setDrawColor("#e2e8f0");
+  doc.setLineWidth(0.006);
+  doc.line(ID_CARD_MARGIN_IN, 0.46, ID_CARD_WIDTH_IN - ID_CARD_MARGIN_IN, 0.46);
+}
+
+function drawIdCardFooter(doc, fontFamily, theme, brand) {
+  setPdfTextStyle(doc, fontFamily, { style: "bold", size: 5, color: theme.secondary_color });
+  doc.text(brand.email || "SchoolDom profile verification", ID_CARD_WIDTH_IN / 2, ID_CARD_HEIGHT_IN - 0.14, { align: "center" });
+  setPdfTextStyle(doc, fontFamily, { style: "normal", size: 4, color: "#94a3b8" });
+  doc.text("Powered by Schooldom", ID_CARD_WIDTH_IN - ID_CARD_MARGIN_IN, ID_CARD_HEIGHT_IN - 0.05, { align: "right" });
+}
+
+/** Draws the card's front face with real PDF text objects (name, ID,
+ * dates, etc. are all selectable/copyable/searchable in a PDF viewer) in
+ * place of the old html2canvas screenshot - see handleBulkExport. Visual
+ * layout intentionally approximates IdCardFaces' CSS rather than matching
+ * it pixel-for-pixel, since jsPDF draws with its own three built-in fonts
+ * and simple shape primitives, not the browser's full CSS engine. */
+function drawIdCardFront(doc, { person, brand, theme, fontFamily, photoInfo, logoInfo }) {
+  drawIdCardHeader(doc, { fontFamily, theme, brand, logoInfo, subtitle: brand.code || "Official Identity Card" });
+
+  const ribbonText = String(person.display_type || "").toUpperCase();
+  if (ribbonText) {
+    setPdfTextStyle(doc, fontFamily, { style: "bold", size: 6, color: "#ffffff" });
+    const ribbonW = Math.max(0.6, doc.getTextWidth(ribbonText) + 0.16);
+    const ribbonX = ID_CARD_WIDTH_IN - ID_CARD_MARGIN_IN - ribbonW;
+    doc.setFillColor(theme.accent_color);
+    doc.roundedRect(ribbonX, 0.08, ribbonW, 0.17, 0.03, 0.03, "F");
+    doc.text(ribbonText, ribbonX + ribbonW / 2, 0.08 + 0.12, { align: "center" });
+  }
+
+  const photoX = ID_CARD_MARGIN_IN;
+  const photoY = 0.54;
+  const photoW = 0.62;
+  const photoH = 0.78;
+  doc.setDrawColor("#e2e8f0");
+  doc.setLineWidth(0.01);
+  doc.rect(photoX, photoY, photoW, photoH);
+  if (!drawContainImage(doc, photoInfo, photoX, photoY, photoW, photoH)) {
+    doc.setFillColor("#f1f5f9");
+    doc.rect(photoX, photoY, photoW, photoH, "F");
+    setPdfTextStyle(doc, fontFamily, { style: "bold", size: 14, color: "#94a3b8" });
+    doc.text(userInitials({ full_name: person.name }), photoX + photoW / 2, photoY + photoH / 2 + 0.05, { align: "center" });
+  }
+
+  const infoX = photoX + photoW + 0.12;
+  const infoMaxWidth = ID_CARD_WIDTH_IN - ID_CARD_MARGIN_IN - infoX;
+  setPdfTextStyle(doc, fontFamily, { style: "bold", size: 8, color: theme.secondary_color });
+  doc.text(truncateToWidth(doc, person.name || "Unnamed user", infoMaxWidth), infoX, photoY + 0.1);
+  setPdfTextStyle(doc, fontFamily, { style: "bold", size: 7, color: theme.accent_color });
+  doc.text(truncateToWidth(doc, person.unique_id || "No ID assigned", infoMaxWidth), infoX, photoY + 0.25);
+  // Class dropped from the student card per school policy, same as
+  // IdCardFaces - staff still show their role/specialization here.
+  const subLabel = person.person_type === "student" ? person.secondary_label : person.primary_label;
+  if (subLabel) {
+    setPdfTextStyle(doc, fontFamily, { style: "normal", size: 5.5, color: "#64748b" });
+    doc.text(truncateToWidth(doc, subLabel, infoMaxWidth), infoX, photoY + 0.38);
+  }
+
+  const rows = person.person_type === "student"
+    ? [
+        ["Admission", idCardDate(person.admission_or_employment_date)],
+        ["Date of Birth", idCardDate(person.date_of_birth)],
+        ["Gender", genderDisplay(person.gender)],
+        ["Blood Group", person.blood_group || "-"],
+        ["Guardian", person.guardian_name || "-"],
+        ["Phone", person.phone || person.guardian_phone || "-"],
+      ]
+    : [
+        ["Employment", idCardDate(person.admission_or_employment_date)],
+        ["Date of Birth", idCardDate(person.date_of_birth)],
+        ["Gender", genderDisplay(person.gender)],
+        ["Role", person.primary_label || "-"],
+        ["Department", person.department || person.secondary_label || "-"],
+        ["Phone", person.phone || "-"],
+      ];
+  const col1X = ID_CARD_MARGIN_IN;
+  const col2X = ID_CARD_WIDTH_IN / 2 + 0.05;
+  const colWidth = ID_CARD_WIDTH_IN / 2 - ID_CARD_MARGIN_IN - 0.1;
+  const gridTop = photoY + photoH + 0.14;
+  const rowHeight = 0.155;
+  rows.forEach(([label, value], index) => {
+    const row = Math.floor(index / 2);
+    const col = index % 2;
+    drawLabelValue(doc, fontFamily, label, value, col === 0 ? col1X : col2X, gridTop + row * rowHeight, colWidth);
+  });
+
+  drawIdCardFooter(doc, fontFamily, theme, brand);
+}
+
+/** Draws the card's back face (QR verification, return-if-found address,
+ * and the school's authorized-signature strip - moved here from the front
+ * per b433fc1) the same way drawIdCardFront draws the front - see its
+ * comment above. */
+function drawIdCardBack(doc, { person, brand, theme, fontFamily, qrInfo, logoInfo, signatureInfo }) {
+  drawIdCardHeader(doc, { fontFamily, theme, brand, logoInfo, subtitle: "Official ID verification" });
+
+  const qrX = ID_CARD_MARGIN_IN;
+  const qrBoxY = 0.54;
+  const qrSize = 0.75;
+  setPdfTextStyle(doc, fontFamily, { style: "normal", size: 5, color: "#64748b" });
+  doc.text("Scan to verify", qrX + qrSize / 2, qrBoxY - 0.03, { align: "center" });
+  doc.setDrawColor("#e2e8f0");
+  doc.setLineWidth(0.01);
+  doc.rect(qrX, qrBoxY, qrSize, qrSize);
+  if (!drawContainImage(doc, qrInfo, qrX, qrBoxY, qrSize, qrSize)) {
+    setPdfTextStyle(doc, fontFamily, { style: "bold", size: 10, color: "#94a3b8" });
+    doc.text("QR", qrX + qrSize / 2, qrBoxY + qrSize / 2 + 0.03, { align: "center" });
+  }
+  setPdfTextStyle(doc, fontFamily, { style: "bold", size: 6, color: theme.accent_color });
+  doc.text(truncateToWidth(doc, person.unique_id || "No ID assigned", qrSize), qrX + qrSize / 2, qrBoxY + qrSize + 0.12, { align: "center" });
+  setPdfTextStyle(doc, fontFamily, { style: "normal", size: 5, color: "#64748b" });
+  doc.text(truncateToWidth(doc, person.name || "Unnamed user", qrSize), qrX + qrSize / 2, qrBoxY + qrSize + 0.24, { align: "center" });
+
+  const returnX = qrX + qrSize + 0.18;
+  const returnWidth = ID_CARD_WIDTH_IN - ID_CARD_MARGIN_IN - returnX;
+  let returnY = 0.58;
+  setPdfTextStyle(doc, fontFamily, { style: "normal", size: 4.5, color: "#64748b" });
+  doc.splitTextToSize("If found please return to the following address or call the number below:", returnWidth).forEach((line) => {
+    doc.text(line, returnX, returnY);
+    returnY += 0.085;
+  });
+  returnY += 0.03;
+  if (brand.address) {
+    setPdfTextStyle(doc, fontFamily, { style: "bold", size: 5, color: "#111827" });
+    doc.splitTextToSize(brand.address, returnWidth).forEach((line) => {
+      doc.text(line, returnX, returnY);
+      returnY += 0.09;
+    });
+  }
+  if (brand.phone) {
+    setPdfTextStyle(doc, fontFamily, { style: "normal", size: 5, color: "#111827" });
+    doc.text(`Tel: ${brand.phone}`, returnX, returnY);
+    returnY += 0.09;
+  }
+  if (brand.email) {
+    setPdfTextStyle(doc, fontFamily, { style: "normal", size: 5, color: "#111827" });
+    doc.text(brand.email, returnX, returnY);
+    returnY += 0.09;
+  }
+  setPdfTextStyle(doc, fontFamily, { style: "italic", size: 4, color: "#94a3b8" });
+  doc.splitTextToSize("Valid only when the scan page confirms this profile as verified and active.", returnWidth).forEach((line) => {
+    doc.text(line, returnX, returnY);
+    returnY += 0.075;
+  });
+
+  if (signatureInfo) {
+    const sigW = 0.6;
+    const sigH = 0.16;
+    const sigX = (ID_CARD_WIDTH_IN - sigW) / 2;
+    const sigY = ID_CARD_HEIGHT_IN - 0.42;
+    drawContainImage(doc, signatureInfo, sigX, sigY, sigW, sigH);
+    setPdfTextStyle(doc, fontFamily, { style: "bold", size: 4, color: "#64748b" });
+    doc.text("AUTHORIZED SIGNATURE", ID_CARD_WIDTH_IN / 2, sigY + sigH + 0.05, { align: "center" });
+  }
+
+  drawIdCardFooter(doc, fontFamily, theme, brand);
 }
 
 export function IdCardVerificationPage() {
@@ -9029,8 +9295,6 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
   const [actionSuccess, setActionSuccess] = useState("");
   const [bulkSelected, setBulkSelected] = useState(() => new Set());
   const [bulkExporting, setBulkExporting] = useState(false);
-  const [bulkExportPeople, setBulkExportPeople] = useState(null);
-  const [bulkQrByKey, setBulkQrByKey] = useState({});
 
   const cardSchool = data?.school || school;
   const documentTheme = resolveDocumentTheme(cardSchool);
@@ -9163,13 +9427,6 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
     });
   };
 
-  // Standard CR80 card size (matches .id-card-preview-card's own CSS) -
-  // used directly as the PDF page size so each exported file is already a
-  // print-ready, correctly-proportioned card, not a guess derived from
-  // whatever pixel size the browser happened to render it at.
-  const ID_CARD_WIDTH_IN = 3.375;
-  const ID_CARD_HEIGHT_IN = 2.125;
-
   const sanitizeFileName = (value) => String(value || "").replace(/[\\/:*?"<>|]+/g, "_").trim();
 
   const handleBulkExport = async () => {
@@ -9179,59 +9436,44 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
     setActionSuccess("");
     setBulkExporting(true);
     try {
-      const qrEntries = await Promise.all(
-        people_.map(async (person) => {
-          const key = `${person.person_type}:${person.id}`;
-          try {
-            const result = await fetchQrDataUrl(person, true);
-            return [key, result.dataUrl];
-          } catch (qrError) {
-            // One person's QR failing (e.g. a since-deactivated profile)
-            // shouldn't block exporting everyone else - that card's back
-            // just shows the "QR" placeholder IdCardFaces already falls
-            // back to when qrDataUrl is empty.
-            return [key, ""];
-          }
-        })
-      );
-      setBulkQrByKey(Object.fromEntries(qrEntries));
-      setBulkExportPeople(people_);
-      // The bulk print area only mounts (and its images finish loading)
-      // once this state lands - wait a couple of frames so everything has
-      // actually painted before html2canvas reads it off the DOM.
-      await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
-      await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+      const brand = resolveSchoolBrand(cardSchool);
+      const fontFamily = pdfFontFamily(documentTheme.font_family);
 
-      // Loaded on demand (consistent with downloadPrintablePdf's own
-      // lazy jsPDF import) so neither adds weight to the main bundle for
-      // the common case where an admin never bulk-exports cards.
-      const [{ default: html2canvas }, { default: JSZip }, { jsPDF }] = await Promise.all([
-        import("html2canvas"),
-        import("jszip"),
-        import("jspdf"),
+      // Loaded on demand so neither adds weight to the main bundle for the
+      // common case where an admin never bulk-exports cards.
+      const [{ default: JSZip }, { jsPDF }] = await Promise.all([import("jszip"), import("jspdf")]);
+
+      // Shared by every card in this school's batch - fetched once rather
+      // than once per person.
+      const [logoInfo, signatureInfo] = await Promise.all([
+        loadIdCardImage(brand.logo),
+        loadIdCardImage(brand.signature),
       ]);
 
       const zip = new JSZip();
       const usedNames = new Set();
-      const itemNodes = Array.from(document.querySelectorAll(".id-card-bulk-print-item"));
       let exported = 0;
 
       for (let index = 0; index < people_.length; index += 1) {
         const person = people_[index];
-        const node = itemNodes[index];
-        const frontEl = node?.querySelector(".id-card-face.id-card-front");
-        const backEl = node?.querySelector(".id-card-face.id-card-back");
-        if (!frontEl) continue;
-
-        const captureOptions = { scale: 2, backgroundColor: "#ffffff", useCORS: true };
-        const frontCanvas = await html2canvas(frontEl, captureOptions);
-        const doc = new jsPDF({ orientation: "landscape", unit: "in", format: [ID_CARD_WIDTH_IN, ID_CARD_HEIGHT_IN], compress: true });
-        doc.addImage(frontCanvas.toDataURL("image/png"), "PNG", 0, 0, ID_CARD_WIDTH_IN, ID_CARD_HEIGHT_IN, undefined, "FAST");
-        if (backEl) {
-          const backCanvas = await html2canvas(backEl, captureOptions);
-          doc.addPage([ID_CARD_WIDTH_IN, ID_CARD_HEIGHT_IN], "landscape");
-          doc.addImage(backCanvas.toDataURL("image/png"), "PNG", 0, 0, ID_CARD_WIDTH_IN, ID_CARD_HEIGHT_IN, undefined, "FAST");
+        let qrDataUrl = "";
+        try {
+          qrDataUrl = (await fetchQrDataUrl(person, true)).dataUrl;
+        } catch (qrError) {
+          // One person's QR failing (e.g. a since-deactivated profile)
+          // shouldn't block exporting everyone else - that card's back
+          // just shows the "QR" placeholder drawIdCardBack falls back to
+          // when qrInfo is null.
         }
+        const [photoInfo, qrInfo] = await Promise.all([
+          loadIdCardImage(person.profile_picture),
+          loadIdCardImage(qrDataUrl),
+        ]);
+
+        const doc = new jsPDF({ orientation: "landscape", unit: "in", format: [ID_CARD_WIDTH_IN, ID_CARD_HEIGHT_IN], compress: true });
+        drawIdCardFront(doc, { person, brand, theme: documentTheme, fontFamily, photoInfo, logoInfo });
+        doc.addPage([ID_CARD_WIDTH_IN, ID_CARD_HEIGHT_IN], "landscape");
+        drawIdCardBack(doc, { person, brand, theme: documentTheme, fontFamily, qrInfo, logoInfo, signatureInfo });
 
         const baseName = sanitizeFileName(`${person.name || "ID Card"} - ${person.unique_id || person.id}`) || `id-card-${index + 1}`;
         let fileName = `${baseName}.pdf`;
@@ -9263,7 +9505,6 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
     } catch (exportError) {
       setActionError(exportError.message || "Could not export the selected cards.");
     } finally {
-      setBulkExportPeople(null);
       setBulkExporting(false);
     }
   };
@@ -9393,9 +9634,6 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
               </div>
             </article>
           </section>
-          {bulkExportPeople ? (
-            <IdCardBulkPrintArea people={bulkExportPeople} school={cardSchool} qrByKey={bulkQrByKey} theme={documentTheme} />
-          ) : null}
         </>
       ) : null}
     </section>
