@@ -1,4 +1,10 @@
-const CACHE_VERSION = "schooldom-pwa-v3";
+// Bumping this evicts every previously cached chunk (shell + runtime) on
+// next activation - needed here because cacheFirst() below never expires
+// an individual asset entry on its own, so a hashed chunk fetched before a
+// deploy (e.g. the jszip bundle used by bulk ID card export) would
+// otherwise linger in a returning visitor's cache indefinitely even after
+// that exact filename stops existing on the server.
+const CACHE_VERSION = "schooldom-pwa-v4";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
