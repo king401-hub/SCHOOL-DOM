@@ -1,30 +1,23 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
-import { CheckCircle, ArrowRight, Star, Zap, Shield, Users, Eye, ScanLine } from 'lucide-react';
+import { CheckCircle, ArrowRight, Star, Zap, Shield, Users, Eye } from 'lucide-react';
 import { Reveal } from '../lib/reveal';
 import { useTilt } from '../lib/tilt';
 
 const K12_COLOR = 'var(--c-green)';
 const NONK12_COLOR = '#0d9488';
-const GATE_COLOR = '#4d7c0f';
 const EASE = [0.16, 1, 0.3, 1] as const;
 
 export default function Pricing() {
   const { t } = useTranslation();
   const [kidMonitor, setKidMonitor] = useState(false);
-  const [gatePlan, setGatePlan] = useState<'basic' | 'premium'>('basic');
 
   const K12_FEATURES = t('pricing.k12.features', { returnObjects: true }) as string[];
   const NON_K12_FEATURES = t('pricing.nonK12.features', { returnObjects: true }) as string[];
-  const SCHOOLGATE_FEATURES: Record<'basic' | 'premium', string[]> = {
-    basic: t('pricing.schoolgate.featuresBasic', { returnObjects: true }) as string[],
-    premium: t('pricing.schoolgate.featuresPremium', { returnObjects: true }) as string[],
-  };
 
   const tiltK12 = useTilt<HTMLDivElement>(5);
   const tiltNonK12 = useTilt<HTMLDivElement>(5);
-  const tiltGate = useTilt<HTMLDivElement>(5);
 
   return (
     <section id="pricing" className="py-28 px-4 relative overflow-hidden">
@@ -40,7 +33,7 @@ export default function Pricing() {
           <p className="text-[var(--c-muted)] max-w-lg mx-auto">{t('pricing.subtitle')}</p>
         </Reveal>
 
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="grid lg:grid-cols-2 gap-6 max-w-3xl mx-auto">
           {/* K-12 Card */}
           <motion.div
             ref={tiltK12.ref}
@@ -191,81 +184,6 @@ export default function Pricing() {
                 className="w-full py-4 rounded-2xl font-semibold text-base text-[var(--c-ink)] cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
                 style={{ background: `${NONK12_COLOR}22`, border: `1px solid ${NONK12_COLOR}55` }}>
                 {t('pricing.nonK12.cta')} <ArrowRight className="h-4 w-4 inline ml-2" />
-              </a>
-            </div>
-          </motion.div>
-
-          {/* SchoolGate Card */}
-          <motion.div
-            ref={tiltGate.ref}
-            onMouseMove={tiltGate.onMouseMove}
-            onMouseLeave={tiltGate.onMouseLeave}
-            className="relative rounded-3xl p-8 overflow-hidden sd-card-glass"
-            style={{ border: `1px solid ${GATE_COLOR}40`, ...tiltGate.style }}
-            initial="hidden"
-            whileInView="show"
-            viewport={{ once: true, amount: 0.15 }}
-            variants={{ hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, delay: 0.25, ease: EASE } } }}
-            whileHover={{ y: -6, scale: 1.01 }}
-            transition={{ type: 'spring', stiffness: 280, damping: 22 }}
-          >
-            <div className="absolute top-4 right-4">
-              <span className="badge text-[9px]" style={{ background: `${GATE_COLOR}22`, border: `1px solid ${GATE_COLOR}50`, color: GATE_COLOR }}>
-                {t('pricing.new')}
-              </span>
-            </div>
-
-            <div className="relative">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="h-11 w-11 rounded-2xl flex items-center justify-center"
-                  style={{ background: `${GATE_COLOR}22`, border: `1px solid ${GATE_COLOR}50` }}>
-                  <ScanLine className="h-5 w-5" style={{ color: GATE_COLOR }} />
-                </div>
-                <div>
-                  <h3 className="font-display font-semibold text-[var(--c-ink)] text-xl">{t('pricing.schoolgate.name')}</h3>
-                  <p className="text-[var(--c-subtle)] text-xs">{t('pricing.schoolgate.tagline')}</p>
-                </div>
-              </div>
-
-              {/* Basic / Premium toggle */}
-              <div className="flex rounded-xl p-1 mb-6 sd-card" style={{ gap: 4 }}>
-                {(['basic', 'premium'] as const).map(plan => (
-                  <button key={plan} onClick={() => setGatePlan(plan)}
-                    className="flex-1 py-2 rounded-lg text-xs font-bold capitalize transition-all cursor-pointer"
-                    style={{
-                      background: gatePlan === plan ? `${GATE_COLOR}28` : 'transparent',
-                      color: gatePlan === plan ? GATE_COLOR : 'var(--c-muted)',
-                    }}>
-                    {plan === 'basic' ? t('pricing.schoolgate.basic') : t('pricing.schoolgate.premium')}
-                  </button>
-                ))}
-              </div>
-
-              <div className="mb-6">
-                <div className="flex items-end gap-2">
-                  <span className="font-display font-semibold text-5xl" style={{ color: GATE_COLOR }}>
-                    ₦{gatePlan === 'premium' ? '1,500' : '700'}
-                  </span>
-                  <div className="mb-2">
-                    <p className="text-[var(--c-ink)] text-sm font-semibold">{t('pricing.schoolgate.perStudentTerm')}</p>
-                  </div>
-                </div>
-                <p className="text-[var(--c-subtle)] text-xs mt-2">{t('pricing.schoolgate.deviceFee')}</p>
-              </div>
-
-              <ul className="space-y-2.5 mb-8">
-                {SCHOOLGATE_FEATURES[gatePlan].map(f => (
-                  <li key={f} className="flex items-center gap-3 text-[var(--c-ink)] text-sm">
-                    <CheckCircle className="h-4 w-4 shrink-0" style={{ color: GATE_COLOR }} />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-
-              <a href={`/#/signup?product=schoolgate&plan=${gatePlan}`}
-                className="w-full py-4 rounded-2xl font-semibold text-base text-[var(--c-ink)] cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
-                style={{ background: `${GATE_COLOR}22`, border: `1px solid ${GATE_COLOR}55` }}>
-                {t('pricing.schoolgate.cta')} <ArrowRight className="h-4 w-4 inline ml-2" />
               </a>
             </div>
           </motion.div>

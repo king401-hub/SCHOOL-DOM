@@ -257,6 +257,64 @@ body {
    dark-on-light - kept for Hero/CBT/Features preview components. */
 .keep-dark { color-scheme: dark; }
 
+/* ── Ambient background field (site-wide, slow-drifting) ─────────────────
+   Three large blurred radial-gradient blobs, fixed behind all content.
+   Opacity and blur kept low/large so it reads as a soft living wash, not
+   decoration competing with content. Colors ride the theme tokens so this
+   inverts automatically in dark mode. */
+.ambient-field {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ambient-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  will-change: transform;
+}
+.ambient-blob-1 {
+  width: 42vw;
+  height: 42vw;
+  top: -12%;
+  left: -8%;
+  background: radial-gradient(circle, rgba(var(--c-green-rgb), 0.16), transparent 70%);
+  animation: ambient-drift-1 32s ease-in-out infinite alternate;
+}
+.ambient-blob-2 {
+  width: 36vw;
+  height: 36vw;
+  top: 28%;
+  right: -10%;
+  background: radial-gradient(circle, rgba(var(--c-green-rgb), 0.12), transparent 70%);
+  animation: ambient-drift-2 40s ease-in-out infinite alternate;
+}
+.ambient-blob-3 {
+  width: 50vw;
+  height: 50vw;
+  bottom: -18%;
+  left: 18%;
+  background: radial-gradient(circle, rgba(var(--c-ink-rgb), 0.05), transparent 70%);
+  animation: ambient-drift-3 48s ease-in-out infinite alternate;
+}
+@keyframes ambient-drift-1 {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(6vw, 8vh) scale(1.15); }
+}
+@keyframes ambient-drift-2 {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(-8vw, -5vh) scale(0.9); }
+}
+@keyframes ambient-drift-3 {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(5vw, -10vh) scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ambient-blob { animation: none !important; }
+}
+
 /* Perspective grid overlay (used sparingly, no longer behind the aurora) */
 .perspective-grid {
   background-image:

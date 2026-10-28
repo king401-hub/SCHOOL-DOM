@@ -62,7 +62,6 @@ function GrainOverlay() {
 }
 
 interface HeroProps {
-  onSignIn: () => void;
   onDemo: () => void;
 }
 

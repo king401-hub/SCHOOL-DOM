@@ -168,17 +168,6 @@
       "cta": "Começar com Non-K12",
       "features": ["Gestão de matrículas de alunos", "Mecanismo de provas CBT híbrido", "Cobrança de mensalidades e recibos digitais", "Controle de frequência", "Resultados de cursos e históricos", "Gestão de funcionários", "Painel de análises", "Armazenamento em conformidade com a NDPA"]
     },
-    "schoolgate": {
-      "name": "SchoolGate",
-      "tagline": "Apenas terminal de frequência no portão",
-      "basic": "Básico",
-      "premium": "Premium",
-      "perStudentTerm": "/ aluno / período",
-      "deviceFee": "+ taxa única de ₦50.000 pelo dispositivo",
-      "cta": "Começar com SchoolGate",
-      "featuresBasic": ["Apenas Frequência, Funcionários, Finanças e Alunos", "Relatório semanal de frequência por SMS aos pais", "Taxa única de ₦50.000 pelo dispositivo"],
-      "featuresPremium": ["Apenas Frequência, Funcionários, Finanças e Alunos", "SMS diário de entrada/saída + relatório semanal", "Child Monitor incluído sem custo extra", "Taxa única de ₦50.000 pelo dispositivo"]
-    },
     "guarantees": {
       "noSetupFee": "Sem taxa de instalação",
       "startIn4Min": "Comece em 4 minutos",
@@ -224,8 +213,7 @@
       "pricing": [
         { "q": "Quanto custa a Schooldom?", "a": "Escolas K-12 pagam ₦500 por período (3 meses e 15 dias). Instituições não-K12 pagam ₦200 por mês. Ambos os planos têm taxa fixa — sem cobranças por aluno, sem taxas ocultas." },
         { "q": "O que é o complemento Child Monitor?", "a": "O Child Monitor é um complemento opcional para escolas K-12 por ₦1.000 por período. Ele fornece rastreamento de localização em tempo real, monitoramento de atividade na tela e alertas de segurança para alunos." },
-        { "q": "Existem taxas de instalação ou cobranças por aluno?", "a": "Não. Nossos preços são totalmente fixos. Você paga uma única taxa para toda a escola, independentemente do número de alunos ou funcionários adicionados." },
-        { "q": "O que é o SchoolGate e como é precificado?", "a": "O SchoolGate é um plano independente mais leve para escolas que querem apenas o terminal de frequência no portão - cobrindo Frequência, Funcionários, Finanças e Alunos, não a plataforma completa. É cobrado por aluno e por período: ₦700 no Básico (relatório semanal de frequência por SMS) ou ₦1.500 no Premium (SMS diário de entrada/saída mais o relatório semanal, com Child Monitor incluído gratuitamente). Ambos os planos também têm uma taxa única de ₦50.000 pelo dispositivo. Você pode ativar a Schooldom completa mais tarde, a qualquer momento." }
+        { "q": "Existem taxas de instalação ou cobranças por aluno?", "a": "Não. Nossos preços são totalmente fixos. Você paga uma única taxa para toda a escola, independentemente do número de alunos ou funcionários adicionados." }
       ],
       "cbt": [
         { "q": "Os alunos podem fazer provas sem internet?", "a": "Sim. Nosso aplicativo CBT de desktop é 100% capaz de funcionar offline. Os alunos fazem provas em máquinas locais; os resultados sincronizam automaticamente com a nuvem quando a internet é restabelecida." },
@@ -444,13 +432,6 @@
       "tierK12": "Educação K-12",
       "tierNonK12": "Non-K12 (Profissionalizante, Superior, Academias)",
       "tierHelp": "Selecione 'K-12' para escolas de educação básica, ou 'Non-K12' para ensino superior/profissionalizante.",
-      "whatDoYouNeed": "Do que você precisa?",
-      "productFull": "Schooldom completo",
-      "productSchoolgate": "Apenas SchoolGate",
-      "productHelp": "O SchoolGate oferece apenas Frequência, Funcionários, Finanças e Alunos - cobrado por aluno a cada período. Você pode ativar a Gestão Escolar completa mais tarde, a qualquer momento.",
-      "schoolgatePlan": "Plano SchoolGate",
-      "schoolgateBasic": "Básico - ₦700 / aluno / período",
-      "schoolgatePremium": "Premium - ₦1.500 / aluno / período",
       "address": "Endereço físico institucional (opcional)",
       "addressPlaceholder": "402 Academic Circle, Suite 100",
       "certifyOrg": "Certifico que estou autorizado a integrar esta organização e concordo com a Carta de Integração Institucional e o Acordo de Proteção de Dados.",

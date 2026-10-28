@@ -17,8 +17,6 @@ const stepMotion = {
 
 type Role = 'school_admin' | 'school_superadmin';
 type SchoolType = 'k12' | 'non_k12';
-type Product = 'full' | 'schoolgate';
-type SchoolGatePlan = 'basic' | 'premium';
 
 const SESSION_KEY = 'schooldom.session';
 const ADMIN_APP_URL = (import.meta as any).env?.VITE_ADMIN_APP_URL || '/app/';
@@ -91,8 +89,6 @@ export default function SignUpPage() {
   const errorFallbacks = { network: t('signup.errors.connection'), requestFailed: t('signup.errors.requestFailed') };
   const [searchParams] = useSearchParams();
   const initialTier = searchParams.get('tier') === 'non_k12' ? 'non_k12' : 'k12';
-  const initialProduct = searchParams.get('product') === 'schoolgate' ? 'schoolgate' : 'full';
-  const initialPlan = searchParams.get('plan') === 'premium' ? 'premium' : 'basic';
 
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
@@ -112,30 +108,16 @@ export default function SignUpPage() {
   const [address, setAddress] = useState('');
   const [schoolGroupName, setSchoolGroupName] = useState('');
   const [certified, setCertified] = useState(false);
-  // Orthogonal to schoolType - SchoolGate is offered under both K-12 and
-  // Non-K12. schoolgatePlan only matters when product === 'schoolgate'.
-  const [product, setProduct] = useState<Product>(initialProduct as Product);
-  const [schoolgatePlan, setSchoolgatePlan] = useState<SchoolGatePlan>(initialPlan as SchoolGatePlan);
 
   // useState's initializer only runs on mount, so if this page is ever reached
   // twice without a full remount (e.g. browser back/forward between
   // ?tier=k12 and ?tier=non_k12), the dropdown could silently keep showing
-  // the stale tier. Resync whenever the URL's tier/product/plan params
-  // actually change - lets the Pricing section's SchoolGate card deep-link
-  // straight into the right product/plan the same way the K-12/Non-K12
-  // buttons deep-link into schoolType.
+  // the stale tier. Resync whenever the URL's tier param actually changes -
+  // lets the Pricing section's K-12/Non-K12 buttons deep-link into schoolType.
   useEffect(() => {
     const tierParam = searchParams.get('tier');
     if (tierParam === 'k12' || tierParam === 'non_k12') {
       setSchoolType(tierParam);
-    }
-    const productParam = searchParams.get('product');
-    if (productParam === 'full' || productParam === 'schoolgate') {
-      setProduct(productParam);
-    }
-    const planParam = searchParams.get('plan');
-    if (planParam === 'basic' || planParam === 'premium') {
-      setSchoolgatePlan(planParam);
     }
   }, [searchParams]);
 
@@ -201,8 +183,6 @@ export default function SignUpPage() {
           email: email.trim(),
           school_type: schoolType,
           address: address.trim(),
-          product,
-          schoolgate_plan: schoolgatePlan,
         }, errorFallbacks);
         code = schoolData?.school?.school_code || '';
         setSchoolCode(code);
@@ -326,7 +306,7 @@ export default function SignUpPage() {
           <ArrowLeft className="h-4 w-4" /> {t('signup.backToHome')}
         </a>
 
-        <div className="rounded-3xl p-8 sm:p-10 sd-card overflow-hidden">
+        <div className="rounded-3xl p-8 sm:p-10 sd-card-glass overflow-hidden">
           <Stepper step={step} stepLabels={STEP_LABELS} />
 
           <AnimatePresence mode="wait">
@@ -462,25 +442,6 @@ export default function SignUpPage() {
                     </select>
                     <p className="text-[var(--c-subtle)] text-xs mt-1.5">{t('signup.step2.tierHelp')}</p>
                   </div>
-                  <div>
-                    <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step2.whatDoYouNeed')}</label>
-                    <select value={product} onChange={e => setProduct(e.target.value as Product)} className={inputCls}>
-                      <option value="full">{t('signup.step2.productFull')}</option>
-                      <option value="schoolgate">{t('signup.step2.productSchoolgate')}</option>
-                    </select>
-                    <p className="text-[var(--c-subtle)] text-xs mt-1.5">
-                      {t('signup.step2.productHelp')}
-                    </p>
-                  </div>
-                  {product === 'schoolgate' && (
-                    <div>
-                      <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step2.schoolgatePlan')}</label>
-                      <select value={schoolgatePlan} onChange={e => setSchoolgatePlan(e.target.value as SchoolGatePlan)} className={inputCls}>
-                        <option value="basic">{t('signup.step2.schoolgateBasic')}</option>
-                        <option value="premium">{t('signup.step2.schoolgatePremium')}</option>
-                      </select>
-                    </div>
-                  )}
                   <div>
                     <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step2.address')}</label>
                     <input type="text" value={address} onChange={e => setAddress(e.target.value)}

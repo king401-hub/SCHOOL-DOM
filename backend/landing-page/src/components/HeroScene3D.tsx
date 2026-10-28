@@ -38,14 +38,17 @@ function Studio({ quality }: { quality: Quality }) {
   );
 }
 
-/** A loose fan of six labelled glass cards, one per SchoolDom module - a
- * literal "stack of app-module cards" rather than abstract decoration, so
- * the piece visibly reads as this product's own feature set in 3D form.
+/** Six labelled glass cards, one per SchoolDom module, arranged as spokes
+ * around a central hub - a literal wheel rather than abstract decoration,
+ * so the piece visibly reads as this product's own feature set in 3D form.
  * Each card carries a drei <Html> chip (icon + the real, localized module
  * name pulled from the same features.grid.* i18n keys Features.tsx uses) so
- * the connection to the product is legible, not implied. Idles in a slow
- * rotation with a gentle mouse-parallax tilt on top. */
-function ModuleStack({ quality }: { quality: Quality }) {
+ * the connection to the product is legible, not implied. The wheel spins
+ * continuously in its own plane (rotation.z) so cards stay face-on to the
+ * camera throughout the turn instead of flipping away - the group carries a
+ * fixed tilt so it reads as a wheel viewed at an angle, not a flat clock
+ * face, with a gentle mouse-parallax wobble layered on top. */
+function ModuleWheel({ quality }: { quality: Quality }) {
   const { t } = useTranslation();
   const group = useRef<Group>(null);
   const pointer = useRef({ x: 0, y: 0 });
@@ -59,15 +62,22 @@ function ModuleStack({ quality }: { quality: Quality }) {
     return () => window.removeEventListener('pointermove', onMove);
   }, []);
 
+  const BASE_TILT_X = 0.34;
+  const BASE_TILT_Y = 0.1;
+
   useFrame((_, delta) => {
     const g = group.current;
     if (!g) return;
-    g.rotation.y += delta * 0.1;
-    g.rotation.x += (-pointer.current.y * 0.14 - g.rotation.x) * 0.045;
-    g.rotation.z += (pointer.current.x * 0.06 - g.rotation.z) * 0.045;
+    g.rotation.z += delta * 0.32;
+    g.rotation.x += (BASE_TILT_X - pointer.current.y * 0.16 - g.rotation.x) * 0.045;
+    g.rotation.y += (BASE_TILT_Y + pointer.current.x * 0.14 - g.rotation.y) * 0.045;
   });
 
   const smoothness = quality === 'high' ? 8 : 5;
+  // Wide enough that adjacent labels (60deg apart, chord length == RADIUS)
+  // don't crowd each other as the wheel turns through intermediate angles -
+  // narrower radii visibly collided at some rotation phases.
+  const RADIUS = 1.55;
 
   const glass = (color: string) => (
     <meshPhysicalMaterial
@@ -85,45 +95,52 @@ function ModuleStack({ quality }: { quality: Quality }) {
   );
 
   return (
-    <group ref={group} scale={0.86} position={[0, 0, 0]} rotation={[0.06, 0.16, 0]}>
+    <group ref={group} scale={0.86} position={[0, 0, 0]} rotation={[BASE_TILT_X, BASE_TILT_Y, 0]}>
+      {/* Hub */}
+      <mesh>
+        <sphereGeometry args={[0.26, quality === 'high' ? 32 : 16, quality === 'high' ? 32 : 16]} />
+        {glass('#206e3c')}
+      </mesh>
       {MODULES.map((m, i) => {
         const n = MODULES.length;
-        const t0 = i - (n - 1) / 2; // centred index, e.g. -2.5..2.5
-        const x = t0 * 0.72;
-        const y = t0 * 0.2;
-        const z = i * 0.08;
-        const rotZ = t0 * 0.04;
-        // Zigzag the label anchor so adjacent chips (which already sit close
-        // together along the diagonal stack) don't land in the same screen
-        // band - even indices label above their card, odd below.
-        const labelY = i % 2 === 0 ? 0.4 : -0.46;
+        const angle = (i / n) * Math.PI * 2;
+        const x = Math.cos(angle) * RADIUS;
+        const y = Math.sin(angle) * RADIUS;
+        const rotZ = angle + Math.PI / 2; // tangential, like a spoke
         const Icon = m.icon;
         return (
-          <group key={m.key} position={[x, y, z]} rotation={[0, 0, rotZ]}>
-            <RoundedBox args={[0.98, 0.6, 0.05]} radius={0.07} smoothness={smoothness}>
-              {glass(m.color)}
-            </RoundedBox>
-            <Html
-              position={[0, labelY, 0.04]}
-              center
-              distanceFactor={quality === 'high' ? 7.4 : 8.4}
-              style={{ pointerEvents: 'none' }}
-            >
-              <div
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full whitespace-nowrap"
-                style={{
-                  background: 'rgba(var(--c-surface-rgb),0.92)',
-                  border: '1px solid rgba(var(--c-ink-rgb),0.1)',
-                  boxShadow: '0 4px 14px rgba(var(--c-ink-rgb),0.12)',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: 'var(--c-ink)',
-                }}
+          <group key={m.key}>
+            {/* Spoke */}
+            <mesh position={[x / 2, y / 2, -0.02]} rotation={[0, 0, rotZ]}>
+              <boxGeometry args={[0.03, RADIUS * 0.82, 0.03]} />
+              <meshStandardMaterial color="#143b26" roughness={0.4} metalness={0.2} />
+            </mesh>
+            <group position={[x, y, 0]} rotation={[0, 0, rotZ]}>
+              <RoundedBox args={[0.62, 0.4, 0.05]} radius={0.06} smoothness={smoothness}>
+                {glass(m.color)}
+              </RoundedBox>
+              <Html
+                position={[0, 0, 0.04]}
+                center
+                distanceFactor={quality === 'high' ? 7.4 : 8.4}
+                style={{ pointerEvents: 'none' }}
               >
-                <Icon size={12} style={{ color: m.color, flexShrink: 0 }} />
-                {t(m.key)}
-              </div>
-            </Html>
+                <div
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full whitespace-nowrap"
+                  style={{
+                    background: 'rgba(var(--c-surface-rgb),0.92)',
+                    border: '1px solid rgba(var(--c-ink-rgb),0.1)',
+                    boxShadow: '0 4px 14px rgba(var(--c-ink-rgb),0.12)',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: 'var(--c-ink)',
+                  }}
+                >
+                  <Icon size={12} style={{ color: m.color, flexShrink: 0 }} />
+                  {t(m.key)}
+                </div>
+              </Html>
+            </group>
           </group>
         );
       })}
@@ -171,7 +188,7 @@ export default function HeroScene3D({ paused }: HeroScene3DProps) {
         <Lights />
         <Suspense fallback={null}>
           <Studio quality={quality} />
-          <ModuleStack quality={quality} />
+          <ModuleWheel quality={quality} />
           {quality === 'high' && (
             <ContactShadows position={[0, -0.85, 0]} opacity={0.3} scale={5} blur={2.4} far={2} color="#141310" />
           )}

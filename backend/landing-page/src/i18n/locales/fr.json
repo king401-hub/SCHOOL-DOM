@@ -168,17 +168,6 @@
       "cta": "Commencer avec Non-K12",
       "features": ["Gestion des inscriptions des élèves", "Moteur d'examen CBT hybride", "Collecte des frais et reçus numériques", "Suivi de présence", "Résultats de cours et relevés de notes", "Gestion du personnel", "Tableau de bord analytique", "Stockage conforme NDPA"]
     },
-    "schoolgate": {
-      "name": "SchoolGate",
-      "tagline": "Terminal de présence au portail uniquement",
-      "basic": "Basique",
-      "premium": "Premium",
-      "perStudentTerm": "/ élève / trimestre",
-      "deviceFee": "+ frais unique de ₦50 000 pour l'appareil",
-      "cta": "Commencer avec SchoolGate",
-      "featuresBasic": ["Présence, Personnel, Finance et Élèves uniquement", "Rapport hebdomadaire de présence par SMS aux parents", "Frais unique de ₦50 000 pour l'appareil"],
-      "featuresPremium": ["Présence, Personnel, Finance et Élèves uniquement", "SMS d'arrivée/départ quotidien + rapport hebdomadaire", "Child Monitor inclus sans frais supplémentaires", "Frais unique de ₦50 000 pour l'appareil"]
-    },
     "guarantees": {
       "noSetupFee": "Aucun frais d'installation",
       "startIn4Min": "Démarrez en 4 minutes",
@@ -224,8 +213,7 @@
       "pricing": [
         { "q": "Combien coûte Schooldom ?", "a": "Les écoles K-12 paient ₦500 par trimestre (3 mois et 15 jours). Les établissements non-K12 paient ₦200 par mois. Les deux forfaits sont à tarif fixe — aucun frais par élève, aucun frais caché." },
         { "q": "Qu'est-ce que l'option Child Monitor ?", "a": "Child Monitor est une option pour les écoles K-12 à ₦1 000 par trimestre. Elle fournit un suivi de localisation en temps réel, une surveillance de l'activité à l'écran et des alertes de sécurité pour les élèves." },
-        { "q": "Y a-t-il des frais d'installation ou des frais par élève ?", "a": "Non. Notre tarification est entièrement fixe. Vous payez un seul tarif pour toute l'école, quel que soit le nombre d'élèves ou de membres du personnel ajoutés." },
-        { "q": "Qu'est-ce que SchoolGate et comment est-il tarifé ?", "a": "SchoolGate est un forfait autonome plus léger pour les écoles qui veulent seulement le terminal de présence au portail - couvrant Présence, Personnel, Finance et Élèves, pas la plateforme complète. Il est facturé par élève et par trimestre : ₦700 en Basique (rapport SMS hebdomadaire) ou ₦1 500 en Premium (SMS d'arrivée/départ quotidien plus le rapport hebdomadaire, avec Child Monitor inclus gratuitement). Les deux forfaits ont aussi des frais uniques de ₦50 000 pour l'appareil. Vous pouvez activer Schooldom complet plus tard à tout moment." }
+        { "q": "Y a-t-il des frais d'installation ou des frais par élève ?", "a": "Non. Notre tarification est entièrement fixe. Vous payez un seul tarif pour toute l'école, quel que soit le nombre d'élèves ou de membres du personnel ajoutés." }
       ],
       "cbt": [
         { "q": "Les élèves peuvent-ils passer des examens sans internet ?", "a": "Oui. Notre application CBT de bureau fonctionne entièrement hors ligne. Les élèves passent leurs examens sur des machines locales ; les résultats se synchronisent automatiquement avec le cloud dès que l'internet est rétabli." },
@@ -444,13 +432,6 @@
       "tierK12": "Éducation K-12",
       "tierNonK12": "Non-K12 (Professionnel, Tertiaire, Académies)",
       "tierHelp": "Sélectionnez « K-12 » pour les écoles de base, ou « Non-K12 » pour l'enseignement supérieur/professionnel.",
-      "whatDoYouNeed": "De quoi avez-vous besoin ?",
-      "productFull": "Schooldom complet",
-      "productSchoolgate": "SchoolGate uniquement",
-      "productHelp": "SchoolGate vous donne accès à Présence, Personnel, Finance et Élèves uniquement - facturé par élève chaque trimestre. Vous pouvez activer la gestion scolaire complète plus tard à tout moment.",
-      "schoolgatePlan": "Forfait SchoolGate",
-      "schoolgateBasic": "Basique - ₦700 / élève / trimestre",
-      "schoolgatePremium": "Premium - ₦1 500 / élève / trimestre",
       "address": "Adresse physique de l'institution (optionnel)",
       "addressPlaceholder": "402 Academic Circle, Suite 100",
       "certifyOrg": "Je certifie être autorisé à intégrer cette organisation et j'accepte la Charte d'intégration institutionnelle et l'Accord de protection des données.",

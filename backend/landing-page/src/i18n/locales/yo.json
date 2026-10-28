@@ -168,17 +168,6 @@
       "cta": "Bẹ̀rẹ̀ pẹ̀lú Non-K12",
       "features": ["Ìṣàkóso ìforúkọsílẹ̀ akẹ́kọ̀ọ́", "Ẹ̀rọ ìdánwò CBT hybrid", "Gbígba owó ilé-ìwé àti receipt dígítà", "Ìtẹ̀lé wíwá sí ilé-ìwé", "Àbájáde ìdánwò àti transcript", "Ìṣàkóso òṣìṣẹ́", "Dasibodu ìtúpalẹ̀", "Ìkójọpamọ́ tó bá NDPA mu"]
     },
-    "schoolgate": {
-      "name": "SchoolGate",
-      "tagline": "Ẹ̀rọ wíwá sí ẹnu-ọ̀nà nìkan",
-      "basic": "Ìpele Dídé",
-      "premium": "Ìpele Gíga",
-      "perStudentTerm": "/ akẹ́kọ̀ọ́ / ìgbà",
-      "deviceFee": "+ owó ẹ̀rọ kan ṣoṣo ti ₦50,000",
-      "cta": "Bẹ̀rẹ̀ pẹ̀lú SchoolGate",
-      "featuresBasic": ["Wíwá sí ilé-ìwé, Òṣìṣẹ́, Owó àti Akẹ́kọ̀ọ́ nìkan", "Ìròyìn wíwá sí ilé-ìwé lọ́sọ̀ọ̀sẹ̀ nípasẹ̀ SMS sí àwọn òbí", "Owó ẹ̀rọ kan ṣoṣo ti ₦50,000"],
-      "featuresPremium": ["Wíwá sí ilé-ìwé, Òṣìṣẹ́, Owó àti Akẹ́kọ̀ọ́ nìkan", "SMS ìwọlé/ìjáde lójoojúmọ́ + ìròyìn lọ́sọ̀ọ̀sẹ̀", "Child Monitor ti wà pẹ̀lú láìní owó síwájú sí i", "Owó ẹ̀rọ kan ṣoṣo ti ₦50,000"]
-    },
     "guarantees": {
       "noSetupFee": "Kò sí owó ìgbékalẹ̀",
       "startIn4Min": "Bẹ̀rẹ̀ ní ìṣẹ́jú 4",
@@ -224,8 +213,7 @@
       "pricing": [
         { "q": "Iye owó wo ni Schooldom ná?", "a": "Àwọn ilé-ìwé K-12 á san ₦500 fún ìgbà kan (oṣù mẹ́ta àti ọjọ́ 15). Àwọn ilé-ẹ̀kọ́ tí kì í ṣe K-12 á san ₦200 lóṣooṣù. Ètò méjèèjì jẹ́ owó kan ṣoṣo — kò sí owó fún akẹ́kọ̀ọ́ kọ̀ọ̀kan, kò sí owó tó fara sin." },
         { "q": "Kí ni àfikún Child Monitor?", "a": "Child Monitor jẹ́ àfikún tí kì í ṣe dandan fún àwọn ilé-ìwé K-12 ní ₦1,000 fún ìgbà kan. Ó ń pèsè ìtẹ̀lé ibùdó lẹ́sẹ̀kẹsẹ̀, àbójútó iṣẹ́ sí sìrìn, àti ìkìlọ̀ ààbò fún àwọn akẹ́kọ̀ọ́." },
-        { "q": "Ṣé owó ìgbékalẹ̀ tàbí owó fún akẹ́kọ̀ọ́ kọ̀ọ̀kan wà?", "a": "Rárá. Owó iye wa jẹ́ owó kan ṣoṣo pátápátá. Ìwọ á san owó kan fún gbogbo ilé-ìwé náà láìka iye akẹ́kọ̀ọ́ tàbí òṣìṣẹ́ tí o fi kún un." },
-        { "q": "Kí ni SchoolGate, báwo ni a sì ṣe ń san owó rẹ̀?", "a": "SchoolGate jẹ́ ètò tó fúyẹ́, tí ó dúró fúnra rẹ̀ fún àwọn ilé-ìwé tí wọ́n fẹ́ ẹ̀rọ wíwá sí ẹnu-ọ̀nà nìkan - ó ní Wíwá sí ilé-ìwé, Òṣìṣẹ́, Owó àti Akẹ́kọ̀ọ́, kì í ṣe gbogbo platform náà. A óò san án fún akẹ́kọ̀ọ́ kọ̀ọ̀kan fún ìgbà kọ̀ọ̀kan: ₦700 ní ìpele Dídé (ìròyìn SMS lọ́sọ̀ọ̀sẹ̀) tàbí ₦1,500 ní ìpele Gíga (SMS ìwọlé/ìjáde lójoojúmọ́ pẹ̀lú ìròyìn lọ́sọ̀ọ̀sẹ̀, pẹ̀lú Child Monitor tí a fi kún un láìní owó). Ètò méjèèjì tún ní owó ẹ̀rọ kan ṣoṣo ti ₦50,000. O lè mú gbogbo Schooldom ṣiṣẹ́ nígbàkigbà lẹ́yìn náà." }
+        { "q": "Ṣé owó ìgbékalẹ̀ tàbí owó fún akẹ́kọ̀ọ́ kọ̀ọ̀kan wà?", "a": "Rárá. Owó iye wa jẹ́ owó kan ṣoṣo pátápátá. Ìwọ á san owó kan fún gbogbo ilé-ìwé náà láìka iye akẹ́kọ̀ọ́ tàbí òṣìṣẹ́ tí o fi kún un." }
       ],
       "cbt": [
         { "q": "Ṣé àwọn akẹ́kọ̀ọ́ lè ṣe ìdánwò láìsí ayélujára?", "a": "Bẹ́ẹ̀ni. App CBT kọ̀mpútà wa lè ṣiṣẹ́ 100% láìsí ayélujára. Àwọn akẹ́kọ̀ọ́ á ṣe ìdánwò lórí kọ̀mpútà tí ó wà níbẹ̀; àwọn àbájáde á sì dọ́gba fúnra wọn pẹ̀lú cloud tí ayélujára bá padà." },
@@ -444,13 +432,6 @@
       "tierK12": "Ẹ̀kọ́ K-12",
       "tierNonK12": "Non-K12 (Ìmọ̀ Iṣẹ́, Gíga, Àkádẹ́mì)",
       "tierHelp": "Yan 'K-12' fún ilé-ìwé àbẹ̀rẹ̀, tàbí 'Non-K12' fún ẹ̀kọ́ gíga/ìmọ̀ iṣẹ́.",
-      "whatDoYouNeed": "Kí ni o nílò?",
-      "productFull": "Gbogbo SchoolDom",
-      "productSchoolgate": "SchoolGate Nìkan",
-      "productHelp": "SchoolGate á fún ọ ní Wíwá sí ilé-ìwé, Òṣìṣẹ́, Owó, àti Akẹ́kọ̀ọ́ nìkan - a óò san án fún akẹ́kọ̀ọ́ kọ̀ọ̀kan ní ìgbà kọ̀ọ̀kan. O lè mú gbogbo Ìṣàkóso Ilé-Ìwé ṣiṣẹ́ nígbàkigbà lẹ́yìn náà.",
-      "schoolgatePlan": "Ètò SchoolGate",
-      "schoolgateBasic": "Dídé - ₦700 / akẹ́kọ̀ọ́ / ìgbà",
-      "schoolgatePremium": "Gíga - ₦1,500 / akẹ́kọ̀ọ́ / ìgbà",
       "address": "Àdírẹ́sì Gidi Ilé-Ẹ̀kọ́ (Kì Í Ṣe Dandan)",
       "addressPlaceholder": "402 Academic Circle, Suite 100",
       "certifyOrg": "Mo jẹ́rìí pé a fún mi láṣẹ láti dá àjọ yìí sílẹ̀, mo sì gbà pẹ̀lú Institutional Onboarding Charter àti Data Protection Agreement.",

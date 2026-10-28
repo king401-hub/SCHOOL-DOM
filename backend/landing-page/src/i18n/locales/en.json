@@ -168,17 +168,6 @@
       "cta": "Start with Non-K12",
       "features": ["Student enrollment management", "Hybrid CBT exam engine", "Fee collection & digital receipts", "Attendance tracking", "Course results & transcripts", "Staff management", "Analytics dashboard", "NDPA compliant storage"]
     },
-    "schoolgate": {
-      "name": "SchoolGate",
-      "tagline": "Attendance gate terminal only",
-      "basic": "Basic",
-      "premium": "Premium",
-      "perStudentTerm": "/ student / term",
-      "deviceFee": "+ ₦50,000 one-time device fee",
-      "cta": "Start with SchoolGate",
-      "featuresBasic": ["Attendance, Staff, Finance & Students only", "Weekly SMS attendance report to parents", "One-time ₦50,000 gate device fee"],
-      "featuresPremium": ["Attendance, Staff, Finance & Students only", "Daily clock-in/clock-out SMS + weekly report", "Child Monitor included at no extra cost", "One-time ₦50,000 gate device fee"]
-    },
     "guarantees": {
       "noSetupFee": "No setup fee",
       "startIn4Min": "Start in 4 minutes",
@@ -224,8 +213,7 @@
       "pricing": [
         { "q": "How much does Schooldom cost?", "a": "K-12 schools pay ₦500 per term (3 months 15 days). Non-K12 institutions pay ₦200 per month. Both plans are flat rates — no per-student charges, no hidden fees." },
         { "q": "What is the Child Monitor add-on?", "a": "Child Monitor is an optional add-on for K-12 schools at ₦1,000 per term. It provides real-time location tracking, screen activity monitoring, and safety alerts for students." },
-        { "q": "Are there setup fees or per-student charges?", "a": "No. Our pricing is completely flat. You pay one rate for the entire school regardless of how many students or staff members you add." },
-        { "q": "What is SchoolGate, and how is it priced?", "a": "SchoolGate is a lighter, standalone plan for schools that only want the attendance gate terminal - covering Attendance, Staff, Finance, and Students, not the full platform. It's billed per student per term: ₦700 on Basic (weekly SMS attendance report) or ₦1,500 on Premium (daily clock-in/out SMS plus the weekly report, with Child Monitor included free). Both plans also have a one-time ₦50,000 device fee. You can activate full Schooldom later at any time." }
+        { "q": "Are there setup fees or per-student charges?", "a": "No. Our pricing is completely flat. You pay one rate for the entire school regardless of how many students or staff members you add." }
       ],
       "cbt": [
         { "q": "Can students take exams without internet?", "a": "Yes. Our Desktop CBT app is 100% offline-capable. Students take exams on local machines; results automatically sync to the cloud when internet is restored." },
@@ -444,13 +432,6 @@
       "tierK12": "K-12 Education",
       "tierNonK12": "Non-K12 (Vocational, Tertiary, Academies)",
       "tierHelp": "Select 'K-12' for foundational schools, or 'Non-K12' for higher/vocational education.",
-      "whatDoYouNeed": "What do you need?",
-      "productFull": "Full SchoolDom",
-      "productSchoolgate": "SchoolGate only",
-      "productHelp": "SchoolGate gives you Attendance, Staff, Finance, and Students only - billed per student each term. You can activate full School Management later at any time.",
-      "schoolgatePlan": "SchoolGate plan",
-      "schoolgateBasic": "Basic - ₦700 / student / term",
-      "schoolgatePremium": "Premium - ₦1,500 / student / term",
       "address": "Institutional Physical Address (Optional)",
       "addressPlaceholder": "402 Academic Circle, Suite 100",
       "certifyOrg": "I certify that I am authorized to onboard this organization and I agree to the Institutional Onboarding Charter and Data Protection Agreement.",

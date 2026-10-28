@@ -1,8 +1,10 @@
-import { Suspense, lazy, useEffect } from 'react';
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { Suspense, lazy, useEffect, useState } from 'react';
+import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import Lenis from 'lenis';
 import { setLenisInstance, smoothScrollTo } from './lib/smoothScroll';
+import AmbientField from './components/AmbientField';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import Features from './components/Features';
@@ -14,6 +16,14 @@ import Footer from './components/Footer';
 import FAQPage from './pages/FAQ';
 import ContactPage from './pages/Contact';
 import PrivacyPage from './pages/Privacy';
+
+const PAGE_EASE = [0.16, 1, 0.3, 1] as const;
+const pageMotion = {
+  initial: { opacity: 0, x: 28 },
+  animate: { opacity: 1, x: 0 },
+  exit: { opacity: 0, x: -28 },
+  transition: { duration: 0.4, ease: PAGE_EASE },
+};
 
 const SignUpPage = lazy(() => import('./pages/SignUp'));
 
@@ -40,12 +50,11 @@ function WhatsAppButton() {
 }
 
 function HomePage() {
-  const handleSignIn = () => { window.location.href = `${ADMIN_APP_URL}signin`; };
   const handleDemo = () => { smoothScrollTo('#demo'); };
 
   return (
     <>
-      <Hero onSignIn={handleSignIn} onDemo={handleDemo} />
+      <Hero onDemo={handleDemo} />
       <Features />
       <CBTSection />
       <Demo />
@@ -55,8 +64,46 @@ function HomePage() {
   );
 }
 
+/** Animates between routes - exit finishes before the next page enters
+ * (mode="wait"), so navigating (e.g. into Sign Up) is a real transition
+ * instead of an instant swap. `location` is captured once per render and
+ * handed to <Routes> explicitly so the outgoing route's content is what
+ * actually plays the exit animation, not whatever the URL has already
+ * become - the standard react-router + AnimatePresence pairing. */
+function AnimatedMain() {
+  const location = useLocation();
+  return (
+    <AnimatePresence mode="wait">
+      <motion.main key={location.pathname} {...pageMotion}>
+        <Routes location={location}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/faq" element={<FAQPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/signup" element={<Suspense fallback={null}><SignUpPage /></Suspense>} />
+        </Routes>
+      </motion.main>
+    </AnimatePresence>
+  );
+}
+
 export default function App() {
-  const handleSignIn = () => { window.location.href = `${ADMIN_APP_URL}signin`; };
+  const [exiting, setExiting] = useState(false);
+
+  // Sign In leaves this app entirely (a separate deployed app at
+  // ADMIN_APP_URL, not a client-side route) - a hard window.location nav has
+  // no transition of its own, so play a brief exit animation on this page
+  // first and only fire the redirect once it's finished. Reduced-motion
+  // visitors get the plain instant redirect, matching how Lenis is skipped
+  // for them below.
+  const handleSignIn = () => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      window.location.href = `${ADMIN_APP_URL}signin`;
+      return;
+    }
+    setExiting(true);
+    setTimeout(() => { window.location.href = `${ADMIN_APP_URL}signin`; }, 420);
+  };
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -75,23 +122,20 @@ export default function App() {
 
   return (
     <HashRouter>
-      <div className="app-root">
+      <motion.div
+        className="app-root"
+        animate={exiting ? { opacity: 0, y: -16, filter: 'blur(6px)' } : { opacity: 1, y: 0, filter: 'blur(0px)' }}
+        transition={{ duration: 0.4, ease: [0.4, 0, 1, 1] }}
+      >
+        <AmbientField />
         <Navbar onSignIn={handleSignIn} />
 
-        <main>
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/faq" element={<FAQPage />} />
-            <Route path="/contact" element={<ContactPage />} />
-            <Route path="/privacy" element={<PrivacyPage />} />
-            <Route path="/signup" element={<Suspense fallback={null}><SignUpPage /></Suspense>} />
-          </Routes>
-        </main>
+        <AnimatedMain />
 
         <Footer />
 
         <WhatsAppButton />
-      </div>
+      </motion.div>
     </HashRouter>
   );
 }
