@@ -115,17 +115,22 @@ object ApiClient {
             SessionStore.clearSession(context)
             throw SessionExpiredException()
         }
-        val (status, body) = try {
-            send(
-                "POST", "${Config.API_BASE_URL}/api/auth/refresh/",
-                mapOf("Content-Type" to "application/json"),
-                JSONObject().put("refresh", refresh).toString(),
-                timeoutMs,
-            )
-        } catch (e: IOException) {
-            SessionStore.clearSession(context)
-            throw SessionExpiredException()
-        }
+        // A connectivity failure here (e.g. the backend being down) is not
+        // the server telling us this refresh token is invalid - it's the
+        // same "couldn't reach the server" case apiRequest's own send()
+        // calls already handle, by queueing or surfacing a network error
+        // without touching the session. Letting it propagate (instead of
+        // swallowing it into a forced logout here) means a terminal that
+        // rode out an outage resumes scanning on its own once the server is
+        // back, rather than being stuck needing a manual re-provision for a
+        // session that was never actually revoked - see the 2026-10-28
+        // incident, where exactly this wiped a still-valid device session.
+        val (status, body) = send(
+            "POST", "${Config.API_BASE_URL}/api/auth/refresh/",
+            mapOf("Content-Type" to "application/json"),
+            JSONObject().put("refresh", refresh).toString(),
+            timeoutMs,
+        )
         val data = if (body.isNotEmpty()) JSONObject(body) else null
         if (status != 200 || data?.optString("access", "")?.isEmpty() != false) {
             SessionStore.clearSession(context)
