@@ -1,6 +1,6 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { motion } from 'motion/react';
+import { motion, useScroll, useTransform, useReducedMotion } from 'motion/react';
 import {
   BookOpen, DollarSign, Users, FileText, MessageSquare,
   Briefcase, Monitor, ArrowRight, CheckCircle, QrCode
@@ -184,16 +184,41 @@ function buildShowcaseSections(t: (key: string, options?: Record<string, unknown
   ];
 }
 
+/** First showcase only: the preview panel's scale/rotation/position track
+ * real scroll progress through the section (useScroll + useTransform) rather
+ * than a one-time fade-in - a second, independent proof (alongside the Hero
+ * dashboard pin) that this is scroll-driven storytelling, not a reskin. */
+function CinematicPreview({ children, flip }: { children: ReactElement; flip: boolean }) {
+  const reduced = useReducedMotion();
+  const ref = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({ target: ref, offset: ['start 0.85', 'end 0.25'] });
+  const rotateY = useTransform(scrollYProgress, [0, 1], [flip ? 14 : -14, 0]);
+  const scale = useTransform(scrollYProgress, [0, 0.6, 1], [0.88, 1, 1.03]);
+  const x = useTransform(scrollYProgress, [0, 1], [flip ? -60 : 60, 0]);
+
+  if (reduced) return <div className={flip ? 'order-2 lg:order-1' : 'order-2'}>{children}</div>;
+
+  return (
+    <motion.div
+      ref={ref}
+      className={flip ? 'order-2 lg:order-1' : 'order-2'}
+      style={{ rotateY, scale, x, transformPerspective: 1600 }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 function ShowcaseSection({ section, idx }: { section: ShowcaseSectionData; idx: number }) {
   const { t } = useTranslation();
   const isEven = idx % 2 === 0;
 
   return (
-    <div className={`grid lg:grid-cols-2 gap-12 items-center ${idx > 0 ? 'mt-24' : ''}`}>
+    <div className={`grid lg:grid-cols-2 gap-12 lg:gap-20 items-center ${idx > 0 ? 'mt-32' : ''}`}>
       <Reveal x={isEven ? -28 : 28} y={0} className={isEven ? 'order-1' : 'order-1 lg:order-2'}>
         <span className="badge mb-4">{section.badge}</span>
-        <h3 className="font-display font-semibold text-3xl lg:text-4xl text-[var(--c-ink)] mb-4 leading-tight">{section.title}</h3>
-        <p className="text-[var(--c-muted)] text-base leading-relaxed mb-6">{section.desc}</p>
+        <h3 className="font-display font-semibold text-3xl lg:text-5xl text-[var(--c-ink)] mb-4 leading-[1.1] tracking-tight">{section.title}</h3>
+        <p className="text-[var(--c-muted)] text-base lg:text-lg leading-relaxed mb-6">{section.desc}</p>
         <ul className="space-y-2.5 mb-8">
           {section.points.map(p => (
             <li key={p} className="flex items-center gap-3 text-[var(--c-ink)] text-sm">
@@ -207,9 +232,13 @@ function ShowcaseSection({ section, idx }: { section: ShowcaseSectionData; idx: 
         </button>
       </Reveal>
 
-      <Reveal x={isEven ? 28 : -28} y={0} delay={0.15} className={isEven ? 'order-2' : 'order-2 lg:order-1'}>
-        {section.preview}
-      </Reveal>
+      {idx === 0 ? (
+        <CinematicPreview flip={!isEven}>{section.preview}</CinematicPreview>
+      ) : (
+        <Reveal x={isEven ? 28 : -28} y={0} delay={0.15} className={isEven ? 'order-2' : 'order-2 lg:order-1'}>
+          {section.preview}
+        </Reveal>
+      )}
     </div>
   );
 }
@@ -252,13 +281,13 @@ export default function Features() {
   const featuresGrid = buildFeaturesGrid(t);
 
   return (
-    <section id="features" className="py-28 px-4 relative">
+    <section id="features" className="py-32 lg:py-44 px-4 relative">
       <div className="max-w-7xl mx-auto">
         {/* Showcase sections */}
         {showcaseSections.map((s, i) => <ShowcaseSection key={s.badge} section={s} idx={i} />)}
 
         {/* Section divider */}
-        <div className="section-divider my-24" />
+        <div className="section-divider my-28" />
 
         {/* Feature grid — asymmetric bento layout, not a uniform 3-up */}
         <div>

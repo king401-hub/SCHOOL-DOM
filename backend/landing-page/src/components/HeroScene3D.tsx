@@ -1,18 +1,30 @@
 import { useEffect, useRef, useState, Suspense } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Canvas, useFrame } from '@react-three/fiber';
 import {
-  PerformanceMonitor, AdaptiveDpr, RoundedBox, ContactShadows,
+  PerformanceMonitor, AdaptiveDpr, RoundedBox, ContactShadows, Html,
   Environment, Lightformer,
 } from '@react-three/drei';
+import { DollarSign, BookOpen, QrCode, FileText, Briefcase, MessageSquare } from 'lucide-react';
 import type { Group } from 'three';
 
 type Quality = 'low' | 'high';
+type IconType = typeof DollarSign;
+
+interface ModuleDef { icon: IconType; key: string; color: string }
+
+const MODULES: ModuleDef[] = [
+  { icon: DollarSign, key: 'features.grid.finance.title', color: '#1d6b3c' },
+  { icon: BookOpen, key: 'features.grid.cbtEngine.title', color: '#2f7d4f' },
+  { icon: QrCode, key: 'features.grid.attendance.title', color: '#4ade80' },
+  { icon: FileText, key: 'features.grid.reportCards.title', color: '#206e3c' },
+  { icon: Briefcase, key: 'features.grid.hr.title', color: '#35966a' },
+  { icon: MessageSquare, key: 'features.grid.parentPortal.title', color: '#4fae7f' },
+];
 
 /** Procedural studio lighting baked into an environment map so the glass
- * materials below have something to actually reflect/refract. Without this,
- * transmissive/PBR materials render flat and near-black regardless of their
- * base color - this was the root cause of the muddy-looking first attempt.
- * Pure virtual light panels (Lightformer), so there is no texture to fetch. */
+ * materials below have something to actually reflect. Pure virtual light
+ * panels (Lightformer), so there is no texture to fetch. */
 function Studio({ quality }: { quality: Quality }) {
   return (
     <Environment resolution={quality === 'high' ? 256 : 64}>
@@ -26,23 +38,15 @@ function Studio({ quality }: { quality: Quality }) {
   );
 }
 
-/** A tight cluster of rounded, intersecting acrylic-glass panels at varied
- * sizes/depths/rotations, plus one smooth sphere nested among them - a
- * distinct abstract form rather than the generic "two cubes and a ball"
- * primitive layout. Deliberately overlapping and obliquely angled (not one
- * shape sitting cleanly "on top of" another) so it reads as abstract art,
- * not an accidental camera/device silhouette. Idles in a slow rotation with
- * a gentle mouse-parallax tilt on top.
- *
- * Uses reflective frosted-acrylic materials (clearcoat + environment
- * reflections), not true refractive transmission: the canvas is transparent
- * over the page (alpha: true, no scene background), so a transmissive
- * material has nothing real behind it to refract and renders as a near-
- * black void regardless of lighting - the actual cause of the first
- * attempt's "poor quality" look, not just the missing environment map.
- * Reflection-based frosted glass doesn't have that failure mode and still
- * reads as premium glass/acrylic. */
-function GlassCluster({ quality }: { quality: Quality }) {
+/** A loose fan of six labelled glass cards, one per SchoolDom module - a
+ * literal "stack of app-module cards" rather than abstract decoration, so
+ * the piece visibly reads as this product's own feature set in 3D form.
+ * Each card carries a drei <Html> chip (icon + the real, localized module
+ * name pulled from the same features.grid.* i18n keys Features.tsx uses) so
+ * the connection to the product is legible, not implied. Idles in a slow
+ * rotation with a gentle mouse-parallax tilt on top. */
+function ModuleStack({ quality }: { quality: Quality }) {
+  const { t } = useTranslation();
   const group = useRef<Group>(null);
   const pointer = useRef({ x: 0, y: 0 });
 
@@ -58,50 +62,71 @@ function GlassCluster({ quality }: { quality: Quality }) {
   useFrame((_, delta) => {
     const g = group.current;
     if (!g) return;
-    g.rotation.y += delta * 0.16;
-    g.rotation.x += (-pointer.current.y * 0.2 - g.rotation.x) * 0.045;
-    g.rotation.z += (pointer.current.x * 0.09 - g.rotation.z) * 0.045;
+    g.rotation.y += delta * 0.1;
+    g.rotation.x += (-pointer.current.y * 0.14 - g.rotation.x) * 0.045;
+    g.rotation.z += (pointer.current.x * 0.06 - g.rotation.z) * 0.045;
   });
 
   const smoothness = quality === 'high' ? 8 : 5;
-  const sphereSegments = quality === 'high' ? 48 : 24;
 
   const glass = (color: string) => (
     <meshPhysicalMaterial
       color={color}
-      roughness={0.2}
+      roughness={0.22}
       metalness={0}
-      transmission={0.15}
-      thickness={0.4}
+      transmission={0.1}
+      thickness={0.3}
       ior={1.3}
       clearcoat={1}
-      clearcoatRoughness={0.12}
-      envMapIntensity={1.8}
-      reflectivity={0.6}
+      clearcoatRoughness={0.14}
+      envMapIntensity={1.6}
+      reflectivity={0.55}
     />
   );
 
   return (
-    <group ref={group} scale={1.05} position={[0, 0, 0]}>
-      {/* Large shard - the dominant piece, angled obliquely */}
-      <RoundedBox args={[1.6, 1.0, 0.22]} radius={0.16} smoothness={smoothness} position={[-0.15, 0.1, 0]} rotation={[0.3, 0.6, -0.15]}>
-        {glass('#1d6b3c')}
-      </RoundedBox>
-      {/* Medium shard, overlapping at a crossing angle - not stacked parallel */}
-      <RoundedBox args={[1.0, 1.3, 0.2]} radius={0.15} smoothness={smoothness} position={[0.45, -0.25, 0.32]} rotation={[-0.45, -0.5, 0.4]}>
-        {glass('#2f7d4f')}
-      </RoundedBox>
-      {/* Small shard, tucked in close */}
-      <RoundedBox args={[0.55, 0.8, 0.16]} radius={0.12} smoothness={smoothness} position={[-0.55, 0.4, 0.45]} rotation={[0.6, 0.25, -0.5]}>
-        {glass('#4ade80')}
-      </RoundedBox>
-      {/* Smooth sphere nested into the cluster, overlapping the shards rather
-          than sitting isolated beneath them - avoids reading as a lens/wheel
-          on a "device". Real sphere geometry at every tier, never faceted. */}
-      <mesh position={[-0.25, -0.55, 0.6]}>
-        <sphereGeometry args={[0.34, sphereSegments, sphereSegments]} />
-        {glass('#4ade80')}
-      </mesh>
+    <group ref={group} scale={0.86} position={[0, 0, 0]} rotation={[0.06, 0.16, 0]}>
+      {MODULES.map((m, i) => {
+        const n = MODULES.length;
+        const t0 = i - (n - 1) / 2; // centred index, e.g. -2.5..2.5
+        const x = t0 * 0.72;
+        const y = t0 * 0.2;
+        const z = i * 0.08;
+        const rotZ = t0 * 0.04;
+        // Zigzag the label anchor so adjacent chips (which already sit close
+        // together along the diagonal stack) don't land in the same screen
+        // band - even indices label above their card, odd below.
+        const labelY = i % 2 === 0 ? 0.4 : -0.46;
+        const Icon = m.icon;
+        return (
+          <group key={m.key} position={[x, y, z]} rotation={[0, 0, rotZ]}>
+            <RoundedBox args={[0.98, 0.6, 0.05]} radius={0.07} smoothness={smoothness}>
+              {glass(m.color)}
+            </RoundedBox>
+            <Html
+              position={[0, labelY, 0.04]}
+              center
+              distanceFactor={quality === 'high' ? 7.4 : 8.4}
+              style={{ pointerEvents: 'none' }}
+            >
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full whitespace-nowrap"
+                style={{
+                  background: 'rgba(var(--c-surface-rgb),0.92)',
+                  border: '1px solid rgba(var(--c-ink-rgb),0.1)',
+                  boxShadow: '0 4px 14px rgba(var(--c-ink-rgb),0.12)',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: 'var(--c-ink)',
+                }}
+              >
+                <Icon size={12} style={{ color: m.color, flexShrink: 0 }} />
+                {t(m.key)}
+              </div>
+            </Html>
+          </group>
+        );
+      })}
     </group>
   );
 }
@@ -132,7 +157,7 @@ export default function HeroScene3D({ paused }: HeroScene3DProps) {
     <Canvas
       dpr={[1, quality === 'high' ? 2 : 1]}
       gl={{ antialias: true, alpha: true, powerPreference: quality === 'high' ? 'high-performance' : 'low-power' }}
-      camera={{ position: [0, 0, 5], fov: 36 }}
+      camera={{ position: [0, 0, 6.2], fov: 36 }}
       frameloop={paused ? 'never' : 'always'}
       style={{ pointerEvents: 'none' }}
     >
@@ -146,9 +171,9 @@ export default function HeroScene3D({ paused }: HeroScene3DProps) {
         <Lights />
         <Suspense fallback={null}>
           <Studio quality={quality} />
-          <GlassCluster quality={quality} />
+          <ModuleStack quality={quality} />
           {quality === 'high' && (
-            <ContactShadows position={[0, -1.35, 0]} opacity={0.35} scale={6} blur={2.4} far={2} color="#141310" />
+            <ContactShadows position={[0, -0.85, 0]} opacity={0.3} scale={5} blur={2.4} far={2} color="#141310" />
           )}
         </Suspense>
       </PerformanceMonitor>

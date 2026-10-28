@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { motion, useMotionValue, useSpring, useReducedMotion } from 'motion/react';
+import { motion, useMotionValue, useSpring, useReducedMotion, useScroll, useTransform } from 'motion/react';
 import { ArrowRight, Play, TrendingUp, Users, DollarSign, BookOpen, CheckCircle, Bell, Star, BarChart3 } from 'lucide-react';
 import { EASE } from '../lib/reveal';
 import HeroScene from './HeroScene';
@@ -134,28 +134,15 @@ function DashboardFrame() {
 
   return (
     <div
-      className="w-full rounded-2xl overflow-hidden border border-white/10 keep-dark"
-      style={{ background: 'rgba(14,12,10,0.98)', boxShadow: '0 50px 100px rgba(20,19,16,0.18)' }}
+      className="w-full rounded-[28px] overflow-hidden relative keep-dark"
+      style={{ background: 'rgba(14,12,10,0.98)', boxShadow: '0 60px 120px -20px rgba(20,19,16,0.35), 0 1px 0 rgba(255,255,255,0.06) inset' }}
     >
-      {/* Browser chrome */}
-      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/5"
-        style={{ background: 'rgba(255,255,255,0.02)' }}>
-        <div className="flex gap-1.5 shrink-0">
-          <div className="w-3 h-3 rounded-full" style={{ background: '#ff5f57' }} />
-          <div className="w-3 h-3 rounded-full" style={{ background: '#febc2e' }} />
-          <div className="w-3 h-3 rounded-full" style={{ background: '#28c840' }} />
-        </div>
-        <div className="flex-1 flex items-center gap-2 px-4 py-1.5 rounded-lg mx-2"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', maxWidth: 360 }}>
-          <div className="w-2.5 h-2.5 rounded-full border border-white/20 shrink-0" />
-          <span className="text-slate-500 text-xs font-mono">schooldom.app/dashboard</span>
-        </div>
-        <div className="flex items-center gap-2 ml-auto shrink-0">
-          <div className="w-2 h-2 rounded-full bg-emerald-500" />
-          <span className="text-[10px] text-slate-500">Live</span>
-          <div className="w-7 h-7 rounded-full ml-2 flex items-center justify-center text-xs font-bold"
-            style={{ background: '#14532d', color: '#f5f4f1' }}>A</div>
-        </div>
+      {/* Cinematic top glow instead of a browser-window costume */}
+      <div className="absolute top-0 inset-x-0 h-px pointer-events-none"
+        style={{ background: 'linear-gradient(90deg, transparent, rgba(74,222,128,0.5), transparent)' }} />
+      <div className="absolute top-4 right-5 flex items-center gap-2 z-10">
+        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="text-[10px] text-slate-400 font-mono tracking-wide">LIVE</span>
       </div>
 
       {/* Dashboard body */}
@@ -281,6 +268,35 @@ const fadeUp = {
   hidden: { opacity: 0, y: 16 },
   show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: EASE } },
 };
+
+/** Pins the dashboard panel in the viewport while the page scrolls past it,
+ * driving its scale/position/opacity off real scroll progress (useScroll +
+ * useTransform) rather than a one-time reveal - the mechanical difference
+ * between "cinematic, scroll-driven" and a fade-in. */
+function CinematicDashboard({ children }: { children: React.ReactNode }) {
+  const reduced = useReducedMotion();
+  const trackRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({ target: trackRef, offset: ['start end', 'end start'] });
+  const scale = useTransform(scrollYProgress, [0, 0.45, 0.75, 1], [0.84, 1, 1, 1.06]);
+  const y = useTransform(scrollYProgress, [0, 0.45, 0.75, 1], [90, 0, 0, -50]);
+  const opacity = useTransform(scrollYProgress, [0, 0.2, 0.8, 1], [0.25, 1, 1, 0.5]);
+  const rotateX = useTransform(scrollYProgress, [0, 0.45], [8, 0]);
+
+  if (reduced) return <div className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10 mt-20">{children}</div>;
+
+  return (
+    <div ref={trackRef} className="relative" style={{ height: '150vh' }}>
+      <div className="sticky top-24 flex items-center justify-center" style={{ height: '72vh' }}>
+        <motion.div
+          className="max-w-6xl w-full mx-auto px-4 sm:px-6 relative z-10"
+          style={{ scale, y, opacity, rotateX, transformPerspective: 1400 }}
+        >
+          {children}
+        </motion.div>
+      </div>
+    </div>
+  );
+}
 
 export default function Hero({ onDemo }: HeroProps) {
   const { t } = useTranslation();
@@ -413,14 +429,8 @@ export default function Hero({ onDemo }: HeroProps) {
         </div>
       </div>
 
-      {/* Full-width dashboard — separate from the split hero above, flows naturally */}
-      <motion.div
-        className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10 mt-20"
-        initial={reduced ? false : { opacity: 0, y: 32 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.9, ease: EASE, delay: 0.4 }}
-      >
-
+      {/* Full-width dashboard — pinned and scroll-transformed, not a static reveal */}
+      <CinematicDashboard>
         {/* Calm stat row above dashboard (static - no floating/bouncing) */}
         <div className="flex flex-wrap justify-center items-center gap-3 mb-4">
           {[
@@ -439,10 +449,10 @@ export default function Hero({ onDemo }: HeroProps) {
         </div>
 
         <DashboardFrame />
+      </CinematicDashboard>
 
-        {/* Gradient fade at bottom of dashboard (disappears into next section) */}
-        <div className="h-20 -mt-20 relative pointer-events-none hero-fade" />
-      </motion.div>
+      {/* Gradient fade at the seam into the next section */}
+      <div className="h-20 -mt-20 relative pointer-events-none hero-fade" />
     </section>
   );
 }

@@ -31,16 +31,13 @@ function CBTAppMockup() {
   const q = questions[question];
 
   return (
-    <div className="rounded-2xl overflow-hidden border border-white/8 shadow-2xl keep-dark"
-      style={{ background: 'rgba(16,14,11,0.96)' }}>
-      {/* Title bar */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5" style={{ background: 'rgba(74,222,128,0.05)' }}>
-        <div className="flex gap-1.5">
-          <div className="w-3 h-3 rounded-full bg-red-500/70" />
-          <div className="w-3 h-3 rounded-full bg-yellow-500/70" />
-          <div className="w-3 h-3 rounded-full bg-green-500/70" />
-        </div>
-        <span className="text-slate-400 text-xs mx-auto">Schooldom Desktop CBT — Chemistry SS3</span>
+    <div className="rounded-[28px] overflow-hidden relative keep-dark"
+      style={{ background: 'rgba(16,14,11,0.96)', boxShadow: '0 60px 120px -20px rgba(20,19,16,0.35), 0 1px 0 rgba(255,255,255,0.06) inset' }}>
+      {/* Status strip instead of a window-chrome title bar */}
+      <div className="absolute top-0 inset-x-0 h-px pointer-events-none"
+        style={{ background: 'linear-gradient(90deg, transparent, rgba(74,222,128,0.5), transparent)' }} />
+      <div className="flex items-center justify-between px-5 pt-5">
+        <span className="text-slate-400 text-xs font-medium">Chemistry SS3 — Term 2</span>
         <div className="flex items-center gap-1.5">
           <WifiOff className="h-3 w-3 text-orange-400" />
           <span className="text-orange-400 text-[9px]">Offline Mode</span>
