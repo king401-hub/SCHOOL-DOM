@@ -17,6 +17,7 @@ from django.shortcuts import redirect, render
 from django.templatetags.static import static
 from django.urls import NoReverseMatch, path, reverse
 from django.utils.html import format_html, format_html_join
+from django.utils.safestring import mark_safe
 from django.utils.text import capfirst
 
 from ops.models import OpsUser, Region
@@ -779,8 +780,8 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
     @admin.display(description="Status")
     def status_badge(self, obj):
         if obj.is_active:
-            return format_html('<span class="cp-pill cp-pill-ok">Active</span>')
-        return format_html('<span class="cp-pill cp-pill-danger">Suspended</span>')
+            return mark_safe('<span class="cp-pill cp-pill-ok">Active</span>')
+        return mark_safe('<span class="cp-pill cp-pill-danger">Suspended</span>')
 
     @admin.display(description="Quick actions")
     def row_actions(self, obj):
@@ -1501,8 +1502,8 @@ class ControlPanelDeviceAdmin(admin.ModelAdmin):
     @admin.display(description="Online")
     def online_badge(self, obj):
         if obj.is_online:
-            return format_html('<span class="cp-pill cp-pill-ok">Online</span>')
-        return format_html('<span class="cp-pill cp-pill-danger">Offline</span>')
+            return mark_safe('<span class="cp-pill cp-pill-ok">Online</span>')
+        return mark_safe('<span class="cp-pill cp-pill-danger">Offline</span>')
 
     @admin.display(description="Actions")
     def row_actions(self, obj):
