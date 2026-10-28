@@ -2,9 +2,18 @@
 from decimal import Decimal
 import uuid
 
+import django
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+
+# Django 5.1 renamed CheckConstraint's check= kwarg to condition=, removed
+# entirely in 6.0 - production and dev can run different Django versions,
+# so resolving this at import time keeps a single model definition working
+# on whichever is installed. See device_fleet/models.py and exams/models.py
+# for the same shim, added after this exact mismatch took production down
+# once already (that earlier fix never made it to this file).
+_CHECK_CONSTRAINT_KWARG = "condition" if django.VERSION >= (5, 1) else "check"
 
 
 class Wallet(models.Model):
@@ -469,11 +478,13 @@ class Transaction(models.Model):
         ordering = ["-created_at"]
         constraints = [
             models.CheckConstraint(
-                check=(
-                    models.Q(wallet__isnull=False, admin_wallet__isnull=True)
-                    | models.Q(wallet__isnull=True, admin_wallet__isnull=False)
-                    | models.Q(wallet__isnull=True, admin_wallet__isnull=True, tx_type="split_payment")
-                ),
+                **{
+                    _CHECK_CONSTRAINT_KWARG: (
+                        models.Q(wallet__isnull=False, admin_wallet__isnull=True)
+                        | models.Q(wallet__isnull=True, admin_wallet__isnull=False)
+                        | models.Q(wallet__isnull=True, admin_wallet__isnull=True, tx_type="split_payment")
+                    ),
+                },
                 name="transaction_requires_single_wallet",
             ),
         ]
