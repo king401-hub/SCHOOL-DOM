@@ -308,7 +308,17 @@ export default function Hero({ onDemo }: HeroProps) {
   const line2Delay = 0.15 + line1Words * 0.045 + 0.08;
 
   return (
-    <section className="relative pt-32 pb-0 overflow-hidden">
+    // No overflow-hidden here: GrainOverlay is already inset-0-bounded and
+    // the gradient wash below is anchored with only a modest blur spread -
+    // clipping isn't needed, and this section also contains
+    // CinematicDashboard's sticky scroll track further down. An
+    // overflow-hidden ancestor breaks position: sticky (it becomes confined
+    // to that ancestor's non-scrolling box instead of tracking page scroll),
+    // which was silently turning the dashboard's 150vh pinned-scroll effect
+    // into "scrolls past near the top of the track, then ~800px of empty
+    // track for the rest of the scroll" - the real cause of the big blank
+    // gap right after the hero.
+    <section className="relative pt-32 pb-0">
       <GrainOverlay />
       {/* Single, calm background wash - no particles, no aurora */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] pointer-events-none -z-0"

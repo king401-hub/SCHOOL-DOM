@@ -214,7 +214,7 @@ function ShowcaseSection({ section, idx }: { section: ShowcaseSectionData; idx: 
   const isEven = idx % 2 === 0;
 
   return (
-    <div className={`grid lg:grid-cols-2 gap-12 lg:gap-20 items-center ${idx > 0 ? 'mt-32' : ''}`}>
+    <div className={`grid lg:grid-cols-2 gap-12 lg:gap-20 items-center ${idx > 0 ? 'mt-20' : ''}`}>
       <Reveal x={isEven ? -28 : 28} y={0} className={isEven ? 'order-1' : 'order-1 lg:order-2'}>
         <span className="badge mb-4">{section.badge}</span>
         <h3 className="font-display font-semibold text-3xl lg:text-5xl text-[var(--c-ink)] mb-4 leading-[1.1] tracking-tight">{section.title}</h3>
@@ -281,13 +281,13 @@ export default function Features() {
   const featuresGrid = buildFeaturesGrid(t);
 
   return (
-    <section id="features" className="py-32 lg:py-44 px-4 relative">
+    <section id="features" className="py-28 px-4 relative">
       <div className="max-w-7xl mx-auto">
         {/* Showcase sections */}
         {showcaseSections.map((s, i) => <ShowcaseSection key={s.badge} section={s} idx={i} />)}
 
         {/* Section divider */}
-        <div className="section-divider my-28" />
+        <div className="section-divider my-16" />
 
         {/* Feature grid — asymmetric bento layout, not a uniform 3-up */}
         <div>
