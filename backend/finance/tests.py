@@ -1,4 +1,6 @@
 from decimal import Decimal
+import io
+import os
 import uuid
 from unittest.mock import Mock, patch
 
@@ -281,6 +283,69 @@ class ActivationCreditBonusTests(TestCase):
         self.assertEqual(tx.metadata["purchased_credits"], 100)
         self.assertEqual(tx.metadata["bonus_credits"], 10)
         self.assertEqual(tx.metadata["total_credits"], 110)
+
+    def test_charge_success_webhook_for_an_activation_credit_purchase_credits_it_without_a_stray_transaction(self):
+        """Paystack sends the same charge.success webhook for every purchase
+        type on the account. Before this fix, a reference the generic
+        webhook handler didn't recognize fell straight through to the
+        "unknown reference" branch and created a permanently
+        ALLOCATION_PENDING finance.Transaction for money that the
+        browser-triggered verify call had already (or was about to) credit
+        correctly - a stray row that looked exactly like a genuinely stuck
+        payment to anyone reconciling the ledger later."""
+        from finance.services import process_paystack_webhook
+
+        pool = get_or_create_activation_credit_pool(self.school)
+        tx = ActivationCreditTransaction.objects.create(
+            pool=pool,
+            tx_type=ActivationCreditTransaction.PURCHASE,
+            status=ActivationCreditTransaction.STATUS_PENDING,
+            credits=100,
+            price_per_credit=ACTIVATION_CREDIT_PRICE,
+            amount=ACTIVATION_CREDIT_PRICE * 100,
+            reference="CRPWEBHOOK100",
+            narration="Activation token purchase via Paystack",
+            provider="paystack",
+            created_by=self.admin,
+        )
+        webhook_payload = {
+            "event": "charge.success",
+            "data": {
+                "reference": tx.reference,
+                "channel": "card",
+                "status": "success",
+                "amount": str(tx.amount),
+                "metadata": {"purpose": "activation_tokens"},
+            },
+        }
+
+        result = process_paystack_webhook(webhook_payload)
+
+        self.assertEqual(result["status"], "success")
+        tx.refresh_from_db()
+        pool.refresh_from_db()
+        self.assertEqual(tx.status, ActivationCreditTransaction.STATUS_SUCCESS)
+        self.assertEqual(pool.balance, 110)
+        self.assertFalse(Transaction.objects.filter(paystack_ref=tx.reference).exists())
+
+    def test_charge_success_webhook_for_an_unknown_crp_reference_is_ignored_not_fatal(self):
+        from finance.services import process_paystack_webhook
+
+        webhook_payload = {
+            "event": "charge.success",
+            "data": {
+                "reference": "CRPNOTREAL00000",
+                "channel": "card",
+                "status": "success",
+                "amount": "1000",
+                "metadata": {"purpose": "activation_tokens"},
+            },
+        }
+
+        result = process_paystack_webhook(webhook_payload)
+
+        self.assertEqual(result["status"], "ignored")
+        self.assertFalse(Transaction.objects.filter(paystack_ref="CRPNOTREAL00000").exists())
 
 
 class SchoolGatePaymentVerificationTests(TestCase):
@@ -2477,6 +2542,249 @@ class CreditBalanceCarryForwardTests(TestCase):
         self.assertTrue(
             FinanceLedgerLog.objects.filter(action="overpayment_uncredited", reference="DVA-NOCHILD-1").exists()
         )
+
+
+class ManualWalletCreditApplicationTests(TestCase):
+    """The admin-facing counterpart to the automatic due-fee sweep: a Bill
+    invoice (auto_deduct=False) is deliberately never auto-settled from an
+    existing wallet credit, so without this, the only way to apply one was a
+    developer running a one-off script (see the Emmanuel Udeze incident,
+    2026-10-30 - a DVA transfer landed before his Bill existed, banked as
+    wallet credit, and then just sat there next to the outstanding invoice
+    with no code path able to reconcile the two)."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Credit Apply School", schema_name="credit_apply_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin = User.objects.create_user(
+            email="admin@creditapply.edu", password="AdminPass123", first_name="Admin", last_name="User",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student_user = User.objects.create_user(
+            email="student@creditapply.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="CAP001", admission_number="ADM-CAP-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        self.fee = SchoolFee.objects.create(
+            student=self.student, title="October Invoice", amount=Decimal("11500.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING, auto_deduct=False,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def _give_wallet_credit(self, amount):
+        wallet = ensure_student_wallet(self.student_user)
+        wallet.balance = Decimal(str(amount))
+        wallet.save(update_fields=["balance"])
+        return wallet
+
+    def test_full_credit_settles_a_bill_fee_that_auto_deduct_would_never_touch(self):
+        from finance.services import get_or_create_admin_wallet
+
+        wallet = self._give_wallet_credit("11500.00")
+        admin_wallet = get_or_create_admin_wallet(self.school)
+
+        response = self.client.post(f"/api/finance/admin/fees/{self.fee.id}/apply-wallet-credit/")
+
+        self.assertEqual(response.status_code, 200)
+        self.fee.refresh_from_db()
+        wallet.refresh_from_db()
+        admin_wallet.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+        self.assertEqual(wallet.balance, Decimal("0.00"))
+        self.assertEqual(admin_wallet.balance, Decimal("11500.00"))
+        self.assertTrue(
+            Transaction.objects.filter(
+                wallet=wallet, tx_type=Transaction.FEE_DEBIT, metadata__fee_id=str(self.fee.id),
+            ).exists()
+        )
+
+    def test_partial_credit_leaves_the_fee_partially_paid(self):
+        wallet = self._give_wallet_credit("4000.00")
+
+        response = self.client.post(f"/api/finance/admin/fees/{self.fee.id}/apply-wallet-credit/")
+
+        self.assertEqual(response.status_code, 200)
+        self.fee.refresh_from_db()
+        wallet.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PARTIAL)
+        self.assertEqual(wallet.balance, Decimal("0.00"))
+        self.assertEqual(fee_outstanding_amount(self.fee), Decimal("7500.00"))
+
+    def test_no_wallet_credit_is_a_clean_400_not_a_crash(self):
+        response = self.client.post(f"/api/finance/admin/fees/{self.fee.id}/apply-wallet-credit/")
+
+        self.assertEqual(response.status_code, 400)
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PENDING)
+
+    def test_already_fully_paid_fee_is_rejected(self):
+        self._give_wallet_credit("11500.00")
+        self.fee.status = SchoolFee.STATUS_PAID
+        self.fee.save(update_fields=["status"])
+
+        response = self.client.post(f"/api/finance/admin/fees/{self.fee.id}/apply-wallet-credit/")
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_finance_role_is_forbidden(self):
+        self._give_wallet_credit("11500.00")
+        teacher = User.objects.create_user(
+            email="teacher@creditapply.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        client = APIClient()
+        client.force_authenticate(teacher)
+
+        response = client.post(f"/api/finance/admin/fees/{self.fee.id}/apply-wallet-credit/")
+
+        self.assertEqual(response.status_code, 403)
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PENDING)
+
+    def test_cannot_apply_credit_to_another_schools_fee(self):
+        other_school = SchoolTenant.objects.create(name="Other School CAP", schema_name="other_school_cap", is_active=True)
+        other_admin = User.objects.create_user(
+            email="admin@othercap.edu", password="AdminPass123", role="school_admin",
+            tenant=other_school, is_active=True, is_verified=True,
+        )
+        self._give_wallet_credit("11500.00")
+        client = APIClient()
+        client.force_authenticate(other_admin)
+
+        response = client.post(f"/api/finance/admin/fees/{self.fee.id}/apply-wallet-credit/")
+
+        self.assertEqual(response.status_code, 404)
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PENDING)
+
+
+class DailyFinanceReconciliationCommandTests(TestCase):
+    """The daily cron safeguard added after the Emmanuel Udeze incident:
+    catch a stuck DVA payment or an unswept wallet credit automatically,
+    before a parent has to notice and complain."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Daily Recon School", schema_name="daily_recon_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.student_user = User.objects.create_user(
+            email="student@dailyrecon.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="DRC001", admission_number="ADM-DRC-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=school_class,
+        )
+
+    def _empty_paystack_page(self):
+        response = Mock()
+        response.json.return_value = {"status": True, "data": [], "meta": {"pageCount": 1}}
+        return response
+
+    def test_nothing_found_prints_clean_message_and_sends_no_email(self):
+        from django.core.management import call_command
+
+        with patch("requests.get", return_value=self._empty_paystack_page()), \
+             patch.dict(os.environ, {"FINANCE_ALERT_EMAIL": "ops@example.com"}):
+            out = io.StringIO()
+            call_command("daily_finance_reconciliation", stdout=out)
+
+        self.assertIn("nothing found", out.getvalue().lower())
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_unswept_wallet_credit_is_found_and_emailed(self):
+        from django.core.management import call_command
+
+        SchoolFee.objects.create(
+            student=self.student, title="October Invoice", amount=Decimal("11500.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING, auto_deduct=False,
+        )
+        wallet = ensure_student_wallet(self.student_user)
+        wallet.balance = Decimal("11500.00")
+        wallet.save(update_fields=["balance"])
+
+        with patch("requests.get", return_value=self._empty_paystack_page()), \
+             patch.dict(os.environ, {"FINANCE_ALERT_EMAIL": "ops@example.com"}):
+            out = io.StringIO()
+            call_command("daily_finance_reconciliation", stdout=out)
+
+        self.assertIn("Dent Stu", out.getvalue())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("ops@example.com", mail.outbox[0].to)
+        self.assertIn("Dent Stu", mail.outbox[0].body)
+
+    def test_no_alert_email_configured_still_prints_findings(self):
+        from django.core.management import call_command
+
+        SchoolFee.objects.create(
+            student=self.student, title="October Invoice", amount=Decimal("11500.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+        wallet = ensure_student_wallet(self.student_user)
+        wallet.balance = Decimal("5000.00")
+        wallet.save(update_fields=["balance"])
+
+        with patch("requests.get", return_value=self._empty_paystack_page()), \
+             patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("FINANCE_ALERT_EMAIL", None)
+            out = io.StringIO()
+            call_command("daily_finance_reconciliation", stdout=out)
+
+        self.assertIn("Dent Stu", out.getvalue())
+        self.assertIn("FINANCE_ALERT_EMAIL is not set", out.getvalue())
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_a_fully_paid_fee_does_not_count_as_unswept_credit(self):
+        from django.core.management import call_command
+
+        SchoolFee.objects.create(
+            student=self.student, title="Paid Invoice", amount=Decimal("5000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PAID,
+        )
+        wallet = ensure_student_wallet(self.student_user)
+        wallet.balance = Decimal("2000.00")
+        wallet.save(update_fields=["balance"])
+
+        with patch("requests.get", return_value=self._empty_paystack_page()):
+            out = io.StringIO()
+            call_command("daily_finance_reconciliation", stdout=out)
+
+        self.assertIn("nothing found", out.getvalue().lower())
+
+    def test_a_stuck_dva_payment_is_surfaced(self):
+        from django.core.management import call_command
+
+        def fake_get(url, headers, params, timeout):
+            response = Mock()
+            response.json.return_value = {
+                "status": True,
+                "data": [{
+                    "channel": "dedicated_nuban",
+                    "reference": "DAILYRECON-STUCK-1",
+                    "amount": 500000,
+                    "customer": {"email": "parent@dailyrecon.edu"},
+                }],
+                "meta": {"pageCount": 1},
+            }
+            return response
+
+        with patch("requests.get", side_effect=fake_get):
+            out = io.StringIO()
+            call_command("daily_finance_reconciliation", stdout=out)
+
+        self.assertIn("DAILYRECON-STUCK-1", out.getvalue())
+        self.assertIn("Stuck DVA payments", out.getvalue())
 
 
 class CashPaymentTests(TestCase):

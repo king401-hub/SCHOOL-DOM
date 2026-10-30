@@ -1892,6 +1892,7 @@ function AdminFinanceScreen({
   onBillRecipientsLoad,
   onBillSend,
   onStudentFeeSave,
+  onApplyWalletCredit,
   onPaymentAccountSave,
   onPaystackSubaccountSetup,
   onRequestSubaccountOtp,
@@ -2669,6 +2670,22 @@ function AdminFinanceScreen({
       resetStudentFeeForm();
     } catch (err) {
       setFormError(err.message || "Unable to update student fee.");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const handleApplyWalletCredit = async () => {
+    if (!editingStudentFeeId || !onApplyWalletCredit) return;
+    setFeedback("");
+    setFormError("");
+    setBusyAction("applyWalletCredit");
+    try {
+      const result = await onApplyWalletCredit(editingStudentFeeId);
+      setFeedback(result?.message || "Wallet credit applied.");
+      resetStudentFeeForm();
+    } catch (err) {
+      setFormError(err.message || "Could not apply wallet credit to this fee.");
     } finally {
       setBusyAction("");
     }
@@ -4250,6 +4267,17 @@ function AdminFinanceScreen({
                     <button type="submit" disabled={!onStudentFeeSave || anyBusy}>
                       {busyAction === "studentFee" ? <><Spinner /> Updating...</> : "Update record"}
                     </button>
+                    {onApplyWalletCredit && studentFeeForm.status !== "paid" ? (
+                      <button
+                        type="button"
+                        className="table-action"
+                        onClick={handleApplyWalletCredit}
+                        disabled={anyBusy}
+                        title="Settle as much of this fee as the student's own wallet credit (e.g. a prior overpayment) currently covers."
+                      >
+                        {busyAction === "applyWalletCredit" ? <><Spinner size={12} /> Applying...</> : "Apply wallet credit"}
+                      </button>
+                    ) : null}
                     <button type="button" className="btn-secondary" onClick={resetStudentFeeForm}>Cancel</button>
                   </div>
                 </form>

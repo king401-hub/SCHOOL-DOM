@@ -1843,6 +1843,27 @@ def process_paystack_webhook(data: dict) -> dict:
             logger.warning("SMS bundle webhook %s failed: %s", reference, exc)
             return {'status': 'ignored', 'type': 'sms_bundle', 'reference': reference}
 
+    # Activation token (credit) purchase — credit the school's pool even if
+    # the browser popup callback never fired, same fallback pattern as SMS
+    # bundles and Kids Monitor above. Catching it here matters for a second
+    # reason too: every charge.success webhook whose reference matches
+    # nothing above falls through to the generic "unknown reference ->
+    # create a Transaction" branch further down, which has no idea this
+    # reference belongs to ActivationCreditTransaction instead. Without this
+    # check, every activation-credit webhook landed there and left a stray,
+    # permanently ALLOCATION_PENDING Transaction behind for money that the
+    # browser-triggered verify call had already credited correctly.
+    if metadata.get('purpose') == 'activation_tokens' or str(reference or '').startswith('CRP'):
+        try:
+            verify_activation_credit_purchase(reference, verification=transaction_data)
+            return {'status': 'success', 'type': 'activation_tokens', 'reference': reference}
+        except ActivationCreditTransaction.DoesNotExist:
+            logger.warning("Activation token webhook %s: no matching purchase record", reference)
+            return {'status': 'ignored', 'type': 'activation_tokens', 'reference': reference}
+        except Exception as exc:
+            logger.warning("Activation token webhook %s failed: %s", reference, exc)
+            return {'status': 'ignored', 'type': 'activation_tokens', 'reference': reference}
+
     # Dedicated virtual account payment (DVA / dedicated_nuban)
     if channel == 'dedicated_nuban':
         # Paystack returns these keys with a null value (not omitted) when a charge
@@ -6400,6 +6421,67 @@ def process_due_fees(student_profile, actor=None, due_only=True):
         admin_locked.save(update_fields=["balance", "updated_at"])
 
     return {"deducted": deducted, "overdue": overdue}
+
+
+def apply_wallet_credit_to_fee(fee: SchoolFee, actor=None):
+    """Manually settle as much of `fee` as the student's wallet credit covers
+    right now - the admin-triggered counterpart to process_due_fees, for
+    fees that are intentionally excluded from the automatic sweep
+    (auto_deduct=False, e.g. every Bill-based invoice - see
+    sync_bill_invoices) where otherwise no action exists to apply an
+    existing credit short of a developer running a one-off script."""
+    wallet = Wallet.objects.filter(user=fee.student.user).first()
+    if not wallet or wallet.balance <= 0:
+        raise ValueError("This student has no wallet credit available.")
+
+    with transaction.atomic():
+        wallet_locked = Wallet.objects.select_for_update().get(pk=wallet.pk)
+        fee_locked = SchoolFee.objects.select_for_update().get(pk=fee.pk)
+        outstanding = fee_outstanding_amount(fee_locked)
+        if outstanding <= 0:
+            raise ValueError("This fee is already fully paid.")
+        if wallet_locked.balance <= 0:
+            raise ValueError("This student has no wallet credit available.")
+
+        admin_wallet = get_or_create_admin_wallet(fee_locked.student.user.tenant)
+        admin_locked = AdminWallet.objects.select_for_update().get(pk=admin_wallet.pk)
+
+        amount = min(wallet_locked.balance, outstanding)
+        wallet_locked.balance -= amount
+        admin_locked.balance += amount
+        fully_paid = amount >= outstanding
+        fee_locked.status = SchoolFee.STATUS_PAID if fully_paid else SchoolFee.STATUS_PARTIAL
+        fee_locked.last_attempted_at = timezone.now()
+        if fully_paid:
+            fee_locked.payment_date = timezone.now()
+        fee_locked.save(update_fields=["status", "last_attempted_at", "payment_date", "updated_at"])
+        wallet_locked.save(update_fields=["balance", "updated_at"])
+        admin_locked.save(update_fields=["balance", "updated_at"])
+
+        Transaction.objects.create(
+            wallet=wallet_locked,
+            amount=amount,
+            currency=wallet_locked.currency,
+            tx_type=Transaction.FEE_DEBIT,
+            status=Transaction.STATUS_SUCCESS,
+            reference=generate_reference("FEE"),
+            narration=f"Wallet credit applied to {fee_locked.title}",
+            metadata={"fee_id": str(fee_locked.id), "source": "manual_credit_apply"},
+            created_by=actor,
+        )
+        Transaction.objects.create(
+            admin_wallet=admin_locked,
+            amount=amount,
+            currency=admin_locked.currency,
+            tx_type=Transaction.FEE_CREDIT,
+            status=Transaction.STATUS_SUCCESS,
+            reference=generate_reference("ADM"),
+            narration=f"Fee received from {fee_locked.student.user.email} (wallet credit)",
+            metadata={"fee_id": str(fee_locked.id), "source": "manual_credit_apply"},
+            created_by=actor,
+        )
+
+    return {"amount_applied": amount, "fee_status": fee_locked.status, "wallet_balance": wallet_locked.balance}
 
 
 def initiate_admin_withdrawal(admin_wallet: AdminWallet, amount: Decimal, reference: str, bank_payload: dict, actor=None):

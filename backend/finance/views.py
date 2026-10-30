@@ -91,6 +91,7 @@ from finance.services import (
     initialize_activation_credit_purchase,
     initialize_payment_transaction,
     process_due_fees,
+    apply_wallet_credit_to_fee,
     reconcile_fee_status,
     send_bill_invoices,
     sync_bill_invoices,
@@ -2221,6 +2222,46 @@ def admin_school_fee_detail(request, fee_id):
         )
 
     return Response({"success": True, "fee": SchoolFeeSerializer(fee).data, "finance": _admin_finance_snapshot(user)})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_apply_wallet_credit_to_fee(request, fee_id):
+    """Manually settle a fee from the student's own wallet credit - the only
+    way to apply an existing credit to a Bill-based invoice, which is
+    deliberately excluded from the automatic due-fee sweep (auto_deduct=
+    False) so an invoice never gets silently settled behind the scenes."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    fee = get_object_or_404(
+        SchoolFee.objects.select_related("student", "student__user").filter(student__user__tenant=user.tenant),
+        id=fee_id,
+    )
+
+    try:
+        result = apply_wallet_credit_to_fee(fee, actor=user)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    fee.refresh_from_db()
+    record_finance_activity(
+        user.tenant,
+        user,
+        "wallet_credit_applied_to_fee",
+        f"Applied {_format_naira(result['amount_applied'])} wallet credit to '{fee.title}' for "
+        f"{fee.student.user.get_full_name() or fee.student.user.email}.",
+        amount=result["amount_applied"],
+        currency=fee.currency,
+        reference=str(fee.id),
+    )
+    return Response({
+        "success": True,
+        "message": f"Applied {_format_naira(result['amount_applied'])} from wallet credit.",
+        "fee": SchoolFeeSerializer(fee).data,
+        "finance": _admin_finance_snapshot(user),
+    })
 
 
 @api_view(["POST"])

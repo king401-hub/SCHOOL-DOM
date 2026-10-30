@@ -100,6 +100,7 @@ urlpatterns = [
     path("admin/class-fees/", views.admin_class_fee_create, name="admin_class_fee_create"),
     path("admin/class-fees/<uuid:fee_id>/", views.admin_class_fee_detail, name="admin_class_fee_detail"),
     path("admin/fees/<uuid:fee_id>/", views.admin_school_fee_detail, name="admin_school_fee_detail"),
+    path("admin/fees/<uuid:fee_id>/apply-wallet-credit/", views.admin_apply_wallet_credit_to_fee, name="admin_apply_wallet_credit_to_fee"),
     path("admin/bills/", views.admin_bills, name="admin_bills"),
     path("admin/bills/<uuid:bill_id>/", views.admin_bill_detail, name="admin_bill_detail"),
     path("admin/bills/<uuid:bill_id>/recipients/", views.admin_bill_recipients, name="admin_bill_recipients"),

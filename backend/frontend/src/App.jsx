@@ -7969,6 +7969,23 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleAdminApplyWalletCreditToFee = useCallback(
+    async (feeId) => {
+      const result = await requestJson(session, "POST", `/api/finance/admin/fees/${feeId}/apply-wallet-credit/`);
+      addAdminNotification({
+        category: "Finance",
+        module: "Student Fees",
+        action: result?.message || "Applied a student's wallet credit to their fee.",
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleAdminExpenseCreate = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/finance/admin/expenses/", payload);
@@ -9402,6 +9419,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onBillRecipientsLoad={handleAdminBillRecipientsLoad}
         onBillSend={handleAdminBillSend}
         onStudentFeeSave={handleAdminStudentFeeSave}
+        onApplyWalletCredit={handleAdminApplyWalletCreditToFee}
         onPurchaseCredits={handleActivationCreditPurchase}
         onVerifyCredits={handleActivationCreditVerify}
         onAssignCredits={handleActivationCreditAssign}
