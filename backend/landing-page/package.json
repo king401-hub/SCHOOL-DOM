@@ -12,8 +12,6 @@
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
-    "@react-three/drei": "^10.7.9",
-    "@react-three/fiber": "^9.8.2",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.2.0",
     "dotenv": "^17.2.3",
@@ -27,7 +25,6 @@
     "react-dom": "^19.0.1",
     "react-i18next": "^17.0.16",
     "react-router-dom": "^7.18.1",
-    "three": "^0.186.1",
     "vite": "^6.2.3"
   },
   "devDependencies": {

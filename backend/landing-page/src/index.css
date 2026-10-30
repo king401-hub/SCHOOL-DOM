@@ -417,6 +417,30 @@ select option { color: var(--c-ink); background: var(--c-surface); }
   animation: sd-spin 0.65s linear infinite;
 }
 
+/* --- Hero feature orbit (SVG/CSS orbital wheel - replaces the former
+   Three.js scene, see FeatureOrbit.tsx/HeroScene.tsx). Two animations
+   sharing one duration (fo-orbit-spin / fo-orbit-counter) are how a module's
+   icon+label stay upright while the ring carrying it keeps turning, with no
+   per-frame JS needed. --- */
+@keyframes fo-spin { to { transform: rotate(360deg); } }
+@keyframes fo-spin-reverse { to { transform: rotate(-360deg); } }
+@keyframes fo-hub-pulse {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50% { transform: scale(1.055); filter: brightness(1.12); }
+}
+@keyframes fo-dash-flow { to { stroke-dashoffset: -32; } }
+@keyframes fo-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5%); }
+}
+.fo-orbit-spin { animation: fo-spin 46s linear infinite; }
+.fo-orbit-counter { animation: fo-spin-reverse 46s linear infinite; }
+.fo-ring-reverse { animation: fo-spin-reverse 34s linear infinite; }
+.fo-dots-spin { animation: fo-spin 15s linear infinite; }
+.fo-hub-pulse { animation: fo-hub-pulse 3.2s ease-in-out infinite; }
+.fo-spoke-flow { animation: fo-dash-flow 1.6s linear infinite; }
+.fo-module-float { animation: fo-float 4.5s ease-in-out infinite; }
+
 .signup-shell { background: var(--c-paper); }
 
 /* --- Theme toggle button (Navbar) --- */
