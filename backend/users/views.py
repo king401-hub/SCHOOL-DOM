@@ -527,9 +527,17 @@ def require_phone_otp_response(user, request, *, fail_open, otp_purpose):
             logger.warning("Phone OTP send failed for %s.", user.email, exc_info=True)
             if fail_open:
                 return None
+            # email_verified=True tells the frontend the email step genuinely
+            # succeeded (clear_admin_otp already ran before this is reached -
+            # see admin_verify_otp) and only the SMS send failed, so it can
+            # route to the phone-code screen's own retry/resend action
+            # instead of leaving the admin stuck on the email-OTP screen,
+            # re-entering a code the server has already discarded.
             return Response({
                 'success': False,
-                'message': 'Could not send the phone verification code. Please try again shortly.',
+                'email_verified': True,
+                'otp_purpose': otp_purpose,
+                'message': 'Your email is verified, but we could not text a code to your phone yet. Please try again shortly.',
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     return Response({

@@ -735,6 +735,24 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
         challenge: otpChallenge,
       });
       if (!data.success) {
+        if (data.email_verified) {
+          // The email code was genuinely correct and is already consumed
+          // server-side (clear_admin_otp ran before the phone send was
+          // attempted) - only the SMS failed to go out (e.g. a low
+          // provider balance). Re-showing the email-OTP form here would
+          // strand the admin re-entering a code the server has already
+          // discarded, so move to the phone-code screen's own "Resend
+          // code" action instead, with no challenge yet to pass along.
+          setOtpCode("");
+          setPhoneOtpChallenge("");
+          setPhoneOtpExpiresIn(0);
+          setPhoneOtpDebugCode("");
+          setPhoneOtpCode("");
+          setMode("phone-otp");
+          setSuccessMessage("");
+          setError(data.message || "Your email is verified, but we could not text a code to your phone yet. Tap \"Resend code\" to try again.");
+          return;
+        }
         throw new Error(parseErrorMessage(data, "OTP verification failed."));
       }
       setOtpCode("");
@@ -1327,7 +1345,9 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                 ) : mode === "phone-otp" ? (
                   <form className="signup-form otp-form" onSubmit={handleVerifyPhoneOtp} noValidate>
                     <p className="success-text">
-                      We texted a 6-digit code to the phone number on file for <strong>{otpEmail}</strong>.
+                      {phoneOtpChallenge
+                        ? <>We texted a 6-digit code to the phone number on file for <strong>{otpEmail}</strong>.</>
+                        : <>Your email is verified. Tap "Resend code" below to text a 6-digit code to the phone number on file for <strong>{otpEmail}</strong>.</>}
                     </p>
                     <label htmlFor="admin-phone-otp">Verification code</label>
                     <div className="input-wrap">
