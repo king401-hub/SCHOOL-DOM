@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { usePageMeta } from '../lib/usePageMeta';
 
 const MAIL = 'enquiry@schooldom.academy';
 const NDPC = 'ndpc.gov.ng';
@@ -42,6 +43,7 @@ interface PrivacySection {
 
 export default function PrivacyPage() {
   const { t } = useTranslation();
+  usePageMeta(`${t('privacy.title')} ${t('privacy.titleHighlight')}`, t('privacy.intro'), '/privacy');
   const sections = t('privacy.sections', { returnObjects: true }) as PrivacySection[];
 
   return (

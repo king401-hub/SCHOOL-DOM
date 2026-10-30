@@ -7,6 +7,7 @@ import {
   Eye, EyeOff, Copy, Check,
 } from 'lucide-react';
 import Spinner from '../components/Spinner';
+import { usePageMeta } from '../lib/usePageMeta';
 
 const stepMotion = {
   initial: { opacity: 0, x: 28 },
@@ -86,6 +87,7 @@ export default function SignUpPage() {
     { value: 'school_superadmin', title: t('signup.roles.proprietor.title'), desc: t('signup.roles.proprietor.desc'), icon: Users },
   ];
   const STEP_LABELS = t('signup.stepLabels', { returnObjects: true }) as string[];
+  usePageMeta(t('signup.step1.title'), t('signup.step1.subtitle'), '/signup');
   const errorFallbacks = { network: t('signup.errors.connection'), requestFailed: t('signup.errors.requestFailed') };
   const [searchParams] = useSearchParams();
   const initialTier = searchParams.get('tier') === 'non_k12' ? 'non_k12' : 'k12';
@@ -354,33 +356,33 @@ export default function SignUpPage() {
                 <div className="space-y-4">
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step1.fullName')}</label>
-                      <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}
+                      <label htmlFor="signup-fullname" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step1.fullName')}</label>
+                      <input id="signup-fullname" type="text" value={fullName} onChange={e => setFullName(e.target.value)}
                         placeholder={t('signup.step1.fullNamePlaceholder')} autoComplete="name" className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step1.middleName')}</label>
-                      <input type="text" value={middleName} onChange={e => setMiddleName(e.target.value)}
+                      <label htmlFor="signup-middlename" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step1.middleName')}</label>
+                      <input id="signup-middlename" type="text" value={middleName} onChange={e => setMiddleName(e.target.value)}
                         placeholder={t('signup.step1.middleNamePlaceholder')} autoComplete="additional-name" className={inputCls} />
                     </div>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step1.email')}</label>
-                      <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                      <label htmlFor="signup-email" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step1.email')}</label>
+                      <input id="signup-email" type="email" value={email} onChange={e => setEmail(e.target.value)}
                         placeholder={t('signup.step1.emailPlaceholder')} autoComplete="email" className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step1.phone')}</label>
-                      <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+                      <label htmlFor="signup-phone" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step1.phone')}</label>
+                      <input id="signup-phone" type="tel" value={phone} onChange={e => setPhone(e.target.value)}
                         placeholder={t('signup.step1.phonePlaceholder')} autoComplete="tel" className={inputCls} />
                     </div>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step1.password')}</label>
+                      <label htmlFor="signup-password" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step1.password')}</label>
                       <div className="relative">
-                        <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                        <input id="signup-password" type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
                           placeholder={t('signup.step1.passwordPlaceholder')} autoComplete="new-password" className={inputCls} />
                         <button type="button" onClick={() => setShowPassword(s => !s)}
                           className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--c-subtle)] hover:text-[var(--c-ink)] cursor-pointer"
@@ -390,8 +392,8 @@ export default function SignUpPage() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step1.confirmPassword')}</label>
-                      <input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                      <label htmlFor="signup-confirm-password" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step1.confirmPassword')}</label>
+                      <input id="signup-confirm-password" type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
                         placeholder={t('signup.step1.confirmPasswordPlaceholder')} autoComplete="new-password" className={inputCls} />
                     </div>
                   </div>
@@ -423,28 +425,28 @@ export default function SignUpPage() {
 
               {isProprietor ? (
                 <div>
-                  <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step2.groupName')}</label>
-                  <input type="text" value={schoolGroupName} onChange={e => setSchoolGroupName(e.target.value)}
+                  <label htmlFor="signup-group-name" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step2.groupName')}</label>
+                  <input id="signup-group-name" type="text" value={schoolGroupName} onChange={e => setSchoolGroupName(e.target.value)}
                     placeholder={t('signup.step2.groupNamePlaceholder')} className={inputCls} />
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step2.schoolName')}</label>
-                    <input type="text" value={schoolName} onChange={e => setSchoolName(e.target.value)}
+                    <label htmlFor="signup-school-name" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step2.schoolName')}</label>
+                    <input id="signup-school-name" type="text" value={schoolName} onChange={e => setSchoolName(e.target.value)}
                       placeholder={t('signup.step2.schoolNamePlaceholder')} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step2.tier')}</label>
-                    <select value={schoolType} onChange={e => setSchoolType(e.target.value as SchoolType)} className={inputCls}>
+                    <label htmlFor="signup-tier" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step2.tier')}</label>
+                    <select id="signup-tier" value={schoolType} onChange={e => setSchoolType(e.target.value as SchoolType)} className={inputCls}>
                       <option value="k12">{t('signup.step2.tierK12')}</option>
                       <option value="non_k12">{t('signup.step2.tierNonK12')}</option>
                     </select>
                     <p className="text-[var(--c-subtle)] text-xs mt-1.5">{t('signup.step2.tierHelp')}</p>
                   </div>
                   <div>
-                    <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step2.address')}</label>
-                    <input type="text" value={address} onChange={e => setAddress(e.target.value)}
+                    <label htmlFor="signup-address" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step2.address')}</label>
+                    <input id="signup-address" type="text" value={address} onChange={e => setAddress(e.target.value)}
                       placeholder={t('signup.step2.addressPlaceholder')} className={inputCls} />
                   </div>
                 </div>
@@ -494,8 +496,8 @@ export default function SignUpPage() {
               )}
 
               <div>
-                <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step3.verificationCode')}</label>
-                <input type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={otpCode}
+                <label htmlFor="signup-otp" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('signup.step3.verificationCode')}</label>
+                <input id="signup-otp" type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={otpCode}
                   onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="000000" autoComplete="one-time-code"
                   className={`${inputCls} text-center tracking-[0.5em] font-mono text-lg`} />

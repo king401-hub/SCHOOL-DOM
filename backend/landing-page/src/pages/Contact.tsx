@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Mail, Phone, MapPin, Send, CheckCircle, ArrowLeft, Clock, MessageSquare } from 'lucide-react';
 import Spinner from '../components/Spinner';
+import { usePageMeta } from '../lib/usePageMeta';
 
 export default function ContactPage() {
   const { t } = useTranslation();
+  usePageMeta(`${t('contact.title')} ${t('contact.titleHighlight')}`, t('contact.subtitle'), '/contact');
   const [form, setForm] = useState({ name: '', email: '', phone: '', school: '', message: '' });
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -121,35 +123,35 @@ export default function ContactPage() {
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('contact.form.fullName')}</label>
-                      <input required type="text" value={form.name} onChange={set('name')}
+                      <label htmlFor="contact-name" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('contact.form.fullName')}</label>
+                      <input id="contact-name" required type="text" value={form.name} onChange={set('name')}
                         placeholder={t('contact.form.fullNamePlaceholder')}
                         className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('contact.form.email')}</label>
-                      <input required type="email" value={form.email} onChange={set('email')}
+                      <label htmlFor="contact-email" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('contact.form.email')}</label>
+                      <input id="contact-email" required type="email" value={form.email} onChange={set('email')}
                         placeholder={t('contact.form.emailPlaceholder')}
                         className={inputCls} />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('contact.form.phone')}</label>
-                      <input type="tel" value={form.phone} onChange={set('phone')}
+                      <label htmlFor="contact-phone" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('contact.form.phone')}</label>
+                      <input id="contact-phone" type="tel" value={form.phone} onChange={set('phone')}
                         placeholder={t('contact.form.phonePlaceholder')}
                         className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('contact.form.school')}</label>
-                      <input type="text" value={form.school} onChange={set('school')}
+                      <label htmlFor="contact-school" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('contact.form.school')}</label>
+                      <input id="contact-school" type="text" value={form.school} onChange={set('school')}
                         placeholder={t('contact.form.schoolPlaceholder')}
                         className={inputCls} />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('contact.form.message')}</label>
-                    <textarea required value={form.message} onChange={set('message')}
+                    <label htmlFor="contact-message" className="block text-[var(--c-subtle)] text-xs mb-1.5">{t('contact.form.message')}</label>
+                    <textarea id="contact-message" required value={form.message} onChange={set('message')}
                       placeholder={t('contact.form.messagePlaceholder')}
                       rows={5}
                       className={`${inputCls} resize-none`} />

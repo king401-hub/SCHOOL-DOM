@@ -13,6 +13,7 @@ import Demo from './components/Demo';
 import Testimonials from './components/Testimonials';
 import Pricing from './components/Pricing';
 import Footer from './components/Footer';
+import { usePageMeta } from './lib/usePageMeta';
 
 const PAGE_EASE = [0.16, 1, 0.3, 1] as const;
 const pageMotion = {
@@ -34,6 +35,18 @@ const ADMIN_APP_URL =
   (import.meta as any).env?.VITE_ADMIN_APP_URL ||
   (import.meta.env.DEV ? 'http://localhost:5173/app/' : '/app/');
 
+/** Visually hidden until focused - lets keyboard/screen-reader users jump
+ * straight past the nav to #main-content instead of tabbing through every
+ * nav link and dropdown on every page load. */
+function SkipToContent() {
+  const { t } = useTranslation();
+  return (
+    <a href="#main-content" className="skip-to-content">
+      {t('common.skipToContent')}
+    </a>
+  );
+}
+
 function WhatsAppButton() {
   const { t } = useTranslation();
   return (
@@ -53,7 +66,9 @@ function WhatsAppButton() {
 }
 
 function HomePage() {
+  const { t } = useTranslation();
   const handleDemo = () => { smoothScrollTo('#demo'); };
+  usePageMeta(`${t('hero.titleLine1')} ${t('hero.titleLine2')}`, t('hero.subtitle'), '/');
 
   return (
     <>
@@ -77,7 +92,7 @@ function AnimatedMain() {
   const location = useLocation();
   return (
     <AnimatePresence mode="wait">
-      <motion.main key={location.pathname} {...pageMotion}>
+      <motion.main id="main-content" key={location.pathname} {...pageMotion}>
         <Suspense fallback={null}>
           <Routes location={location}>
             <Route path="/" element={<HomePage />} />
@@ -132,6 +147,7 @@ export default function App() {
         animate={exiting ? { opacity: 0, y: -16, filter: 'blur(6px)' } : { opacity: 1, y: 0, filter: 'blur(0px)' }}
         transition={{ duration: 0.4, ease: [0.4, 0, 1, 1] }}
       >
+        <SkipToContent />
         <AmbientField />
         <Navbar onSignIn={handleSignIn} />
 

@@ -1,7 +1,8 @@
 {
   "common": {
     "backToHome": "Back to home",
-    "learnMore": "Learn more"
+    "learnMore": "Learn more",
+    "skipToContent": "Skip to main content"
   },
   "nav": {
     "features": "Features",

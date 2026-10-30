@@ -134,6 +134,8 @@ export default function Navbar({ onSignIn }: NavbarProps) {
                   <>
                     <button
                       className="relative flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer text-[var(--c-muted)] hover:text-[var(--c-ink)]"
+                      aria-haspopup="true"
+                      aria-expanded={openDropdown === link.label}
                     >
                       {link.label} <ChevronDown className="h-3.5 w-3.5" />
                     </button>
@@ -183,6 +185,8 @@ export default function Navbar({ onSignIn }: NavbarProps) {
             <button
               className="p-2 rounded-xl border border-[var(--c-ink)]/10 text-[var(--c-muted)] hover:text-[var(--c-ink)] hover:bg-[var(--c-ink)]/5 transition-all cursor-pointer"
               onClick={() => setMobileOpen(o => !o)}
+              aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={mobileOpen}
             >
               {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>

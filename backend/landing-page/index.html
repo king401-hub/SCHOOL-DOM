@@ -5,6 +5,58 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Schooldom - Smart Data meets Seamless CBT</title>
+    <meta name="description" content="The complete school management platform for African schools: fees, CBT exams, QR attendance, automated report cards, payroll, and parent communication in one place." />
+    <link rel="canonical" href="https://schooldom.academy/" />
+
+    <!-- Open Graph / Twitter Card: these are what link-preview bots (WhatsApp,
+         Slack, Twitter, Facebook) actually read - they fetch this URL and
+         parse the static HTML WITHOUT running JS, so these values are fixed
+         to the home page regardless of which route is shared. src/lib/
+         usePageMeta.ts updates document.title/description per route for
+         real browser tabs and search engines that do execute JS, but it
+         cannot affect what an OG scraper sees - that would need
+         server-side rendering per route. schooldom-favicon.jpeg is a
+         square brand image, not a proper 1200x630 social card - a
+         dedicated og:image would render better in link previews. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Schooldom Academy" />
+    <meta property="og:title" content="Schooldom - Smart Data meets Seamless CBT" />
+    <meta property="og:description" content="The complete school management platform for African schools: fees, CBT exams, QR attendance, automated report cards, payroll, and parent communication in one place." />
+    <meta property="og:url" content="https://schooldom.academy/" />
+    <meta property="og:image" content="https://schooldom.academy/schooldom-favicon.jpeg" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Schooldom - Smart Data meets Seamless CBT" />
+    <meta name="twitter:description" content="The complete school management platform for African schools: fees, CBT exams, QR attendance, automated report cards, payroll, and parent communication in one place." />
+    <meta name="twitter:image" content="https://schooldom.academy/schooldom-favicon.jpeg" />
+
+    <!-- Organization + SoftwareApplication structured data. Deliberately
+         omits aggregateRating: the "4.9/5" shown in the Testimonials
+         section is marketing copy, not a review-schema-backed figure with
+         a real reviewCount, and Google's structured-data guidelines treat
+         fabricated/unverifiable ratings as spam. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Schooldom Academy",
+        "url": "https://schooldom.academy/",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "description": "The complete school management platform for African schools: fees, CBT exams, QR attendance, automated report cards, payroll, and parent communication in one place.",
+        "provider": {
+          "@type": "Organization",
+          "name": "Schooldom Academy",
+          "url": "https://schooldom.academy/",
+          "logo": "https://schooldom.academy/schooldom-favicon.jpeg",
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "telephone": "+234-907-682-1365",
+            "email": "support@schooldom.academy",
+            "contactType": "customer support"
+          }
+        }
+      }
+    </script>
     <script>
       try {
         var t = localStorage.getItem('schooldom-theme');

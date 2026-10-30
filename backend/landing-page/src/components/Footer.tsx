@@ -52,8 +52,8 @@ export default function Footer() {
             </div>
 
             <div className="flex gap-3">
-              {[Twitter, Youtube, Facebook].map((Icon, i) => (
-                <button key={i}
+              {[{ Icon: Twitter, label: 'Twitter' }, { Icon: Youtube, label: 'YouTube' }, { Icon: Facebook, label: 'Facebook' }].map(({ Icon, label }) => (
+                <button key={label} aria-label={label}
                   className="h-9 w-9 rounded-xl border border-[var(--c-ink)]/8 flex items-center justify-center text-[var(--c-muted)] hover:text-[var(--c-ink)] hover:border-[var(--c-ink)]/15 hover:bg-[var(--c-ink)]/5 transition-all cursor-pointer">
                   <Icon className="h-4 w-4" />
                 </button>

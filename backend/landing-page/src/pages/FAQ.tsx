@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, Search, ArrowLeft } from 'lucide-react';
+import { usePageMeta } from '../lib/usePageMeta';
 
 const CATEGORY_KEYS = ['pricing', 'cbt', 'finance', 'setup', 'security'] as const;
 type CategoryKey = (typeof CATEGORY_KEYS)[number];
@@ -54,6 +55,7 @@ export default function FAQPage() {
   const initialCat: CategoryKey | 'all' = (CATEGORY_KEYS as readonly string[]).includes(catParam) ? (catParam as CategoryKey) : 'all';
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<CategoryKey | 'all'>(initialCat);
+  usePageMeta(`${t('faq.title')} ${t('faq.titleHighlight')}`, t('faq.intro'), '/faq');
 
   const FAQS = buildFaqs(t);
 

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Only the root URL is listed. This app is a client-side HashRouter SPA
+  (routes are fragments like /#/faq, /#/contact), and search engines
+  generally treat a URL's fragment as part of the same page rather than a
+  distinct, independently crawlable one - so listing /#/faq etc. here would
+  misrepresent them as separate indexable pages when they aren't. Real
+  per-route indexing would need BrowserRouter plus a server-side rewrite
+  (serving index.html for every path) instead of hash-based routing.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://schooldom.academy/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

@@ -26,7 +26,10 @@
   --c-surface-2: #fbfaf8;
   --c-ink: #141310;
   --c-muted: #5b5750;
-  --c-subtle: #8a8378;
+  /* #8a8378 measured ~3.75:1 against --c-surface (white) - fails WCAG AA's
+     4.5:1 for normal text (only large/UI-scale text gets a 3:1 floor).
+     Darkened to clear 4.5:1 with margin; same hue, same role. */
+  --c-subtle: #756e62;
   --c-green: #14532d;
   --c-paper-rgb: 245, 244, 241;
   --c-surface-rgb: 255, 255, 255;
@@ -40,7 +43,9 @@
     --c-surface-2: #191716;
     --c-ink: #f5f4f1;
     --c-muted: #b4afa5;
-    --c-subtle: #857f73;
+    /* #857f73 measured ~4.37:1 against --c-surface here - just under WCAG
+       AA's 4.5:1 for normal text. Lightened slightly to clear it. */
+    --c-subtle: #8d8679;
     --c-green: #4ade80;
     --c-paper-rgb: 18, 17, 16;
     --c-surface-rgb: 28, 26, 23;
@@ -55,7 +60,7 @@
   --c-surface-2: #191716;
   --c-ink: #f5f4f1;
   --c-muted: #b4afa5;
-  --c-subtle: #857f73;
+  --c-subtle: #8d8679;
   --c-green: #4ade80;
   --c-paper-rgb: 18, 17, 16;
   --c-surface-rgb: 28, 26, 23;
@@ -402,6 +407,41 @@ input:focus, select:focus, textarea:focus {
 }
 input::placeholder, textarea::placeholder { color: var(--c-subtle); }
 select option { color: var(--c-ink); background: var(--c-surface); }
+
+/* Sitewide keyboard-focus ring - only a handful of components (testimonial
+   nav buttons, inputs) had their own :focus-visible treatment; every other
+   button/link/control was falling back to the browser's inconsistent
+   default outline. :focus-visible only engages for keyboard navigation
+   (not mouse clicks), so this never shows up as unwanted click feedback. */
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid rgba(var(--c-green-rgb), 0.6);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Skip-to-content link (App.tsx) - off-screen until keyboard-focused, then
+   docks at the top-left so Tab from a fresh page load reaches it first. */
+.skip-to-content {
+  position: fixed;
+  top: -100px;
+  left: 1rem;
+  z-index: 1000;
+  background: var(--c-surface);
+  color: var(--c-ink);
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(var(--c-ink-rgb), 0.12);
+  box-shadow: 0 8px 24px rgba(var(--c-ink-rgb), 0.18);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.2s ease;
+}
+.skip-to-content:focus-visible {
+  top: 1rem;
+  outline: 2px solid rgba(var(--c-green-rgb), 0.6);
+  outline-offset: 2px;
+}
 
 /* --- Spinner --- */
 @keyframes sd-spin { to { transform: rotate(360deg); } }

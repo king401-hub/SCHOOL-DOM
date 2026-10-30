@@ -1,7 +1,8 @@
 {
   "common": {
     "backToHome": "Voltar ao início",
-    "learnMore": "Saiba mais"
+    "learnMore": "Saiba mais",
+    "skipToContent": "Pular para o conteúdo principal"
   },
   "nav": {
     "features": "Funcionalidades",
