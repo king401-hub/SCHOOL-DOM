@@ -312,7 +312,69 @@ body {
   to { transform: translate(5vw, -10vh) scale(1.1); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ambient-blob { animation: none !important; }
+  .ambient-blob, .testimonial-blob { animation: none !important; }
+}
+
+/* ── Testimonials carousel: keep-dark navy/indigo stage ───────────────────
+   Deliberately dark regardless of site theme (same convention as Hero's
+   DashboardFrame / Features' CinematicPreview) - #4ade80 below is the fixed
+   bright accent, not the --c-green token, so it reads correctly in both
+   light and dark site modes. */
+.testimonial-dark-section {
+  background: radial-gradient(ellipse 120% 80% at 50% 0%, #1a1640 0%, #100e2a 45%, #0a0e1f 100%);
+}
+.testimonial-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  will-change: transform;
+}
+.testimonial-blob-1 {
+  width: 46vw;
+  height: 46vw;
+  top: -14%;
+  left: -10%;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.28), transparent 70%);
+  animation: testimonial-drift-1 36s ease-in-out infinite alternate;
+}
+.testimonial-blob-2 {
+  width: 38vw;
+  height: 38vw;
+  bottom: -16%;
+  right: -8%;
+  background: radial-gradient(circle, rgba(129, 90, 230, 0.24), transparent 70%);
+  animation: testimonial-drift-2 42s ease-in-out infinite alternate;
+}
+.testimonial-blob-3 {
+  width: 30vw;
+  height: 30vw;
+  top: 30%;
+  right: 20%;
+  background: radial-gradient(circle, rgba(74, 222, 128, 0.1), transparent 70%);
+  animation: testimonial-drift-3 50s ease-in-out infinite alternate;
+}
+@keyframes testimonial-drift-1 {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(5vw, 6vh) scale(1.12); }
+}
+@keyframes testimonial-drift-2 {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(-6vw, -4vh) scale(0.92); }
+}
+@keyframes testimonial-drift-3 {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(-4vw, 5vh) scale(1.1); }
+}
+.testimonial-nav-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e7e9f5;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.testimonial-nav-btn:hover, .testimonial-nav-btn:focus-visible {
+  border-color: rgba(74, 222, 128, 0.5);
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.08);
 }
 
 /* Perspective grid overlay (used sparingly, no longer behind the aurora) */
