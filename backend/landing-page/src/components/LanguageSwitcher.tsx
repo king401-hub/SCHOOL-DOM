@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Globe, Check } from 'lucide-react';
-import { SUPPORTED_LANGUAGES, type SupportedLanguage } from '../i18n/config';
+import { SUPPORTED_LANGUAGES, loadLanguage, type SupportedLanguage } from '../i18n/config';
 
 const LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   en: 'English',
@@ -49,7 +49,7 @@ export default function LanguageSwitcher({ className = '', align = 'right' }: La
           {SUPPORTED_LANGUAGES.map(code => (
             <button
               key={code}
-              onClick={() => { i18n.changeLanguage(code); setOpen(false); }}
+              onClick={() => { loadLanguage(code); setOpen(false); }}
               className="w-full flex items-center justify-between px-4 py-3 text-sm text-[var(--c-muted)] hover:text-[var(--c-ink)] hover:bg-[var(--c-ink)]/5 transition-all cursor-pointer"
             >
               {LANGUAGE_LABELS[code]}

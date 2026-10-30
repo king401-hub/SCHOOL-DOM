@@ -13,9 +13,6 @@ import Demo from './components/Demo';
 import Testimonials from './components/Testimonials';
 import Pricing from './components/Pricing';
 import Footer from './components/Footer';
-import FAQPage from './pages/FAQ';
-import ContactPage from './pages/Contact';
-import PrivacyPage from './pages/Privacy';
 
 const PAGE_EASE = [0.16, 1, 0.3, 1] as const;
 const pageMotion = {
@@ -25,6 +22,12 @@ const pageMotion = {
   transition: { duration: 0.4, ease: PAGE_EASE },
 };
 
+// Home is the only route most visitors ever see - keeping FAQ/Contact/
+// Privacy/SignUp out of the main bundle means their code (and SignUp's own
+// sizable form logic) only downloads if someone actually navigates there.
+const FAQPage = lazy(() => import('./pages/FAQ'));
+const ContactPage = lazy(() => import('./pages/Contact'));
+const PrivacyPage = lazy(() => import('./pages/Privacy'));
 const SignUpPage = lazy(() => import('./pages/SignUp'));
 
 const ADMIN_APP_URL =
@@ -75,13 +78,15 @@ function AnimatedMain() {
   return (
     <AnimatePresence mode="wait">
       <motion.main key={location.pathname} {...pageMotion}>
-        <Routes location={location}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/faq" element={<FAQPage />} />
-          <Route path="/contact" element={<ContactPage />} />
-          <Route path="/privacy" element={<PrivacyPage />} />
-          <Route path="/signup" element={<Suspense fallback={null}><SignUpPage /></Suspense>} />
-        </Routes>
+        <Suspense fallback={null}>
+          <Routes location={location}>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/faq" element={<FAQPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/signup" element={<SignUpPage />} />
+          </Routes>
+        </Suspense>
       </motion.main>
     </AnimatePresence>
   );
