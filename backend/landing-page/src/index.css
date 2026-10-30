@@ -331,36 +331,36 @@ body {
    bright accent, not the --c-green token, so it reads correctly in both
    light and dark site modes. */
 .testimonial-dark-section {
-  background: radial-gradient(ellipse 120% 80% at 50% 0%, #1a1640 0%, #100e2a 45%, #0a0e1f 100%);
+  background: radial-gradient(ellipse 120% 90% at 50% 0%, #1a1640 0%, #100e2a 45%, #0a0e1f 100%);
 }
 .testimonial-blob {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
+  filter: blur(90px);
   will-change: transform;
 }
 .testimonial-blob-1 {
-  width: 46vw;
-  height: 46vw;
-  top: -14%;
-  left: -10%;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.28), transparent 70%);
+  width: 58vw;
+  height: 58vw;
+  top: -18%;
+  left: -14%;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.3), transparent 70%);
   animation: testimonial-drift-1 36s ease-in-out infinite alternate;
 }
 .testimonial-blob-2 {
-  width: 38vw;
-  height: 38vw;
-  bottom: -16%;
-  right: -8%;
-  background: radial-gradient(circle, rgba(129, 90, 230, 0.24), transparent 70%);
+  width: 48vw;
+  height: 48vw;
+  bottom: -20%;
+  right: -12%;
+  background: radial-gradient(circle, rgba(129, 90, 230, 0.26), transparent 70%);
   animation: testimonial-drift-2 42s ease-in-out infinite alternate;
 }
 .testimonial-blob-3 {
-  width: 30vw;
-  height: 30vw;
-  top: 30%;
-  right: 20%;
-  background: radial-gradient(circle, rgba(74, 222, 128, 0.1), transparent 70%);
+  width: 38vw;
+  height: 38vw;
+  top: 28%;
+  right: 16%;
+  background: radial-gradient(circle, rgba(74, 222, 128, 0.12), transparent 70%);
   animation: testimonial-drift-3 50s ease-in-out infinite alternate;
 }
 @keyframes testimonial-drift-1 {
