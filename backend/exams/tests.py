@@ -1256,6 +1256,31 @@ class PublishAttemptResultTests(TestCase):
         self.assertEqual(response.data["percentage"], 100.0)
         self.assertEqual(response.data["grade"], "A")
 
+    def test_publish_theory_grades_endpoint_also_releases_the_score_to_the_student(self):
+        """The Theory Grading panel's own "Publish result" button hits
+        publish-theory-grades, a separate endpoint from publish-result above
+        (the one ExamSubmissionModal uses). It used to recompute the score
+        and report success without ever setting results_published_at, so a
+        teacher who graded theory from that panel and clicked Publish saw a
+        success message while the student's portal kept showing "Exam
+        Completed" forever - no error, just a result that could never be
+        seen."""
+        self._grade_the_theory()
+        response = self.client.post(f"/api/exams/attempt/{self.attempt.id}/publish-theory-grades/")
+        self.assertEqual(response.status_code, 200)
+
+        self.attempt.refresh_from_db()
+        self.assertIsNotNone(self.attempt.results_published_at)
+        self.assertEqual(self.attempt.results_published_by, self.teacher)
+        self.assertTrue(
+            StudentSubjectScore.objects.filter(student=self.student, subject=self.subject).exists()
+        )
+
+        self.client.force_authenticate(self.student_user)
+        response = self.client.get(f"/api/exams/result/{self.attempt.id}/")
+        self.assertTrue(response.data["is_published"])
+        self.assertEqual(response.data["score"], 50)
+
     def test_unpublishing_hides_it_again_without_touching_the_subject_score(self):
         self._grade_the_theory()
         self.client.post(f"/api/exams/attempt/{self.attempt.id}/publish-result/")

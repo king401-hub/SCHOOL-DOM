@@ -1456,12 +1456,27 @@ def publish_theory_grades_view(request, attempt_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
     _publish_theory_grades(attempt)
+
+    # This used to stop here, leaving attempt.results_published_at untouched -
+    # the Theory Grading panel's "Publish result" button recomputed the score
+    # and said "Results published", but ExamResultView gates the student's
+    # own view purely on results_published_at, so the student kept seeing
+    # "Exam Completed" forever. publish_attempt_result (the other publish
+    # endpoint, wired to ExamSubmissionModal) already did this correctly -
+    # this just brings the Theory Grading panel's button in line with it.
+    score_obj, sync_error = _sync_attempt_to_subject_score(attempt, request.user)
+    attempt.results_published_at = timezone.now()
+    attempt.results_published_by = request.user
+    attempt.save(update_fields=["results_published_at", "results_published_by", "updated_at"])
+
     return Response({
         "success": True,
         "message": "Results published.",
         "score": attempt.score,
         "total_points": attempt.total_points,
         "percentage": round(attempt.percentage, 2),
+        "added_to_report": bool(score_obj),
+        "report_warning": sync_error,
     })
 
 
