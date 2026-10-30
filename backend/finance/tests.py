@@ -2420,6 +2420,40 @@ class CreditBalanceCarryForwardTests(TestCase):
             ).exists()
         )
 
+    def test_parent_dashboard_sweeps_existing_wallet_credit_onto_a_new_fee(self):
+        """A parent who only ever uses the parent portal (never opens the
+        student's own Fees screen, where the sync-then-sweep already ran)
+        must still see an existing wallet credit applied to a fee that only
+        becomes due after the credit landed - otherwise the dashboard shows
+        an "Overpayment" balance sitting right next to a fee of the same
+        amount still marked outstanding, with nothing to reconcile the two."""
+        wallet = ensure_student_wallet(self.student_user)
+        wallet.balance = Decimal("30000.00")
+        wallet.save(update_fields=["balance"])
+        self.fee.status = SchoolFee.STATUS_PAID
+        self.fee.amount_paid = self.fee.amount
+        self.fee.save(update_fields=["status", "amount_paid"])
+
+        ClassFee.objects.create(
+            school_class=self.school_class, title="Next Term Fee",
+            amount=Decimal("25000.00"), due_date=timezone.localdate(), is_active=True,
+        )
+
+        client = APIClient()
+        client.force_authenticate(self.parent_user)
+        response = client.get("/api/finance/parent/dashboard/")
+        self.assertEqual(response.status_code, 200)
+
+        new_fee = SchoolFee.objects.get(title="Next Term Fee", student=self.student)
+        self.assertEqual(new_fee.status, SchoolFee.STATUS_PAID)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, Decimal("5000.00"))
+
+        child_row = next(c for c in response.data["children"] if c["id"] == str(self.student.id))
+        fee_row = next(f for f in child_row["fees"] if f["title"] == "Next Term Fee")
+        self.assertEqual(fee_row["status"], SchoolFee.STATUS_PAID)
+        self.assertEqual(fee_row["remaining"], 0.0)
+
     def test_dva_overpayment_with_no_student_is_logged_not_lost(self):
         """A DVA payment against a parent with zero children can't be
         credited anywhere - it must be flagged for reconciliation, not

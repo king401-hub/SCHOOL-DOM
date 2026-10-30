@@ -4150,6 +4150,17 @@ def parent_dashboard(request):
     total_paid = Decimal("0")
 
     for student in parent_profile.children.select_related("user", "current_class").all():
+        # Sync-then-sweep, same order as the student-facing Fees screen
+        # (_student_wallet_snapshot below) - without this, a wallet credit
+        # from an earlier overpayment (or any new auto_deduct fee becoming
+        # due) only ever gets applied once the student's own account loads
+        # the Fees screen. A parent who only ever uses the parent portal -
+        # the common case for a primary/secondary-school parent managing
+        # their child's account - could watch an already-covered fee sit at
+        # "pending" indefinitely even though the credit to pay it is sitting
+        # right there in the same dashboard's balance.
+        sync_student_class_fees(student, actor=user)
+        process_due_fees(student, actor=user)
         fees_qs = list(
             SchoolFee.objects.filter(student=student)
             .select_related("bill")
