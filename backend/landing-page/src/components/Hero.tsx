@@ -88,7 +88,7 @@ function TypewriterCycle() {
     return () => clearTimeout(t);
   }, [idx, chars, deleting, phrases]);
   return (
-    <span className="gradient-text font-display">
+    <span className="gradient-text hero-highlight font-display">
       {(phrases[idx] || '').slice(0, chars)}<span className="opacity-50">|</span>
     </span>
   );

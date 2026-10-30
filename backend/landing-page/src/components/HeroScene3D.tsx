@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, Suspense } from 'react';
+import { useEffect, useRef, useState, Suspense, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Canvas, useFrame } from '@react-three/fiber';
 import {
@@ -96,54 +96,96 @@ function ModuleWheel({ quality }: { quality: Quality }) {
 
   return (
     <group ref={group} scale={0.86} position={[0, 0, 0]} rotation={[BASE_TILT_X, BASE_TILT_Y, 0]}>
-      {/* Hub */}
+      {/* Hub - a soft emissive glow reads as the wheel's power source, the
+          spokes visibly feeding off it. */}
       <mesh>
         <sphereGeometry args={[0.26, quality === 'high' ? 32 : 16, quality === 'high' ? 32 : 16]} />
-        {glass('#206e3c')}
+        <meshPhysicalMaterial
+          color="#206e3c" emissive="#4ade80" emissiveIntensity={0.5}
+          roughness={0.22} metalness={0} transmission={0.1} thickness={0.3}
+          ior={1.3} clearcoat={1} clearcoatRoughness={0.14} envMapIntensity={1.6} reflectivity={0.55}
+        />
       </mesh>
-      {MODULES.map((m, i) => {
-        const n = MODULES.length;
-        const angle = (i / n) * Math.PI * 2;
-        const x = Math.cos(angle) * RADIUS;
-        const y = Math.sin(angle) * RADIUS;
-        const rotZ = angle + Math.PI / 2; // tangential, like a spoke
-        const Icon = m.icon;
-        return (
-          <group key={m.key}>
-            {/* Spoke */}
-            <mesh position={[x / 2, y / 2, -0.02]} rotation={[0, 0, rotZ]}>
-              <boxGeometry args={[0.03, RADIUS * 0.82, 0.03]} />
-              <meshStandardMaterial color="#143b26" roughness={0.4} metalness={0.2} />
-            </mesh>
-            <group position={[x, y, 0]} rotation={[0, 0, rotZ]}>
-              <RoundedBox args={[0.62, 0.4, 0.05]} radius={0.06} smoothness={smoothness}>
-                {glass(m.color)}
-              </RoundedBox>
-              <Html
-                position={[0, 0, 0.04]}
-                center
-                distanceFactor={quality === 'high' ? 7.4 : 8.4}
-                style={{ pointerEvents: 'none' }}
-              >
-                <div
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full whitespace-nowrap"
-                  style={{
-                    background: 'rgba(var(--c-surface-rgb),0.92)',
-                    border: '1px solid rgba(var(--c-ink-rgb),0.1)',
-                    boxShadow: '0 4px 14px rgba(var(--c-ink-rgb),0.12)',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: 'var(--c-ink)',
-                  }}
-                >
-                  <Icon size={12} style={{ color: m.color, flexShrink: 0 }} />
-                  {t(m.key)}
-                </div>
-              </Html>
-            </group>
-          </group>
-        );
-      })}
+      {MODULES.map((m, i) => (
+        <ModuleCard key={m.key} m={m} i={i} n={MODULES.length} radius={RADIUS} smoothness={smoothness} quality={quality} t={t} glass={glass} />
+      ))}
+    </group>
+  );
+}
+
+interface ModuleCardProps {
+  m: ModuleDef; i: number; n: number; radius: number; smoothness: number; quality: Quality;
+  t: (key: string) => string;
+  glass: (color: string) => ReactElement;
+}
+
+/** One spoke + labelled card. Owns its own idle float and hover response so
+ * each can run independently of the wheel's own continuous rotation. */
+function ModuleCard({ m, i, n, radius, smoothness, quality, t, glass }: ModuleCardProps) {
+  const [hovered, setHovered] = useState(false);
+  const cardRef = useRef<Group>(null);
+  const floatPhase = (i / n) * Math.PI * 2;
+
+  const angle = (i / n) * Math.PI * 2;
+  const x = Math.cos(angle) * radius;
+  const y = Math.sin(angle) * radius;
+  const rotZ = angle + Math.PI / 2; // tangential, like a spoke
+  const Icon = m.icon;
+
+  useFrame(({ clock }) => {
+    const c = cardRef.current;
+    if (!c) return;
+    // A gentle out-of-plane bob (not along the spoke's own radius, so the
+    // card never visibly separates from the rod connecting it to the hub),
+    // phase-offset per card so they don't all breathe in lockstep.
+    const targetZ = Math.sin(clock.elapsedTime * 0.9 + floatPhase) * 0.035;
+    const targetScale = hovered ? 1.14 : 1;
+    c.position.z += (targetZ - c.position.z) * 0.08;
+    c.scale.x += (targetScale - c.scale.x) * 0.15;
+    c.scale.y += (targetScale - c.scale.y) * 0.15;
+    c.scale.z += (targetScale - c.scale.z) * 0.15;
+  });
+
+  return (
+    <group>
+      {/* Spoke */}
+      <mesh position={[x / 2, y / 2, -0.02]} rotation={[0, 0, rotZ]}>
+        <boxGeometry args={[0.03, radius * 0.82, 0.03]} />
+        <meshStandardMaterial color="#143b26" emissive={m.color} emissiveIntensity={hovered ? 0.8 : 0.35} roughness={0.4} metalness={0.2} />
+      </mesh>
+      <group ref={cardRef} position={[x, y, 0]} rotation={[0, 0, rotZ]}>
+        <RoundedBox
+          args={[0.62, 0.4, 0.05]}
+          radius={0.06}
+          smoothness={smoothness}
+          onPointerOver={(e) => { e.stopPropagation(); setHovered(true); }}
+          onPointerOut={(e) => { e.stopPropagation(); setHovered(false); }}
+        >
+          {glass(m.color)}
+        </RoundedBox>
+        <Html
+          position={[0, 0, 0.04]}
+          center
+          distanceFactor={quality === 'high' ? 7.4 : 8.4}
+          style={{ pointerEvents: 'none' }}
+        >
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full whitespace-nowrap transition-transform duration-200"
+            style={{
+              background: 'rgba(var(--c-surface-rgb),0.92)',
+              border: `1px solid ${hovered ? `${m.color}55` : 'rgba(var(--c-ink-rgb),0.1)'}`,
+              boxShadow: hovered ? `0 6px 20px ${m.color}40` : '0 4px 14px rgba(var(--c-ink-rgb),0.12)',
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--c-ink)',
+              transform: hovered ? 'scale(1.08)' : 'scale(1)',
+            }}
+          >
+            <Icon size={12} style={{ color: m.color, flexShrink: 0 }} />
+            {t(m.key)}
+          </div>
+        </Html>
+      </group>
     </group>
   );
 }
@@ -176,7 +218,7 @@ export default function HeroScene3D({ paused }: HeroScene3DProps) {
       gl={{ antialias: true, alpha: true, powerPreference: quality === 'high' ? 'high-performance' : 'low-power' }}
       camera={{ position: [0, 0, 6.2], fov: 36 }}
       frameloop={paused ? 'never' : 'always'}
-      style={{ pointerEvents: 'none' }}
+      style={{ pointerEvents: 'auto' }}
     >
       <PerformanceMonitor
         onDecline={() => setQuality('low')}
