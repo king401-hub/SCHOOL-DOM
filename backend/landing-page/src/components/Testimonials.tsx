@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
+import { motion } from 'motion/react';
 import { Star, Quote } from 'lucide-react';
-import { Reveal } from '../lib/reveal';
+import { Reveal, RevealGroup, revealItem } from '../lib/reveal';
 
 interface TestimonialData { name: string; role: string; quoteKey: string; schoolKey: string; studentsCount: number; initials: string; color: string }
 
@@ -18,12 +19,17 @@ const TESTIMONIALS: TestimonialData[] = [
 function TestimonialCard({ item }: { item: TestimonialData }) {
   const { t } = useTranslation();
   return (
-    <div className="shrink-0 w-80 rounded-2xl p-6 mx-2 hover:border-[var(--c-green)]/20 transition-all sd-card">
+    <motion.div
+      variants={revealItem}
+      whileHover={{ y: -4 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+      className="h-full flex flex-col rounded-2xl p-6 hover:border-[var(--c-green)]/20 transition-colors sd-card"
+    >
       <div className="flex items-start justify-between mb-4">
         <div className="flex">{[...Array(5)].map((_, i) => <Star key={i} className="h-3.5 w-3.5 fill-[var(--c-green)] text-[var(--c-green)]" />)}</div>
         <Quote className="h-5 w-5 opacity-15 text-[var(--c-ink)]" />
       </div>
-      <p className="text-[var(--c-ink)] text-sm leading-relaxed mb-5">"{t(`testimonials.quotes.${item.quoteKey}`)}"</p>
+      <p className="text-[var(--c-ink)] text-sm leading-relaxed mb-5 flex-1">"{t(`testimonials.quotes.${item.quoteKey}`)}"</p>
       <div className="flex items-center gap-3">
         <div className="h-10 w-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
           style={{ background: `${item.color}18`, border: `1px solid ${item.color}35`, color: item.color }}>{item.initials}</div>
@@ -36,48 +42,35 @@ function TestimonialCard({ item }: { item: TestimonialData }) {
         <span className="text-[9px] px-2 py-1 rounded-full border" style={{ color: item.color, background: `${item.color}08`, borderColor: `${item.color}25` }}>{t(`testimonials.schoolTypes.${item.schoolKey}`)}</span>
         <span className="text-[9px] px-2 py-1 rounded-full border border-[var(--c-ink)]/8 text-[var(--c-subtle)]">{item.studentsCount.toLocaleString()} {t('testimonials.studentsLabel')}</span>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
 export default function Testimonials() {
   const { t } = useTranslation();
-  const row1 = TESTIMONIALS.slice(0, 4);
-  const row2 = TESTIMONIALS.slice(4);
 
   return (
-    <section id="testimonials" className="py-28 relative overflow-hidden">
+    <section id="testimonials" className="py-28 px-4 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: 'radial-gradient(ellipse at 50% 100%, rgba(var(--c-green-rgb),0.05) 0%, transparent 60%)' }} />
 
-      <Reveal className="mb-14 px-4">
-        <div className="text-center max-w-3xl mx-auto">
-          <span className="badge badge-green mb-4"><Star className="h-3 w-3 fill-current" /> {t('testimonials.badge')}</span>
-          <h2 className="font-display font-black text-4xl sm:text-5xl text-[var(--c-ink)] mb-4 tracking-tight">
-            {t('testimonials.title')} <span className="gradient-text">{t('testimonials.titleHighlight')}</span>
-          </h2>
-          <p className="text-[var(--c-muted)]">{t('testimonials.subtitle')}</p>
-        </div>
-      </Reveal>
-
-      <Reveal className="overflow-hidden mb-4" y={0} delay={0.2}
-        >
-        <div style={{ maskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)' }}>
-          <div className="flex animate-marquee-left" style={{ width: 'max-content' }}>
-            {[...row1, ...row1].map((item, i) => <TestimonialCard key={i} item={item} />)}
+      <div className="max-w-7xl mx-auto">
+        <Reveal className="mb-14">
+          <div className="text-center max-w-3xl mx-auto">
+            <span className="badge badge-green mb-4"><Star className="h-3 w-3 fill-current" /> {t('testimonials.badge')}</span>
+            <h2 className="font-display font-black text-4xl sm:text-5xl text-[var(--c-ink)] mb-4 tracking-tight">
+              {t('testimonials.title')} <span className="gradient-text">{t('testimonials.titleHighlight')}</span>
+            </h2>
+            <p className="text-[var(--c-muted)]">{t('testimonials.subtitle')}</p>
           </div>
-        </div>
-      </Reveal>
+        </Reveal>
 
-      <Reveal className="overflow-hidden" y={0} delay={0.35}>
-        <div style={{ maskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)' }}>
-          <div className="flex animate-marquee-right" style={{ width: 'max-content' }}>
-            {[...row2, ...row2].map((item, i) => <TestimonialCard key={i} item={item} />)}
-          </div>
-        </div>
-      </Reveal>
+        <RevealGroup className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5" stagger={0.06} amount={0.1}>
+          {TESTIMONIALS.map((item, i) => <TestimonialCard key={i} item={item} />)}
+        </RevealGroup>
+      </div>
 
-      <Reveal className="text-center mt-12 px-4" y={0} delay={0.5}>
+      <Reveal className="text-center mt-12" y={0} delay={0.3}>
         <div className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl sd-card">
           <div className="flex">{[...Array(5)].map((_, i) => <Star key={i} className="h-4 w-4 fill-[var(--c-green)] text-[var(--c-green)]" />)}</div>
           <span className="text-[var(--c-ink)] font-bold text-lg">4.9 / 5</span>
