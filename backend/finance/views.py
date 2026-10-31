@@ -9,6 +9,7 @@ import logging
 import re
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db import OperationalError, ProgrammingError, transaction
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
@@ -324,8 +325,15 @@ def whatsapp_business_webhook(request):
     if not _whatsapp_signature_valid(request):
         return Response({"success": False, "message": "Invalid webhook signature."}, status=status.HTTP_401_UNAUTHORIZED)
 
+    processed = _handle_whatsapp_inbound(_extract_whatsapp_messages(request.data))
+    return Response({"success": True, "processed": processed})
+
+
+def _handle_whatsapp_inbound(messages):
+    """Answer parents' WhatsApp messages (BALANCE, or a help line). Shared by the
+    Meta and Bahasha webhooks."""
     processed = []
-    for message in _extract_whatsapp_messages(request.data):
+    for message in messages:
         from_phone = message.get("from", "")
         text = ((message.get("text") or {}).get("body") or "").strip().lower()
         if not from_phone:
@@ -345,6 +353,55 @@ def whatsapp_business_webhook(request):
                 processed.append({"from": from_phone, "action": "help"})
             except Exception as exc:
                 processed.append({"from": from_phone, "action": "help", "error": str(exc)})
+    return processed
+
+
+def _bahasha_webhook_authorized(request):
+    """Bahasha documents no signature header, so authenticity rests on a shared
+    secret in the registered URL (?token=...). Fails closed when unconfigured."""
+    secret = getattr(settings, "BAHASHA_WEBHOOK_SECRET", "")
+    if not secret:
+        return False
+    return compare_digest(str(request.query_params.get("token", "")), str(secret))
+
+
+@api_view(["GET", "POST"])
+@permission_classes([AllowAny])
+def bahasha_whatsapp_webhook(request):
+    """Bahasha WhatsApp webhook: delivery statuses and parents' replies.
+
+    GET is Bahasha's one-time handshake (echo hub.challenge when the verify token
+    matches). POST needs the shared ?token= secret. Bahasha retries when it does
+    not get a fast 200, so message ids are de-duplicated before replying.
+    """
+    if request.method == "GET":
+        verify_token = getattr(settings, "BAHASHA_WEBHOOK_VERIFY_TOKEN", "")
+        mode = request.query_params.get("hub.mode")
+        token = request.query_params.get("hub.verify_token")
+        challenge = request.query_params.get("hub.challenge", "")
+        if mode == "subscribe" and verify_token and compare_digest(token or "", verify_token):
+            return HttpResponse(challenge)
+        return Response({"success": False, "message": "Verification failed."}, status=status.HTTP_403_FORBIDDEN)
+
+    if not _bahasha_webhook_authorized(request):
+        return Response({"success": False, "message": "Unauthorized webhook."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    messages = []
+    for entry in request.data.get("entry", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        for change in entry.get("changes", []) or []:
+            value = (change.get("value") if isinstance(change, dict) else None) or {}
+            for delivery in value.get("statuses", []) or []:
+                if isinstance(delivery, dict) and delivery.get("status") == "failed":
+                    logger.warning(
+                        "Bahasha WhatsApp delivery failed for %s: %s",
+                        delivery.get("recipient_id", ""), delivery.get("errors"),
+                    )
+            messages.extend(m for m in value.get("messages", []) or [] if isinstance(m, dict))
+
+    fresh = [m for m in messages if m.get("id") and cache.add(f"bahasha-wa-msg:{m['id']}", 1, 86400)]
+    processed = _handle_whatsapp_inbound(fresh)
     return Response({"success": True, "processed": processed})
 
 

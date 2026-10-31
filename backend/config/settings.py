@@ -614,6 +614,16 @@ WHATSAPP_BUSINESS_PHONE_NUMBER_ID = os.getenv('WHATSAPP_BUSINESS_PHONE_NUMBER_ID
 WHATSAPP_BUSINESS_ACCESS_TOKEN = os.getenv('WHATSAPP_BUSINESS_ACCESS_TOKEN', '')
 WHATSAPP_BUSINESS_VERIFY_TOKEN = os.getenv('WHATSAPP_BUSINESS_VERIFY_TOKEN', '')
 WHATSAPP_BUSINESS_APP_SECRET = os.getenv('WHATSAPP_BUSINESS_APP_SECRET', '')
+# Bahasha WhatsApp (https://developers.bahasha.app). When BAHASHA_API_KEY and
+# BAHASHA_PHONE_NUMBER_ID are both set, send_whatsapp_message uses it instead
+# of Termii. Use a bh_test_ key for the sandbox (simulated sends, no webhooks).
+BAHASHA_API_KEY = os.getenv('BAHASHA_API_KEY', '')
+BAHASHA_API_BASE = os.getenv('BAHASHA_API_BASE', 'https://api.bahasha.app')
+BAHASHA_PHONE_NUMBER_ID = os.getenv('BAHASHA_PHONE_NUMBER_ID', '')
+BAHASHA_WEBHOOK_VERIFY_TOKEN = os.getenv('BAHASHA_WEBHOOK_VERIFY_TOKEN', '')
+# Bahasha documents no webhook signature, so this shared secret (sent as
+# ?token= on the registered webhook URL) is the only authenticity gate.
+BAHASHA_WEBHOOK_SECRET = os.getenv('BAHASHA_WEBHOOK_SECRET', '')
 SCHOOLDOM_BANK_WEBHOOK_SECRET = os.getenv('SCHOOLDOM_BANK_WEBHOOK_SECRET', '')
 SCHOOLDOM_PAY_BASE_URL = os.getenv('SCHOOLDOM_PAY_BASE_URL', 'https://pay.schoolom.ng')
 

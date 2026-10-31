@@ -1268,6 +1268,68 @@ def send_termii_whatsapp(to_phone: str, message: str) -> dict:
         return {"status": "error", "reason": str(exc)}
 
 
+def _bahasha_post(path: str, payload: dict) -> dict:
+    """POST one message to Bahasha's WhatsApp API.
+
+    Returns the same shape as the other senders: {"status": "success",
+    "message_id": ...}, {"status": "skipped", ...} when Bahasha is not
+    configured, or {"status": "error", "reason": ...}. A closed 24-hour
+    customer-service window (free-form text to someone who has not messaged us
+    recently) is flagged with "window_closed" so callers can switch to a
+    template. Success only means Bahasha accepted the request; delivery comes
+    back on the webhook.
+    """
+    api_key = getattr(settings, "BAHASHA_API_KEY", "")
+    phone_number_id = getattr(settings, "BAHASHA_PHONE_NUMBER_ID", "")
+    if not api_key or not phone_number_id:
+        return {"status": "skipped", "reason": "Bahasha credentials not configured."}
+
+    base_url = getattr(settings, "BAHASHA_API_BASE", "https://api.bahasha.app").rstrip("/")
+    try:
+        response = requests.post(
+            f"{base_url}{path}",
+            json={**payload, "phone_number_id": phone_number_id},
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            timeout=15,
+        )
+        try:
+            data = response.json()
+        except ValueError:
+            data = {}
+        if response.ok and (data.get("success") or data.get("sandbox")):
+            return {"status": "success", "message_id": data.get("message_id", "")}
+        reason = data.get("message") or f"HTTP {response.status_code}"
+        result = {"status": "error", "reason": str(reason)}
+        if response.status_code == 400 and "customer service window" in str(reason).lower():
+            result["window_closed"] = True
+        return result
+    except Exception as exc:
+        return {"status": "error", "reason": str(exc)}
+
+
+def send_bahasha_whatsapp(to_phone: str, message: str) -> dict:
+    """Free-form WhatsApp text via Bahasha. Only works inside the 24-hour
+    window that opens when the parent messages us."""
+    return _bahasha_post(
+        "/v1/whatsapp/send/text",
+        {"to": "+" + normalize_phone_number(to_phone), "text": message},
+    )
+
+
+def send_bahasha_whatsapp_template(to_phone: str, template_name: str, language_code: str = "en_US", variables: Optional[dict] = None) -> dict:
+    """Approved-template WhatsApp message via Bahasha. Required for anything we
+    start (fee reminders, notices); `variables` is Bahasha's
+    {"body": {"param_name": "value"}} shape and is omitted when empty."""
+    payload = {
+        "to": "+" + normalize_phone_number(to_phone),
+        "template_name": template_name,
+        "language_code": language_code,
+    }
+    if variables:
+        payload["variables"] = variables
+    return _bahasha_post("/v1/whatsapp/send", payload)
+
+
 # Public-page types stamped with the current term. Not stamped: payslips (by pay
 # period), the class broadsheet and the report card (each carries the term its
 # own results belong to, which can differ from the current one).
@@ -5038,11 +5100,27 @@ def parent_balance_payload(parent_phone):
     return rows
 
 
-def send_whatsapp_message(to_phone, text):
-    """Send WhatsApp message via Termii."""
+def send_whatsapp_message(to_phone, text, template=None):
+    """Send a WhatsApp message: via Bahasha when it is configured, otherwise Termii.
+
+    `template` is an optional {"name", "language", "variables"} dict. Pass it for
+    messages we start; Bahasha rejects free-form text outside the 24-hour window,
+    and that surfaces as a RuntimeError the caller already has to handle.
+    """
+    if getattr(settings, "BAHASHA_API_KEY", "") and getattr(settings, "BAHASHA_PHONE_NUMBER_ID", ""):
+        if template:
+            result = send_bahasha_whatsapp_template(
+                to_phone, template["name"], template.get("language", "en_US"), template.get("variables"),
+            )
+        else:
+            result = send_bahasha_whatsapp(to_phone, text)
+        if result.get("status") == "error":
+            raise RuntimeError(result.get("reason", "Bahasha WhatsApp delivery failed."))
+        return result
+
     result = send_termii_whatsapp(to_phone, text)
     if result.get("status") == "error":
-        raise RuntimeError(result.get("reason", "Twilio WhatsApp delivery failed."))
+        raise RuntimeError(result.get("reason", "Termii WhatsApp delivery failed."))
     return result
 
 

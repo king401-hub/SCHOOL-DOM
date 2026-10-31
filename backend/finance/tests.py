@@ -5506,6 +5506,193 @@ class WebhookFailClosedTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
 
+def _bahasha_response(status_code=200, body=None):
+    from unittest.mock import MagicMock
+
+    response = MagicMock()
+    response.status_code = status_code
+    response.ok = 200 <= status_code < 300
+    response.json.return_value = body if body is not None else {}
+    return response
+
+
+BAHASHA_SETTINGS = dict(
+    BAHASHA_API_KEY="bh_test_key",
+    BAHASHA_PHONE_NUMBER_ID="pn_123",
+    BAHASHA_API_BASE="https://api.bahasha.test",
+)
+
+
+class BahashaWhatsAppSenderTests(TestCase):
+    @override_settings(BAHASHA_API_KEY="", BAHASHA_PHONE_NUMBER_ID="")
+    @patch("finance.services.requests.post")
+    def test_unconfigured_is_skipped_without_calling_the_api(self, mock_post):
+        from finance.services import send_bahasha_whatsapp
+
+        self.assertEqual(send_bahasha_whatsapp("08012345678", "hi")["status"], "skipped")
+        mock_post.assert_not_called()
+
+    @override_settings(**BAHASHA_SETTINGS)
+    @patch("finance.services.requests.post")
+    def test_text_send_uses_e164_bearer_auth_and_phone_number_id(self, mock_post):
+        from finance.services import send_bahasha_whatsapp
+
+        mock_post.return_value = _bahasha_response(200, {"success": True, "message_id": "wamid.1"})
+        result = send_bahasha_whatsapp("08012345678", "hello")
+
+        self.assertEqual(result, {"status": "success", "message_id": "wamid.1"})
+        args, kwargs = mock_post.call_args
+        self.assertEqual(args[0], "https://api.bahasha.test/v1/whatsapp/send/text")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer bh_test_key")
+        self.assertEqual(
+            kwargs["json"], {"to": "+2348012345678", "text": "hello", "phone_number_id": "pn_123"},
+        )
+
+    @override_settings(**BAHASHA_SETTINGS)
+    @patch("finance.services.requests.post")
+    def test_template_send_includes_variables_only_when_given(self, mock_post):
+        from finance.services import send_bahasha_whatsapp_template
+
+        mock_post.return_value = _bahasha_response(200, {"success": True, "message_id": "wamid.2"})
+        send_bahasha_whatsapp_template("08012345678", "fee_reminder", "en_US", {"body": {"name": "Ada"}})
+        self.assertEqual(mock_post.call_args.kwargs["json"]["variables"], {"body": {"name": "Ada"}})
+        self.assertTrue(mock_post.call_args.args[0].endswith("/v1/whatsapp/send"))
+
+        send_bahasha_whatsapp_template("08012345678", "fee_reminder")
+        self.assertNotIn("variables", mock_post.call_args.kwargs["json"])
+
+    @override_settings(**BAHASHA_SETTINGS)
+    @patch("finance.services.requests.post")
+    def test_sandbox_response_counts_as_success(self, mock_post):
+        from finance.services import send_bahasha_whatsapp
+
+        mock_post.return_value = _bahasha_response(200, {"sandbox": True, "message_id": "sandbox_1", "status": "simulated"})
+        self.assertEqual(send_bahasha_whatsapp("08012345678", "hi")["status"], "success")
+
+    @override_settings(**BAHASHA_SETTINGS)
+    @patch("finance.services.requests.post")
+    def test_closed_service_window_is_flagged(self, mock_post):
+        from finance.services import send_bahasha_whatsapp
+
+        mock_post.return_value = _bahasha_response(
+            400, {"statusCode": 400, "message": "Customer service window is closed. Use an approved template to continue."},
+        )
+        result = send_bahasha_whatsapp("08012345678", "hi")
+        self.assertEqual(result["status"], "error")
+        self.assertTrue(result["window_closed"])
+
+    @override_settings(**BAHASHA_SETTINGS)
+    @patch("finance.services.requests.post", side_effect=RuntimeError("boom"))
+    def test_network_failure_returns_an_error_dict(self, mock_post):
+        from finance.services import send_bahasha_whatsapp
+
+        self.assertEqual(send_bahasha_whatsapp("08012345678", "hi"), {"status": "error", "reason": "boom"})
+
+    @override_settings(**BAHASHA_SETTINGS)
+    @patch("finance.services.send_termii_whatsapp")
+    @patch("finance.services.requests.post")
+    def test_send_whatsapp_message_prefers_bahasha_and_raises_on_error(self, mock_post, mock_termii):
+        from finance.services import send_whatsapp_message
+
+        mock_post.return_value = _bahasha_response(200, {"success": True, "message_id": "wamid.3"})
+        send_whatsapp_message("08012345678", "hello")
+        mock_termii.assert_not_called()
+
+        mock_post.return_value = _bahasha_response(400, {"message": "Customer service window is closed."})
+        with self.assertRaises(RuntimeError):
+            send_whatsapp_message("08012345678", "hello")
+
+    @override_settings(**BAHASHA_SETTINGS)
+    @patch("finance.services.requests.post")
+    def test_send_whatsapp_message_uses_template_when_given(self, mock_post):
+        from finance.services import send_whatsapp_message
+
+        mock_post.return_value = _bahasha_response(200, {"success": True, "message_id": "wamid.4"})
+        send_whatsapp_message("08012345678", "ignored", template={"name": "fee_reminder", "variables": {"body": {"n": "1"}}})
+        self.assertEqual(mock_post.call_args.kwargs["json"]["template_name"], "fee_reminder")
+        self.assertEqual(mock_post.call_args.kwargs["json"]["language_code"], "en_US")
+
+    @override_settings(BAHASHA_API_KEY="", BAHASHA_PHONE_NUMBER_ID="")
+    @patch("finance.services.send_termii_whatsapp", return_value={"status": "success", "message_id": "t1"})
+    def test_send_whatsapp_message_falls_back_to_termii_when_bahasha_unset(self, mock_termii):
+        from finance.services import send_whatsapp_message
+
+        send_whatsapp_message("08012345678", "hello")
+        mock_termii.assert_called_once()
+
+
+class BahashaWhatsAppWebhookTests(TestCase):
+    URL = "/api/finance/whatsapp/bahasha/webhook/"
+
+    def setUp(self):
+        from django.core.cache import cache
+        from rest_framework.test import APIClient
+
+        cache.clear()
+        self.client = APIClient()
+
+    def _payload(self, message_id="wamid.IN1", text="balance"):
+        return {"entry": [{"changes": [{"value": {"messages": [
+            {"from": "2348012345678", "id": message_id, "type": "text", "text": {"body": text}},
+        ]}}]}]}
+
+    @override_settings(BAHASHA_WEBHOOK_VERIFY_TOKEN="verify-me")
+    def test_handshake_echoes_the_challenge(self):
+        response = self.client.get(self.URL, {"hub.mode": "subscribe", "hub.verify_token": "verify-me", "hub.challenge": "abc123"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content.decode(), "abc123")
+
+    @override_settings(BAHASHA_WEBHOOK_VERIFY_TOKEN="verify-me")
+    def test_handshake_rejects_a_wrong_token(self):
+        response = self.client.get(self.URL, {"hub.mode": "subscribe", "hub.verify_token": "nope", "hub.challenge": "abc123"})
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(BAHASHA_WEBHOOK_VERIFY_TOKEN="")
+    def test_handshake_fails_closed_when_unconfigured(self):
+        response = self.client.get(self.URL, {"hub.mode": "subscribe", "hub.verify_token": "", "hub.challenge": "abc123"})
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(BAHASHA_WEBHOOK_SECRET="")
+    @patch("finance.views.send_parent_balance_response")
+    def test_post_rejected_when_secret_unconfigured(self, mock_balance):
+        response = self.client.post(self.URL + "?token=", self._payload(), format="json")
+        self.assertEqual(response.status_code, 401)
+        mock_balance.assert_not_called()
+
+    @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
+    @patch("finance.views.send_parent_balance_response")
+    def test_post_rejected_with_wrong_token(self, mock_balance):
+        response = self.client.post(self.URL + "?token=wrong", self._payload(), format="json")
+        self.assertEqual(response.status_code, 401)
+        mock_balance.assert_not_called()
+
+    @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
+    @patch("finance.views.send_parent_balance_response", return_value=[{"student_name": "Ada"}])
+    def test_balance_reply_is_processed_once_even_if_redelivered(self, mock_balance):
+        first = self.client.post(self.URL + "?token=s3cret", self._payload(), format="json")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()["processed"][0]["action"], "balance")
+
+        # A retry with the same message id but a different body (so the
+        # idempotency middleware's byte-for-byte replay does not catch it).
+        retry = self._payload()
+        retry["entry"][0]["changes"][0]["value"]["messages"][0]["timestamp"] = "1700000000"
+        again = self.client.post(self.URL + "?token=s3cret", retry, format="json")
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.json()["processed"], [])
+        mock_balance.assert_called_once_with("2348012345678")
+
+    @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
+    def test_delivery_status_events_are_accepted(self):
+        payload = {"entry": [{"changes": [{"value": {"statuses": [
+            {"id": "wamid.X", "status": "failed", "recipient_id": "2348012345678",
+             "errors": [{"code": 131026, "title": "Message undeliverable"}]},
+        ]}}]}]}
+        response = self.client.post(self.URL + "?token=s3cret", payload, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["processed"], [])
+
+
 class ReceiptPageTermTests(TestCase):
     """The public /r/<code> page says which term a payment receipt, bill or
     invoice belongs to: the school's current term, unless the document already
