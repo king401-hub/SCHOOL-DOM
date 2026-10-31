@@ -274,6 +274,7 @@ else:
         'tenants',
         'superadmin_dashboard',
         'mail_inbox',
+        'anymail',
     ]
 
 # django.contrib.admin's own LogEntry.user FK has no db_constraint=False -
@@ -498,12 +499,15 @@ ANYMAIL = {
 
 # mail_inbox: SchoolDom's own company mailboxes (support@, and more later),
 # pulled in via IMAP by `manage.py poll_mail_accounts` rather than only being
-# reachable through Hostinger's webmail. Credentials stay in env vars, never
-# the DB (same convention as every other provider credential here). The
-# first account reuses the outbound SMTP mailbox above - IMAP and SMTP log
-# into the same Hostinger mailbox with the same password. To add another
-# mailbox later, append another dict with its own address/password env var.
-MAIL_INBOX_IMAP_HOST = os.environ.get('MAIL_INBOX_IMAP_HOST', 'imap.hostinger.com')
+# reachable through the mailbox provider's own webmail. Credentials stay in
+# env vars, never the DB (same convention as every other provider credential
+# here). The first account reuses EMAIL_HOST_USER/PASSWORD as its IMAP
+# login - those two vars now just mean "the support mailbox credentials"
+# rather than outbound SMTP creds, since outbound sending goes through
+# Resend (see ANYMAIL/EMAIL_BACKEND above) and no longer shares a mailbox
+# with IMAP. To add another mailbox later, append another dict with its own
+# address/password env var.
+MAIL_INBOX_IMAP_HOST = os.environ.get('MAIL_INBOX_IMAP_HOST', 'imap.zoho.com')
 MAIL_INBOX_IMAP_PORT = env_int('MAIL_INBOX_IMAP_PORT', 993)
 MAIL_INBOX_ACCOUNTS = [
     {
