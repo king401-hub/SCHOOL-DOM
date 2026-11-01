@@ -113,7 +113,10 @@ from finance.services import (
     dispatch_payment_receipt_notifications,
     send_payment_receipt_notifications,
     send_fee_reminders,
-    send_parent_balance_response,
+    parent_contact_reply,
+    parent_topic_from_message,
+    parent_topic_reply,
+    send_parent_menu,
     send_payment_receipt,
     send_whatsapp_message,
     update_student_activation_alerts,
@@ -335,26 +338,24 @@ def _handle_whatsapp_inbound(messages):
     processed = []
     for message in messages:
         from_phone = message.get("from", "")
-        text = ((message.get("text") or {}).get("body") or "").strip().lower()
         if not from_phone:
             continue
-        if text == "stop":
+        topic = parent_topic_from_message(message)
+        if topic == "stop":
             processed.append({"from": from_phone, "action": "stop_ignored"})
             continue
-        if "balance" in text or text in {"bal", "fees", "fee"}:
-            try:
-                rows = send_parent_balance_response(from_phone)
-                processed.append({"from": from_phone, "action": "balance", "children": len(rows)})
-            except Exception as exc:
-                logger.exception("WhatsApp BALANCE reply to %s failed", from_phone)
-                processed.append({"from": from_phone, "action": "balance", "error": str(exc)})
-        else:
-            try:
-                send_whatsapp_message(from_phone, "SchoolDom: reply BALANCE to see your children and instant bank payment links.")
-                processed.append({"from": from_phone, "action": "help"})
-            except Exception as exc:
-                logger.exception("WhatsApp help reply to %s failed", from_phone)
-                processed.append({"from": from_phone, "action": "help", "error": str(exc)})
+        action = topic or "menu"
+        try:
+            if topic in ("fees", "attendance", "results"):
+                send_whatsapp_message(from_phone, parent_topic_reply(from_phone, topic))
+            elif topic == "contact":
+                send_whatsapp_message(from_phone, parent_contact_reply(from_phone))
+            else:
+                send_parent_menu(from_phone)
+            processed.append({"from": from_phone, "action": action})
+        except Exception as exc:
+            logger.exception("WhatsApp %s reply to %s failed", action, from_phone)
+            processed.append({"from": from_phone, "action": action, "error": str(exc)})
     return processed
 
 

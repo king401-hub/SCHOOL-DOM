@@ -5630,6 +5630,163 @@ class StudentsForParentPhoneTests(TestCase):
         self.assertEqual(parent_balance_payload("08000000000"), [])
 
 
+class ParentWhatsAppMenuTests(TestCase):
+    """The phone number alone finds the school and children; the reply is text
+    for one topic, with the school's contact line and no payment links."""
+
+    PHONE = "2348012345678"
+
+    def setUp(self):
+        from datetime import timedelta
+        from academic.models import AcademicYear, Term
+
+        self.school = SchoolTenant.objects.create(
+            name="Greenfield School", schema_name="greenfield_menu", is_active=True,
+            phone="08030000000", email="office@greenfield.test",
+        )
+        self.legacy = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        today = timezone.localdate()
+        self.year = AcademicYear.objects.create(
+            tenant=self.legacy, name="2026/2027", start_date=today - timedelta(days=60),
+            end_date=today + timedelta(days=300), is_active=True,
+        )
+        self.term = Term.objects.create(
+            tenant=self.legacy, name="First Term", academic_year=self.year,
+            start_date=today - timedelta(days=30), end_date=today + timedelta(days=60), is_active=True,
+        )
+        self.student = self._student(self.school, "tunde@menu.test", "Tunde", "Ade", "STU-MENU-1")
+
+    def _student(self, school, email, first, last, student_id):
+        user = User.objects.create_user(
+            email=email, password="StudentPass123", first_name=first, last_name=last,
+            role="student", tenant=school, is_active=True, is_verified=True,
+        )
+        return StudentProfile.objects.create(
+            user=user, student_id=student_id, admission_number="ADM-" + student_id,
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            guardian_phone=self.PHONE,
+        )
+
+    def test_typed_words_and_taps_map_to_topics(self):
+        from finance.services import parent_topic_from_message as topic
+
+        def text(body):
+            return {"type": "text", "text": {"body": body}}
+
+        self.assertEqual(topic(text("balance")), "fees")
+        self.assertEqual(topic(text("Fee balance")), "fees")
+        self.assertEqual(topic(text("ATTENDANCE")), "attendance")
+        self.assertEqual(topic(text("results please")), "results")
+        self.assertEqual(topic(text("help")), "contact")
+        self.assertEqual(topic(text("STOP")), "stop")
+        self.assertIsNone(topic(text("Hi")))
+        self.assertIsNone(topic(text("it is free")))  # "free" is not "fee"
+        self.assertEqual(topic({"type": "button", "button": {"text": "Results"}}), "results")
+        self.assertEqual(topic({"type": "button", "button": {"payload": "Attendance"}}), "attendance")
+        self.assertEqual(
+            topic({"type": "interactive", "interactive": {"list_reply": {"id": "x", "title": "Fee balance"}}}), "fees",
+        )
+
+    @patch("finance.services.outstanding_amount_for_student", return_value=Decimal("45000"))
+    def test_fee_reply_names_school_and_child_and_has_no_links(self, _owed):
+        from finance.services import parent_topic_reply
+
+        reply = parent_topic_reply(self.PHONE, "fees")
+        self.assertIn("Greenfield School", reply)
+        self.assertIn("Ade Tunde", reply)
+        self.assertIn("45,000", reply)
+        self.assertIn("office@greenfield.test", reply)
+        self.assertNotIn("http", reply)
+
+    @patch("finance.services.outstanding_amount_for_student", return_value=Decimal("0"))
+    def test_fee_reply_for_a_fully_paid_child(self, _owed):
+        from finance.services import parent_topic_reply
+
+        self.assertIn("fees fully paid", parent_topic_reply(self.PHONE, "fees"))
+
+    def test_attendance_reply_counts_the_last_30_days(self):
+        from datetime import timedelta
+        from academic.models import AttendanceRecord
+        from finance.services import parent_topic_reply
+
+        today = timezone.localdate()
+        for days_ago, status in ((0, "present"), (1, "present"), (2, "absent"), (45, "absent")):
+            AttendanceRecord.objects.create(student=self.student.user, date=today - timedelta(days=days_ago), status=status)
+
+        reply = parent_topic_reply(self.PHONE, "attendance")
+        self.assertIn("2 present", reply)
+        self.assertIn("1 absent", reply)  # the 45-day-old absence is outside the window
+
+    def test_attendance_reply_when_nothing_is_recorded(self):
+        from finance.services import parent_topic_reply
+
+        self.assertIn("no attendance recorded", parent_topic_reply(self.PHONE, "attendance"))
+
+    def test_results_reply_uses_only_published_scores(self):
+        from academic.models import ResultBatch, StudentSubjectScore, Subject
+        from finance.services import parent_topic_reply
+
+        maths = Subject.objects.create(name="Maths", code="MTH")
+        english = Subject.objects.create(name="English", code="ENG")
+        StudentSubjectScore.objects.create(
+            student=self.student, subject=maths, term=self.term, score=80, max_score=100,
+            approval_status=ResultBatch.DRAFT,
+        )
+        self.assertIn("no results published yet", parent_topic_reply(self.PHONE, "results"))
+
+        StudentSubjectScore.objects.filter(subject=maths).update(approval_status=ResultBatch.PUBLISHED)
+        StudentSubjectScore.objects.create(
+            student=self.student, subject=english, term=self.term, score=10, max_score=100,
+            approval_status=ResultBatch.DRAFT,  # unpublished: must not drag the average down
+        )
+        reply = parent_topic_reply(self.PHONE, "results")
+        self.assertIn("First Term", reply)
+        self.assertIn("average 80", reply)
+
+    def test_one_phone_with_children_at_two_schools_gets_both(self):
+        from finance.services import parent_topic_reply
+
+        other = SchoolTenant.objects.create(name="Hillcrest College", schema_name="hillcrest_menu", is_active=True)
+        self._student(other, "amaka@menu.test", "Amaka", "Ade", "STU-MENU-2")
+
+        with patch("finance.services.outstanding_amount_for_student", return_value=Decimal("0")):
+            reply = parent_topic_reply(self.PHONE, "fees")
+        self.assertIn("Greenfield School", reply)
+        self.assertIn("Hillcrest College", reply)
+        self.assertIn("Ade Tunde", reply)
+        self.assertIn("Ade Amaka", reply)
+
+    def test_help_gives_the_school_contact_and_an_unknown_number_is_told_so(self):
+        from finance.services import PARENT_NOT_LINKED_TEXT, parent_contact_reply
+
+        self.assertIn("08030000000", parent_contact_reply(self.PHONE))
+        self.assertEqual(parent_contact_reply("08099990000"), PARENT_NOT_LINKED_TEXT)
+
+    @override_settings(BAHASHA_MENU_TEMPLATE="parent_menu", BAHASHA_MENU_TEMPLATE_LANGUAGE="en")
+    @patch("finance.services.send_whatsapp_message")
+    def test_menu_uses_the_template_and_falls_back_to_text_if_it_fails(self, mock_send):
+        from finance.services import PARENT_HELP_TEXT, send_parent_menu
+
+        send_parent_menu(self.PHONE)
+        mock_send.assert_called_once_with(
+            self.PHONE, PARENT_HELP_TEXT, template={"name": "parent_menu", "language": "en"},
+        )
+
+        mock_send.reset_mock()
+        mock_send.side_effect = [RuntimeError("template not approved"), {"status": "success"}]
+        send_parent_menu(self.PHONE)
+        self.assertEqual(mock_send.call_count, 2)
+        mock_send.assert_called_with(self.PHONE, PARENT_HELP_TEXT)
+
+    @override_settings(BAHASHA_MENU_TEMPLATE="")
+    @patch("finance.services.send_whatsapp_message")
+    def test_menu_is_plain_text_when_no_template_is_configured(self, mock_send):
+        from finance.services import PARENT_HELP_TEXT, send_parent_menu
+
+        send_parent_menu(self.PHONE)
+        mock_send.assert_called_once_with(self.PHONE, PARENT_HELP_TEXT)
+
+
 class BahashaWhatsAppWebhookTests(TestCase):
     URL = "/api/finance/whatsapp/bahasha/webhook/"
 
@@ -5662,25 +5819,26 @@ class BahashaWhatsAppWebhookTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
     @override_settings(BAHASHA_WEBHOOK_SECRET="")
-    @patch("finance.views.send_parent_balance_response")
-    def test_post_rejected_when_secret_unconfigured(self, mock_balance):
+    @patch("finance.views.parent_topic_reply")
+    def test_post_rejected_when_secret_unconfigured(self, mock_reply):
         response = self.client.post(self.URL + "?token=", self._payload(), format="json")
         self.assertEqual(response.status_code, 401)
-        mock_balance.assert_not_called()
+        mock_reply.assert_not_called()
 
     @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
-    @patch("finance.views.send_parent_balance_response")
-    def test_post_rejected_with_wrong_token(self, mock_balance):
+    @patch("finance.views.parent_topic_reply")
+    def test_post_rejected_with_wrong_token(self, mock_reply):
         response = self.client.post(self.URL + "?token=wrong", self._payload(), format="json")
         self.assertEqual(response.status_code, 401)
-        mock_balance.assert_not_called()
+        mock_reply.assert_not_called()
 
     @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
-    @patch("finance.views.send_parent_balance_response", return_value=[{"student_name": "Ada"}])
-    def test_balance_reply_is_processed_once_even_if_redelivered(self, mock_balance):
+    @patch("finance.views.send_whatsapp_message")
+    @patch("finance.views.parent_topic_reply", return_value="reply text")
+    def test_a_reply_is_sent_once_even_if_redelivered(self, mock_reply, mock_send):
         first = self.client.post(self.URL + "?token=s3cret", self._payload(), format="json")
         self.assertEqual(first.status_code, 200)
-        self.assertEqual(first.json()["processed"][0]["action"], "balance")
+        self.assertEqual(first.json()["processed"][0]["action"], "fees")
 
         # A retry with the same message id but a different body (so the
         # idempotency middleware's byte-for-byte replay does not catch it).
@@ -5689,20 +5847,38 @@ class BahashaWhatsAppWebhookTests(TestCase):
         again = self.client.post(self.URL + "?token=s3cret", retry, format="json")
         self.assertEqual(again.status_code, 200)
         self.assertEqual(again.json()["processed"], [])
-        mock_balance.assert_called_once_with("2348012345678")
+        mock_reply.assert_called_once_with("2348012345678", "fees")
+        mock_send.assert_called_once_with("2348012345678", "reply text")
+
+    @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
+    @patch("finance.views.send_whatsapp_message")
+    def test_a_number_not_linked_to_any_student_is_told_so(self, mock_send):
+        # No mocked lookup: this is the path that raised NameError
+        # (StudentProfile was never imported in finance.services).
+        from finance.services import PARENT_NOT_LINKED_TEXT
+
+        response = self.client.post(self.URL + "?token=s3cret", self._payload(), format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["processed"], [{"from": "2348012345678", "action": "fees"}])
+        mock_send.assert_called_once_with("2348012345678", PARENT_NOT_LINKED_TEXT)
+
+    @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
+    @patch("finance.views.send_whatsapp_message")
+    def test_a_tapped_quick_reply_button_gets_that_topics_reply(self, mock_send):
+        tap = {"entry": [{"changes": [{"value": {"messages": [
+            {"from": "2348012345678", "id": "wamid.TAP1", "type": "button",
+             "button": {"text": "Attendance", "payload": "Attendance"}},
+        ]}}]}]}
+        response = self.client.post(self.URL + "?token=s3cret", tap, format="json")
+        self.assertEqual(response.json()["processed"], [{"from": "2348012345678", "action": "attendance"}])
+        mock_send.assert_called_once()
 
     @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
     @patch("finance.services.send_whatsapp_message")
-    def test_balance_request_runs_the_real_lookup_end_to_end(self, mock_send):
-        # No mocked lookup: this is the path that raised NameError
-        # (StudentProfile was never imported in finance.services).
-        response = self.client.post(self.URL + "?token=s3cret", self._payload(), format="json")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.json()["processed"], [{"from": "2348012345678", "action": "balance", "children": 0}],
-        )
+    def test_anything_else_gets_the_menu(self, mock_send):
+        response = self.client.post(self.URL + "?token=s3cret", self._payload(text="Hi"), format="json")
+        self.assertEqual(response.json()["processed"], [{"from": "2348012345678", "action": "menu"}])
         mock_send.assert_called_once()
-        self.assertIn("no unpaid school fee balance", mock_send.call_args.args[1])
 
     @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
     def test_delivery_status_events_are_accepted(self):

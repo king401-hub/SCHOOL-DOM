@@ -20,6 +20,8 @@ were read from those docs on 2026-10-31; re-check them before relying on a gap.
    | `BAHASHA_API_KEY` | Bearer key. Bahasha is used only when this **and** the number id are set |
    | `BAHASHA_PHONE_NUMBER_ID` | `id` from the phone numbers endpoint |
    | `BAHASHA_API_BASE` | Defaults to `https://api.bahasha.app` |
+   | `BAHASHA_MENU_TEMPLATE` | Approved quick-reply menu template name (blank = plain-text menu) |
+   | `BAHASHA_MENU_TEMPLATE_LANGUAGE` | Defaults to `en_US` |
    | `BAHASHA_WEBHOOK_VERIFY_TOKEN` | Token for Bahasha's one-time GET handshake |
    | `BAHASHA_WEBHOOK_SECRET` | Shared secret, sent as `?token=` on the webhook URL |
 
@@ -74,6 +76,52 @@ them at Bahasha as plain text would fail outside the 24-hour window and push mos
 parents onto paid SMS. **Follow-up:** get templates approved, then route those
 callers through `send_whatsapp_message(..., template=...)`.
 
+## Parent menu
+
+A parent messages the school's WhatsApp number. The phone number alone identifies
+them: `students_for_parent_phone` matches it against each student's guardian phone,
+second guardian phone or own phone, which gives the school(s) and child(ren).
+
+1. Any message that is not a topic gets the **menu**: the approved quick-reply
+   template named in `BAHASHA_MENU_TEMPLATE`, or plain text ("reply FEES,
+   ATTENDANCE or RESULTS...") when no template is set or sending it fails.
+2. The parent taps a button (or types the word). Taps arrive as `type: "button"`
+   (`button.text`); `interactive` replies are handled too. Mapping is in
+   `parent_topic_from_message`.
+3. SchoolDom replies with text, grouped by school then child, ending with the
+   school's phone/email. **No payment links.**
+
+| Topic | Words / button | Source |
+|---|---|---|
+| Fees | `Fee balance`, balance, bal, fee, fees | `outstanding_amount_for_student` |
+| Attendance | `Attendance` | `academic.AttendanceRecord`, last 30 days, counts per status |
+| Results | `Results`, result, report | newest term with **published** scores, via `_student_result_report` (average and class position) |
+| Contact | help, contact, school | each school's phone and email |
+| (ignored) | stop | no reply |
+
+A number that matches no student gets "this number isn't linked to a student".
+
+### Create the menu template in Bahasha
+
+WhatsApp allows at most **three** quick-reply buttons per template (WhatsApp's
+limit, not stated in Bahasha's docs; confirm it), so Contact has no button: every
+reply ends with the school contact line and typing "help" returns it.
+
+- Name: `schooldom_parent_menu` (any name; put it in `BAHASHA_MENU_TEMPLATE`)
+- Language: `en_US` (or set `BAHASHA_MENU_TEMPLATE_LANGUAGE`)
+- Category: Utility
+- Body: `Hello! What would you like to see about your child at school?`
+- Buttons, type **Quick reply**, titles exactly: `Fee balance`, `Attendance`, `Results`
+- No variables (the code sends none)
+
+Wait for Meta's approval, then set `BAHASHA_MENU_TEMPLATE=schooldom_parent_menu`
+and restart. Until then (or if the template is rejected) parents get the
+plain-text menu.
+
+Bahasha does not document the JSON for a tapped button, so the first live tap
+may need a small adjustment. If a tap gets the menu again instead of a reply,
+read the real payload from the logs and adjust `parent_topic_from_message`.
+
 ## Webhook behaviour
 
 - `GET`: handshake. Echoes `hub.challenge` when `hub.mode == subscribe` and
@@ -86,8 +134,8 @@ callers through `send_whatsapp_message(..., template=...)`.
   strings can show up in proxy and access logs. Ask Bahasha whether they sign
   requests, and switch to that if they do.
 - Events: `statuses` (sent / delivered / read / failed; failures are logged as
-  warnings) and `messages` (parent replies; BALANCE gets the balance and payment
-  links, anything else gets the help line).
+  warnings) and `messages` (parent messages, answered as described under
+  "Parent menu" below).
 - Bahasha retries without a fast 200, with an undocumented schedule. Message ids
   are de-duplicated for 24 hours in the shared cache (database cache in
   production, so it holds across gunicorn workers). The existing

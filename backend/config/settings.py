@@ -624,6 +624,10 @@ WHATSAPP_BUSINESS_APP_SECRET = os.getenv('WHATSAPP_BUSINESS_APP_SECRET', '')
 BAHASHA_API_KEY = os.getenv('BAHASHA_API_KEY', '')
 BAHASHA_API_BASE = os.getenv('BAHASHA_API_BASE', 'https://api.bahasha.app')
 BAHASHA_PHONE_NUMBER_ID = os.getenv('BAHASHA_PHONE_NUMBER_ID', '')
+# Approved quick-reply menu template (buttons: Fee balance / Attendance / Results).
+# Blank = send the plain-text menu instead.
+BAHASHA_MENU_TEMPLATE = os.getenv('BAHASHA_MENU_TEMPLATE', '')
+BAHASHA_MENU_TEMPLATE_LANGUAGE = os.getenv('BAHASHA_MENU_TEMPLATE_LANGUAGE', 'en_US')
 BAHASHA_WEBHOOK_VERIFY_TOKEN = os.getenv('BAHASHA_WEBHOOK_VERIFY_TOKEN', '')
 # Bahasha documents no webhook signature, so this shared secret (sent as
 # ?token= on the registered webhook URL) is the only authenticity gate.

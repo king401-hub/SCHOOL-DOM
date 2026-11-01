@@ -13,7 +13,7 @@ import requests
 from django.conf import settings
 from django.db import OperationalError, ProgrammingError
 from django.db import transaction
-from django.db.models import F, Q, Sum
+from django.db.models import Count, F, Q, Sum
 from django.utils import timezone
 
 from core.background import run_in_background as _run_in_background
@@ -5147,6 +5147,160 @@ def send_parent_balance_response(parent_phone):
     for row in rows:
         send_whatsapp_message(parent_phone, build_balance_message(row))
     return rows
+
+
+# ── Parent WhatsApp menu ─────────────────────────────────────────────────────
+# A parent messages the school's number; the phone number alone says which
+# school(s) and children they belong to (guardian phone on the student). They
+# pick a topic by tapping a quick-reply button on the menu template (or by
+# typing the word) and get a text reply. No payment links.
+
+PARENT_HELP_TEXT = (
+    "SchoolDom: reply FEES, ATTENDANCE or RESULTS to see your children's "
+    "information, or HELP to reach your school."
+)
+PARENT_NOT_LINKED_TEXT = (
+    "SchoolDom: this number isn't linked to a student. Please ask your school "
+    "to confirm the parent phone number they have on file."
+)
+_PARENT_TOPIC_HEADINGS = {
+    "fees": "Fee balance",
+    "attendance": "Attendance (last 30 days)",
+    "results": "Latest results",
+}
+
+
+def parent_topic_from_message(message) -> Optional[str]:
+    """Which menu choice an inbound WhatsApp message is: "fees", "attendance",
+    "results", "contact", "stop", or None (send the menu).
+
+    A tapped quick-reply arrives as type "button" (button.text) or
+    "interactive" (button_reply / list_reply title); typed words work too."""
+    kind = message.get("type")
+    if kind == "button":
+        button = message.get("button") or {}
+        raw = button.get("text") or button.get("payload") or ""
+    elif kind == "interactive":
+        interactive = message.get("interactive") or {}
+        reply = interactive.get("button_reply") or interactive.get("list_reply") or {}
+        raw = reply.get("title") or reply.get("id") or ""
+    else:
+        raw = (message.get("text") or {}).get("body") or ""
+    text = str(raw).strip().lower()
+    if text == "stop":
+        return "stop"
+    words = set(re.findall(r"[a-z]+", text))
+    if words & {"balance", "bal", "fee", "fees"}:
+        return "fees"
+    if any(word.startswith("attend") for word in words):
+        return "attendance"
+    if words & {"result", "results", "report", "reportcard"}:
+        return "results"
+    if words & {"help", "contact", "school"}:
+        return "contact"
+    return None
+
+
+def _school_contact_line(tenant) -> str:
+    name = getattr(tenant, "name", "") or "Your school"
+    details = [str(getattr(tenant, field, "") or "").strip() for field in ("phone", "email")]
+    details = [d for d in details if d]
+    return f"{name}: {' | '.join(details)}" if details else f"{name}: please contact the school office."
+
+
+def _parent_student_label(student) -> str:
+    name = student.user.get_full_name() or student.user.email
+    class_name = getattr(getattr(student, "current_class", None), "name", "") or ""
+    return f"{name} ({class_name})" if class_name else name
+
+
+def _parent_topic_line(topic: str, student) -> str:
+    label = _parent_student_label(student)
+    if topic == "fees":
+        owed = outstanding_amount_for_student(student)
+        return f"{label}: {_format_naira(owed)} outstanding" if owed > 0 else f"{label}: fees fully paid"
+
+    if topic == "attendance":
+        from academic.models import AttendanceRecord
+
+        since = timezone.localdate() - timedelta(days=30)
+        counts = dict(
+            AttendanceRecord.objects.filter(student=student.user, date__gte=since)
+            .values_list("status").annotate(n=Count("id"))
+        )
+        if not counts:
+            return f"{label}: no attendance recorded"
+        parts = [f"{counts[s]} {s}" for s in ("present", "late", "absent", "excused") if counts.get(s)]
+        return f"{label}: {', '.join(parts)}"
+
+    from academic.models import ResultBatch, StudentSubjectScore
+    from users.app_views import _student_result_report
+
+    latest = (
+        StudentSubjectScore.objects.select_related("term", "class_group")
+        .filter(student=student, approval_status=ResultBatch.PUBLISHED)
+        .order_by(F("term__start_date").desc(nulls_last=True), "-updated_at")
+        .first()
+    )
+    if latest is None:
+        return f"{label}: no results published yet"
+    report = _student_result_report(student, class_group=latest.class_group, term=latest.term)
+    parts = [f"average {report.get('average_score') or 0}"]
+    if report.get("class_position"):
+        parts.append(f"position {report['class_position']}/{report.get('class_size') or 0}")
+    term_name = latest.term.name if latest.term else "latest term"
+    return f"{label}: {term_name}, {', '.join(parts)}"
+
+
+def parent_topic_reply(parent_phone, topic: str) -> str:
+    """The text reply for one menu topic, grouped by school then child."""
+    students = list(students_for_parent_phone(parent_phone))
+    if not students:
+        return PARENT_NOT_LINKED_TEXT
+    by_school = {}
+    for student in students:
+        by_school.setdefault(getattr(student.user, "tenant", None), []).append(student)
+    sections = []
+    for tenant, kids in by_school.items():
+        lines = [f"*{getattr(tenant, 'name', '') or 'School'}* - {_PARENT_TOPIC_HEADINGS[topic]}"]
+        for kid in kids:
+            try:
+                lines.append(_parent_topic_line(topic, kid))
+            except Exception:
+                logger.exception("WhatsApp %s lookup failed for student %s", topic, kid.pk)
+                lines.append(f"{_parent_student_label(kid)}: unavailable right now")
+        lines.append(_school_contact_line(tenant))
+        sections.append("\n".join(lines))
+    return "\n\n".join(sections)
+
+
+def parent_contact_reply(parent_phone) -> str:
+    students = list(students_for_parent_phone(parent_phone))
+    if not students:
+        return PARENT_NOT_LINKED_TEXT
+    tenants = []
+    for student in students:
+        tenant = getattr(student.user, "tenant", None)
+        if tenant not in tenants:
+            tenants.append(tenant)
+    return "\n".join(_school_contact_line(t) for t in tenants)
+
+
+def send_parent_menu(parent_phone):
+    """The quick-reply menu template when one is configured and approved, else
+    (or if sending it fails) a plain-text prompt, which works inside the
+    24-hour window the parent's own message just opened."""
+    template_name = getattr(settings, "BAHASHA_MENU_TEMPLATE", "")
+    if template_name:
+        template = {
+            "name": template_name,
+            "language": getattr(settings, "BAHASHA_MENU_TEMPLATE_LANGUAGE", "en_US"),
+        }
+        try:
+            return send_whatsapp_message(parent_phone, PARENT_HELP_TEXT, template=template)
+        except RuntimeError:
+            logger.exception("WhatsApp menu template %s failed; sending text instead", template_name)
+    return send_whatsapp_message(parent_phone, PARENT_HELP_TEXT)
 
 
 def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
