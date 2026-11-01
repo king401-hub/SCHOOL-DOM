@@ -5182,6 +5182,7 @@ def student_qr_mark_attendance(request):
             attendance_date=today,
             requested_action=request.data.get("action"),
             school_name=school.name,
+            school=school,
         )
     except AttendanceClockError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -7646,6 +7647,7 @@ def id_card_scan_attendance(request):
             attendance_date=attendance_date,
             requested_action=request.data.get("action"),
             school_name=school.name,
+            school=school,
         )
     except AttendanceClockError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -13072,6 +13074,7 @@ def teacher_mark_student_attendance(request):
                 requested_action=clock_action,
                 school_name=school_name,
                 status_value=status_value or "present",
+                school=user.tenant,
             )
         except AttendanceClockError as exc:
             return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -15311,6 +15314,7 @@ def _record_attendance_clock(
     status_value="present",
     occurred_at=None,
     allow_clock_out_without_clock_in=False,
+    school=None,
 ):
     """Clock a student in or out for one day.
 
@@ -15332,6 +15336,17 @@ def _record_attendance_clock(
     during the clock-out window instead of erroring or being clocked in for
     the first time at 3pm. Every other caller leaves this False and keeps
     requiring a same-day clock-in first.
+
+    `school`: the real core.SchoolTenant (not tenant_obj, which may be the
+    legacy tenants.Tenant AttendanceRecord.tenant actually points at) to
+    bill for a wallet-funded parent SMS when no linked parent's Kids
+    Monitor subscription already covers one for free - see
+    _notify_parents_on_attendance. Left as None (every caller except the
+    three web tap/scan endpoints in this file), no wallet SMS is sent -
+    the RFID/SchoolGate gate scanner already sends its own gate SMS
+    (free or wallet-billed per its own plan tier, see
+    rfid_attendance.views._send_gate_sms/_send_gate_sms_from_wallet) and
+    would otherwise get double-charged and double-texted here too.
 
     Raises AttendanceClockError when the action cannot apply, so callers can turn
     it straight into a 400 rather than silently recording the wrong thing.
@@ -15441,6 +15456,7 @@ def _record_attendance_clock(
         school_name,
         event=action,
         event_time=event_time,
+        school=school,
     )
     return attendance, action, message
 
@@ -15481,12 +15497,21 @@ def _notify_parents_on_attendance(
     school_name,
     event=ATTENDANCE_EVENT_STATUS,
     event_time=None,
+    school=None,
 ):
     """
     Queue SMS to parents who have Child Monitor active when attendance is marked.
-    Only parents with an active KidsMonitorSubscription receive anything — this is
-    the paid opt-in gate, checked per parent below.
+    Only parents with an active KidsMonitorSubscription receive anything for free —
+    that's the paid opt-in gate, checked per parent below.
     Sends happen on a background thread so marking attendance stays instant for the teacher.
+
+    When `school` is given and no linked parent actually received that free text
+    (no active subscription, or active but no phone on file), one SMS is instead
+    billed to the school's own SMS wallet and sent to the student's best guardian
+    contact - see _send_wallet_billed_attendance_sms. This is how every web
+    tap/scan attendance endpoint (QR self-scan, ID-card scan, teacher clock-in/out)
+    guarantees the parent hears about it even without a Kids Monitor subscription,
+    without double-texting/double-charging a parent who's already covered for free.
     """
     try:
         student_profile = student_user.student_profile
@@ -15516,6 +15541,40 @@ def _notify_parents_on_attendance(
         threading.Thread(
             target=_send_attendance_sms_batch, args=(to_send, settings.SMS_PROVIDER), daemon=True
         ).start()
+    elif school is not None:
+        _send_wallet_billed_attendance_sms(school, student_profile, message)
+
+
+def _send_wallet_billed_attendance_sms(school, student_profile, message):
+    """Bills `school`'s own SMS wallet for one attendance notification to the
+    student's best guardian contact - the fallback _notify_parents_on_attendance
+    reaches for when no linked parent has an active Kids Monitor subscription to
+    cover the text for free. Threaded and swallows a failed/locked/empty wallet
+    for the same reason every other wallet-billed send in this codebase does:
+    attendance must stay instant, and a school with no SMS credit left should
+    just not get this one text, not have attendance itself fail."""
+    from finance.models import SmsMessageLog
+    from finance.services import (
+        InsufficientSmsCreditsError,
+        SmsWalletLockedError,
+        guardian_contacts_for_student,
+        send_wallet_sms,
+    )
+    phone, _email = guardian_contacts_for_student(student_profile)
+    if not phone:
+        return
+
+    def _send():
+        try:
+            send_wallet_sms(
+                school, phone, message,
+                category=SmsMessageLog.ATTENDANCE,
+                narration="Attendance (web tap/scan)",
+            )
+        except (InsufficientSmsCreditsError, SmsWalletLockedError):
+            pass
+
+    threading.Thread(target=_send, daemon=True).start()
 
 
 # Static dial-code map (ISO alpha-2 → calling code).  Covers all 249 UN-recognised

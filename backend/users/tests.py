@@ -4459,6 +4459,84 @@ class AttendanceAndPromptTests(TestCase):
         events = [call.kwargs.get("event") for call in notify.call_args_list]
         self.assertEqual(events, ["clock_in", "clock_out"])
 
+    class _ImmediateThread:
+        """Stands in for threading.Thread so a wallet-billed SMS send (fired
+        on a background thread so attendance itself stays instant) runs
+        synchronously within the test instead of racing the assertions."""
+
+        def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+            self._target, self._args, self._kwargs = target, args, kwargs or {}
+
+        def start(self):
+            self._target(*self._args, **self._kwargs)
+
+    def test_id_card_scan_bills_school_wallet_for_parent_sms_when_no_kids_monitor(self):
+        """The web tap/scan flow (a teacher scanning a student's ID card) has
+        no Kids Monitor subscription on this student, so the fallback added
+        for this should bill the school's own SMS wallet for one attendance
+        text rather than silently sending nothing - see
+        users.app_views._send_wallet_billed_attendance_sms."""
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 10
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        token = self._id_card_token()
+        self.client.force_authenticate(user=self.teacher_user)
+
+        with patch("finance.services._dispatch_wallet_sms") as mock_send, \
+                patch("users.app_views.threading.Thread", self._ImmediateThread):
+            mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+            response = self._scan(token)
+
+        self.assertEqual(response.status_code, 200)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 9)
+        log = SmsMessageLog.objects.get(category=SmsMessageLog.ATTENDANCE)
+        self.assertEqual(log.recipient_phone, "+15550009999")
+        self.assertEqual(log.tenant_id, self.school.id)
+
+    def test_id_card_scan_skips_wallet_charge_when_kids_monitor_already_covers_it(self):
+        """A parent with an active Kids Monitor subscription already gets
+        this text for free, funded by their own subscription - the wallet
+        fallback must not also fire and double-bill the school (or
+        double-text the parent) for a message that's already covered."""
+        parent_user = User.objects.create_user(
+            email="parent@attendance.edu",
+            password="ParentPass123",
+            first_name="Guardian",
+            last_name="Lead",
+            role="parent",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+            phone="+15550001234",
+        )
+        parent_profile = ParentProfile.objects.create(user=parent_user)
+        parent_profile.children.add(StudentProfile.objects.get(user=self.student_user))
+        activate_kids_monitor_subscription(parent_profile, self.school, reference="km-attendance-test")
+
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 10
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        token = self._id_card_token()
+        self.client.force_authenticate(user=self.teacher_user)
+
+        with patch("finance.services._dispatch_wallet_sms") as mock_send, \
+                patch("users.app_views.threading.Thread", self._ImmediateThread), \
+                patch("finance.services.send_kudisms") as mock_kudisms:
+            mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+            response = self._scan(token)
+
+        self.assertEqual(response.status_code, 200)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 10)
+        self.assertFalse(SmsMessageLog.objects.filter(category=SmsMessageLog.ATTENDANCE).exists())
+        # settings.SMS_PROVIDER defaults to "kudisms" - confirms the free
+        # Kids Monitor path actually fired (and is what made the wallet
+        # fallback above correctly skip), not that neither path ran at all.
+        mock_kudisms.assert_called_once()
+
     def test_performance_heatmap_loads_with_attendance_records_present(self):
         """The heatmap selects AttendanceRecord, so it breaks the moment that
         table's columns and the model disagree - which is what an unapplied
