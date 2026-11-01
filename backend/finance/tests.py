@@ -5621,6 +5621,15 @@ class BahashaWhatsAppSenderTests(TestCase):
         mock_termii.assert_called_once()
 
 
+class StudentsForParentPhoneTests(TestCase):
+    def test_blank_and_unknown_phones_match_no_students(self):
+        from finance.services import parent_balance_payload, students_for_parent_phone
+
+        self.assertEqual(list(students_for_parent_phone("")), [])
+        self.assertEqual(list(students_for_parent_phone("08000000000")), [])
+        self.assertEqual(parent_balance_payload("08000000000"), [])
+
+
 class BahashaWhatsAppWebhookTests(TestCase):
     URL = "/api/finance/whatsapp/bahasha/webhook/"
 
@@ -5681,6 +5690,19 @@ class BahashaWhatsAppWebhookTests(TestCase):
         self.assertEqual(again.status_code, 200)
         self.assertEqual(again.json()["processed"], [])
         mock_balance.assert_called_once_with("2348012345678")
+
+    @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
+    @patch("finance.services.send_whatsapp_message")
+    def test_balance_request_runs_the_real_lookup_end_to_end(self, mock_send):
+        # No mocked lookup: this is the path that raised NameError
+        # (StudentProfile was never imported in finance.services).
+        response = self.client.post(self.URL + "?token=s3cret", self._payload(), format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["processed"], [{"from": "2348012345678", "action": "balance", "children": 0}],
+        )
+        mock_send.assert_called_once()
+        self.assertIn("no unpaid school fee balance", mock_send.call_args.args[1])
 
     @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
     def test_delivery_status_events_are_accepted(self):

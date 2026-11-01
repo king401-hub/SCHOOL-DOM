@@ -346,12 +346,14 @@ def _handle_whatsapp_inbound(messages):
                 rows = send_parent_balance_response(from_phone)
                 processed.append({"from": from_phone, "action": "balance", "children": len(rows)})
             except Exception as exc:
+                logger.exception("WhatsApp BALANCE reply to %s failed", from_phone)
                 processed.append({"from": from_phone, "action": "balance", "error": str(exc)})
         else:
             try:
                 send_whatsapp_message(from_phone, "SchoolDom: reply BALANCE to see your children and instant bank payment links.")
                 processed.append({"from": from_phone, "action": "help"})
             except Exception as exc:
+                logger.exception("WhatsApp help reply to %s failed", from_phone)
                 processed.append({"from": from_phone, "action": "help", "error": str(exc)})
     return processed
 

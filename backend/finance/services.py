@@ -5056,6 +5056,8 @@ def generate_bank_links(school, student_profile, amount=None, extra_banks=None):
 
 
 def students_for_parent_phone(parent_phone):
+    from users.models import StudentProfile
+
     normalized = normalize_phone_number(parent_phone)
     if not normalized:
         return StudentProfile.objects.none()
