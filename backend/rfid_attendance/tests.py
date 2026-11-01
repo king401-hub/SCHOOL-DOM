@@ -500,3 +500,109 @@ class PendingCardScanTapToCaptureTests(TestCase):
 
         response = self._poll()
         self.assertFalse(response.data["found"])
+
+
+class MarkSchoolgateAbsenteesTestCase(TestCase):
+    """mark_schoolgate_absentees - the server-side no-show backstop that
+    marks a student absent once their school's gate clock-out window has
+    closed, regardless of whether the gate terminal itself is online. No
+    ParentProfile is created for any student below, so
+    _notify_parents_on_attendance finds no one to text and never touches
+    the network - exactly the same reason none of the other tests in this
+    file mock an SMS provider."""
+
+    MONDAY_UTC_NOON = datetime.datetime(2024, 9, 2, 12, 0, tzinfo=datetime.timezone.utc)  # 13:00 in Africa/Lagos
+    SATURDAY_UTC_NOON = datetime.datetime(2024, 9, 7, 12, 0, tzinfo=datetime.timezone.utc)
+
+    def setUp(self):
+        from core.tenant import SchoolTenant
+
+        self.school = SchoolTenant.objects.create(name="Gate School", schema_name="gate_school")
+        self.gate_settings = GateSettings.objects.create(
+            tenant=self.school, clockout_end=datetime.time(13, 0),
+        )
+        self.student_no_scan = self._make_student("No Scan", "STU-NS-001", "ADM-NS-001")
+        self.student_present = self._make_student("Already Present", "STU-AP-001", "ADM-AP-001")
+        AttendanceRecord.objects.create(
+            student=self.student_present, date=datetime.date(2024, 9, 2), status="present",
+        )
+
+    def _make_student(self, name, student_id, admission_number):
+        from users.models import StudentProfile
+
+        first, last = name.split(" ", 1)
+        user = User.objects.create_user(
+            email=f"{student_id.lower()}@gate-school.edu", password="testpass123", role="student",
+            tenant=self.school, first_name=first, last_name=last,
+        )
+        StudentProfile.objects.create(
+            user=user, student_id=student_id, admission_number=admission_number,
+            admission_date=datetime.date(2024, 1, 1), guardian_name="Guardian", guardian_phone="",
+            guardian_relation="Parent",
+        )
+        return user
+
+    def test_student_with_no_scan_marked_absent_after_clockout_window_closes(self):
+        from .services import mark_schoolgate_absentees
+
+        results = mark_schoolgate_absentees(school_code=self.school.schema_name, now=self.MONDAY_UTC_NOON)
+
+        result = results[self.school.schema_name]
+        self.assertTrue(result["ran"], result["reason"])
+        outcomes = {row["profile"].user_id: row["outcome"] for row in result["rows"]}
+        self.assertEqual(outcomes, {self.student_no_scan.id: "marked_absent"})
+
+        record = AttendanceRecord.objects.get(student=self.student_no_scan)
+        self.assertEqual(record.status, "absent")
+        self.assertEqual(record.date, datetime.date(2024, 9, 2))
+
+        # The student already marked present is left exactly as-is - no
+        # second row, no status change.
+        self.assertEqual(
+            AttendanceRecord.objects.get(student=self.student_present).status, "present",
+        )
+        self.assertEqual(AttendanceRecord.objects.filter(student=self.student_present).count(), 1)
+
+    def test_school_with_window_still_open_is_left_alone(self):
+        from .services import mark_schoolgate_absentees
+
+        still_open = datetime.datetime(2024, 9, 2, 10, 0, tzinfo=datetime.timezone.utc)  # 11:00 Lagos, before 13:00
+        results = mark_schoolgate_absentees(school_code=self.school.schema_name, now=still_open)
+
+        result = results[self.school.schema_name]
+        self.assertFalse(result["ran"])
+        self.assertEqual(result["reason"], "clock-out window still open")
+        self.assertFalse(AttendanceRecord.objects.filter(student=self.student_no_scan).exists())
+
+    def test_weekend_is_skipped_even_past_clockout(self):
+        from .services import mark_schoolgate_absentees
+
+        results = mark_schoolgate_absentees(school_code=self.school.schema_name, now=self.SATURDAY_UTC_NOON)
+
+        result = results[self.school.schema_name]
+        self.assertFalse(result["ran"])
+        self.assertEqual(result["reason"], "weekend")
+        self.assertFalse(AttendanceRecord.objects.filter(student=self.student_no_scan).exists())
+
+    def test_dry_run_writes_nothing(self):
+        from .services import mark_schoolgate_absentees
+
+        results = mark_schoolgate_absentees(
+            school_code=self.school.schema_name, now=self.MONDAY_UTC_NOON, dry_run=True,
+        )
+
+        result = results[self.school.schema_name]
+        self.assertTrue(result["ran"])
+        outcomes = [row["outcome"] for row in result["rows"]]
+        self.assertEqual(outcomes, ["dry_run"])
+        self.assertFalse(AttendanceRecord.objects.filter(student=self.student_no_scan).exists())
+
+    def test_running_twice_the_same_day_does_not_duplicate(self):
+        from .services import mark_schoolgate_absentees
+
+        mark_schoolgate_absentees(school_code=self.school.schema_name, now=self.MONDAY_UTC_NOON)
+        later_same_day = self.MONDAY_UTC_NOON + datetime.timedelta(hours=2)
+        second = mark_schoolgate_absentees(school_code=self.school.schema_name, now=later_same_day)
+
+        self.assertEqual(second[self.school.schema_name]["rows"], [])
+        self.assertEqual(AttendanceRecord.objects.filter(student=self.student_no_scan).count(), 1)

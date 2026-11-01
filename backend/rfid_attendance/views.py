@@ -15,7 +15,6 @@ originally built for).
 """
 import threading
 from datetime import timedelta
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
@@ -49,6 +48,7 @@ from users.app_views import (
 
 from .models import CardAssignment, GateSettings
 from .serializers import CardAssignmentSerializer
+from .services import _school_localtime
 
 # Card assignment is admin-only ("built strictly into the desktop app", spec
 # Section 4) - a teacher/staff member can still operate the reader for
@@ -137,34 +137,6 @@ def _student_dva_payload(student_profile):
                 'account_name': admin_wallet.bank_account_name,
             }
     return None
-
-
-def _school_localtime(school, moment=None):
-    """timezone.localtime(moment) converts to Django's single global
-    TIME_ZONE setting (Africa/Lagos) regardless of which school is asking -
-    every gate SMS, clock-in/out message, and the classify_event window
-    check itself all went through that, silently ignoring
-    SchoolTenant.timezone (an admin-editable per-school field, see
-    _school_payload/the school settings update view) entirely. A school
-    whose configured timezone differs from the platform default got SMS
-    times that didn't match their own clock, and - worse - clock-in/late/
-    clock-out window classification computed against the wrong "now".
-    Falls back to the Django default for an empty/unrecognized zone
-    string (e.g. still the field's own 'UTC' default) rather than
-    raising, since a bad per-school setting must never break a scan."""
-    moment = moment or timezone.now()
-    tz_name = str(getattr(school, 'timezone', '') or '').strip()
-    # 'UTC' is the field's own blank-state default (every school that has
-    # never touched this setting sits at exactly that value) - treating it
-    # as "not configured" and falling through to the platform default
-    # (Africa/Lagos) avoids silently shifting every untouched school back
-    # an hour. Only a school that picked something else gets honored here.
-    if tz_name and tz_name != 'UTC':
-        try:
-            return moment.astimezone(ZoneInfo(tz_name))
-        except (ZoneInfoNotFoundError, ValueError):
-            pass
-    return timezone.localtime(moment)
 
 
 def _gate_sms_text(school, student, action, event, occurred_at=None):
