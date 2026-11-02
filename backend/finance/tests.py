@@ -5778,6 +5778,16 @@ class ParentWhatsAppMenuTests(TestCase):
         self.assertEqual(mock_send.call_count, 2)
         mock_send.assert_called_with(self.PHONE, PARENT_HELP_TEXT)
 
+    @override_settings(BAHASHA_MENU_TEMPLATE="parent_menu", BAHASHA_MENU_TEMPLATE_SCHOOL_PARAM="school")
+    @patch("finance.services.send_whatsapp_message")
+    def test_menu_template_carries_the_school_name(self, mock_send):
+        from finance.services import PARENT_HELP_TEXT, send_parent_menu
+
+        send_parent_menu(self.PHONE)
+        template = mock_send.call_args.kwargs["template"]
+        self.assertEqual(list(template["variables"]), ["body"])
+        self.assertTrue(template["variables"]["body"]["school"])
+
     @override_settings(BAHASHA_MENU_TEMPLATE="")
     @patch("finance.services.send_whatsapp_message")
     def test_menu_is_plain_text_when_no_template_is_configured(self, mock_send):

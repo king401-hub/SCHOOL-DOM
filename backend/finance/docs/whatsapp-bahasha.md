@@ -114,6 +114,14 @@ reply ends with the school contact line and typing "help" returns it.
 - Buttons, type **Quick reply**, titles exactly: `Fee balance`, `Attendance`, `Results`
 - No variables (the code sends none)
 
+Optional school name: WhatsApp footers cannot hold variables, so put it in the body,
+e.g. `Hello! What would you like to see about your child at {{school}}?`, give the
+variable a sample value when creating the template, and set
+`BAHASHA_MENU_TEMPLATE_SCHOOL_PARAM=school` (the variable's name). The code sends
+`{"body": {"school": "<school name>"}}`; parents at several schools get the names
+joined with "and". If Bahasha expects positional variables instead, adjust
+`send_parent_menu`.
+
 Wait for Meta's approval, then set `BAHASHA_MENU_TEMPLATE=schooldom_parent_menu`
 and restart. Until then (or if the template is rejected) parents get the
 plain-text menu.

@@ -5296,6 +5296,16 @@ def send_parent_menu(parent_phone):
             "name": template_name,
             "language": getattr(settings, "BAHASHA_MENU_TEMPLATE_LANGUAGE", "en_US"),
         }
+        # Optional: a body variable that carries the school name(s), so the
+        # template can read "...about your child at {{school}}?".
+        school_param = getattr(settings, "BAHASHA_MENU_TEMPLATE_SCHOOL_PARAM", "")
+        if school_param:
+            names = []
+            for student in students_for_parent_phone(parent_phone):
+                name = getattr(getattr(student.user, "tenant", None), "name", "")
+                if name and name not in names:
+                    names.append(name)
+            template["variables"] = {"body": {school_param: " and ".join(names) or "school"}}
         try:
             return send_whatsapp_message(parent_phone, PARENT_HELP_TEXT, template=template)
         except RuntimeError:

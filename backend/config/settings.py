@@ -628,6 +628,8 @@ BAHASHA_PHONE_NUMBER_ID = os.getenv('BAHASHA_PHONE_NUMBER_ID', '')
 # Blank = send the plain-text menu instead.
 BAHASHA_MENU_TEMPLATE = os.getenv('BAHASHA_MENU_TEMPLATE', '')
 BAHASHA_MENU_TEMPLATE_LANGUAGE = os.getenv('BAHASHA_MENU_TEMPLATE_LANGUAGE', 'en_US')
+# Name of the body variable holding the school name in the menu template (blank = none).
+BAHASHA_MENU_TEMPLATE_SCHOOL_PARAM = os.getenv('BAHASHA_MENU_TEMPLATE_SCHOOL_PARAM', '')
 BAHASHA_WEBHOOK_VERIFY_TOKEN = os.getenv('BAHASHA_WEBHOOK_VERIFY_TOKEN', '')
 # Bahasha documents no webhook signature, so this shared secret (sent as
 # ?token= on the registered webhook URL) is the only authenticity gate.
