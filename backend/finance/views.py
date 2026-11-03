@@ -1575,6 +1575,19 @@ def admin_class_fee_create(request):
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     school_class = get_object_or_404(_classes_for_user(user), id=school_class_id)
+
+    legacy_tenant = _legacy_tenant_for_user(user)
+    term = None
+    term_id = request.data.get("term_id") or request.data.get("term")
+    if term_id:
+        term = get_object_or_404(Term, id=term_id, tenant=legacy_tenant)
+    else:
+        # Defaults to whichever term is active right now - so a class fee
+        # created today is tagged to today's term without the admin having
+        # to pick one every time. close_term_finance (finance/services.py)
+        # is what later deactivates it once that term closes.
+        term = Term.objects.filter(tenant=legacy_tenant, is_active=True).first()
+
     class_fee, _ = ClassFee.objects.update_or_create(
         school_class=school_class,
         title=title,
@@ -1583,6 +1596,7 @@ def admin_class_fee_create(request):
             "amount": amount,
             "currency": "NGN",
             "is_active": _parse_bool(request.data.get("is_active"), default=True),
+            "term": term,
             "created_by": user,
         },
     )

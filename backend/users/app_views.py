@@ -1935,6 +1935,25 @@ def _positive_duration_minutes(value):
     return duration if duration > 0 else 0
 
 
+_STUDENT_PHONE_MAX_LENGTH = 17  # StudentProfile / User phone columns are varchar(17)
+
+
+def _check_phone_lengths(**phones):
+    """Raise ValueError (a clean 400 for callers) when a phone would overflow its
+    varchar(17) column, instead of a database error and a 500."""
+    labels = {
+        "phone": "Student phone",
+        "guardian_phone": "Guardian phone",
+        "second_guardian_phone": "Second guardian phone",
+    }
+    for field, value in phones.items():
+        if len(str(value or "")) > _STUDENT_PHONE_MAX_LENGTH:
+            raise ValueError(
+                f"{labels.get(field, field)} is too long (maximum {_STUDENT_PHONE_MAX_LENGTH} characters). "
+                "Enter just the number, for example 08012345678 or +2348012345678."
+            )
+
+
 def _ensure_student_profile_for_tenant(
     user,
     email,
@@ -1961,6 +1980,7 @@ def _ensure_student_profile_for_tenant(
     confirm_student_password=None,
     middle_name="",
 ):
+    _check_phone_lengths(guardian_phone=guardian_phone, second_guardian_phone=second_guardian_phone)
     student_user = User.objects.filter(email__iexact=email).first()
     if student_user and student_user.role != "student":
         raise ValueError("This email already exists for a non-student account.")
@@ -7021,6 +7041,15 @@ def student_detail(request, student_id):
         elective_subject_ids = _parse_id_list(_request_multi_value(request, "elective_subject_ids"))
         elective_subjects = _scope_to_user_tenant(Subject.objects.all(), user).filter(id__in=elective_subject_ids)
         student_profile.elective_subjects.set(elective_subjects)
+
+    try:
+        _check_phone_lengths(
+            phone=student_user.phone,
+            guardian_phone=student_profile.guardian_phone,
+            second_guardian_phone=student_profile.second_guardian_phone,
+        )
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     if user_update_fields:
         student_user.save(update_fields=sorted(set(user_update_fields)))

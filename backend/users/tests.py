@@ -2955,6 +2955,22 @@ class MiddleNameTests(TestCase):
         student.user.refresh_from_db()
         self.assertEqual((student.user.middle_name, student.user.get_full_name()), ("", "Obi Ada"))
 
+    def test_an_over_long_phone_is_a_clear_400_not_a_server_error(self):
+        # The phone columns are varchar(17); Postgres raised DataError -> 500.
+        student = self._student(email="longphone@middle-name.edu")
+
+        for field in ("guardian_phone", "second_guardian_phone", "phone"):
+            response = self.client.patch(
+                f"/api/app/students/{student.id}/", data={field: "0803 123 4567 / 0805 111 2222"}, format="json",
+            )
+            self.assertEqual(response.status_code, 400, (field, response.data))
+            self.assertIn("too long", response.data["message"])
+
+        response = self.client.patch(
+            f"/api/app/students/{student.id}/", data={"guardian_phone": "+2348031234567"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
     def test_the_middle_name_shows_on_the_id_card_and_student_payload(self):
         from users.app_views import _id_card_student_payload
         student = self._student(middle_name="Grace")
