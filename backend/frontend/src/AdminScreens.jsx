@@ -14749,7 +14749,18 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                 <tbody>
                   {students.map((item) => (
                     <tr key={item.id}>
-                      <td>{item.name}</td>
+                      <td>
+                        <div className="table-row-person">
+                          <span className="table-row-avatar">
+                            {item.profile_picture ? (
+                              <img src={item.profile_picture} alt="" />
+                            ) : (
+                              <span>{userInitials({ full_name: item.name })}</span>
+                            )}
+                          </span>
+                          <span>{item.name}</span>
+                        </div>
+                      </td>
                       <td>{item.email}</td>
                       <td>{item.student_id}</td>
                       <td>{item.class_name}</td>

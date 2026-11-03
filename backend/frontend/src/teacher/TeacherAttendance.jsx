@@ -44,8 +44,6 @@ const localISODate = (date = new Date()) => {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 };
 
-const initialsOf = (name) => String(name || "?").trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
-
 function ScannerAppCard() {
   return (
     <a className="ts-scanner-app" href="/app/download/apk/">
@@ -519,7 +517,12 @@ export default function TeacherAttendance({ session, classOptions = [] }) {
                           stageRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
                         }}
                       >
-                        <span className="ts-roll__avatar" aria-hidden="true">{initialsOf(student.name)}</span>
+                        <Avatar
+                          name={student.name || "Student"}
+                          src={student.profile_picture || student.photo || ""}
+                          size={37}
+                          className="ts-roll__avatar"
+                        />
                         <span className="ts-roll__name">
                           <strong>{student.name || "Student"}</strong>
                           <small>{student.student_id}</small>

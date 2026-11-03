@@ -5686,7 +5686,12 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
               <tbody>
                 {filteredRoster.map((student) => (
                   <tr key={student.id || student.student_id}>
-                    <td>{student.name || "Student"}<br /><small>{student.class_name || selectedClass?.label || "Assigned class"}</small></td>
+                    <td>
+                      <div className="table-row-person">
+                        <Avatar name={student.name || "Student"} src={student.profile_picture || ""} size={30} />
+                        <span>{student.name || "Student"}<br /><small>{student.class_name || selectedClass?.label || "Assigned class"}</small></span>
+                      </div>
+                    </td>
                     <td>{student.student_id}</td>
                     <td>{student.email || "-"}</td>
                   </tr>
@@ -5704,7 +5709,13 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
           {activeStudent ? (
             <>
               <span className="pill muted">{markedCount} / {students.length} marked</span>
-              <div className="swipe-avatar">{activeStudent.name?.slice(0, 2).toUpperCase()}</div>
+              <div className="swipe-avatar">
+                {activeStudent.profile_picture ? (
+                  <img src={activeStudent.profile_picture} alt="" />
+                ) : (
+                  activeStudent.name?.slice(0, 2).toUpperCase()
+                )}
+              </div>
               <h3>{activeStudent.name}</h3>
               <p>{activeStudent.student_id} - {activeStudent.class_name}</p>
               <div className="swipe-actions">
@@ -10895,9 +10906,17 @@ function ParentDashboard({ session, data, onRefresh, onSignOut, isRefreshing, on
             {children.length ? children.map((child) => (
               <article key={child.id} className="app-panel" style={{ marginBottom: "1rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
-                  <div>
-                    <h3>{child.name || "Student"}</h3>
-                    <p className="field-note">{child.class_name || ""}{child.student_id ? ` — ID: ${child.student_id}` : ""}</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.65rem" }}>
+                    <StudentAvatar
+                      src={child.profile_picture}
+                      name={child.name || "Student"}
+                      initials={userInitials({ full_name: child.name })}
+                      className="student-avatar"
+                    />
+                    <div>
+                      <h3 style={{ margin: 0 }}>{child.name || "Student"}</h3>
+                      <p className="field-note">{child.class_name || ""}{child.student_id ? ` — ID: ${child.student_id}` : ""}</p>
+                    </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <p className="metric-label">Balance</p>

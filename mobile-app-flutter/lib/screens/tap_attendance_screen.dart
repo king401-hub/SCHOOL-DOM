@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api/scanner_endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
+import '../widgets/avatar.dart';
 import '../widgets/branded_refresh.dart';
 
 /// "Tap Attendance": lets a teacher/admin step through their class roster
@@ -324,21 +325,11 @@ class _ActiveStudentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = (student['name'] ?? 'Student').toString();
-    final initials = name.trim().isEmpty
-        ? '?'
-        : name.trim().split(RegExp(r'\s+')).take(2).map((s) => s[0]).join().toUpperCase();
 
     return AppCard(
       children: [
         Center(
-          child: Container(
-            width: 64,
-            height: 64,
-            decoration: const BoxDecoration(color: AppColors.primarySoft, shape: BoxShape.circle),
-            alignment: Alignment.center,
-            child: Text(initials,
-                style: const TextStyle(color: AppColors.primary, fontSize: 22, fontWeight: FontWeight.w900)),
-          ),
+          child: Avatar(name: name, pictureUrl: student['profile_picture'] as String?, size: 64),
         ),
         Center(
           child: Text(name,

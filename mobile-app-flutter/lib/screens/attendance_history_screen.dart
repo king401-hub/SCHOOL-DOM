@@ -3,6 +3,7 @@ import '../api/admin_endpoints.dart';
 import '../api/scanner_endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
+import '../widgets/avatar.dart';
 import '../widgets/branded_refresh.dart';
 
 enum _AttendanceView { students, staff }
@@ -670,6 +671,12 @@ class _HistoryCard extends StatelessWidget {
     final content = [
       Row(
         children: [
+          Avatar(
+            name: (record['student_name'] ?? '').toString(),
+            pictureUrl: record['profile_picture'] as String?,
+            size: 32,
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               (record['student_name'] ?? 'Student').toString(),

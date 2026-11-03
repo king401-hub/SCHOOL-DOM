@@ -871,6 +871,33 @@ body[data-theme="dark"] .student-topbar-theme-btn:hover {
   object-fit: cover;
 }
 
+.table-row-person {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.table-row-avatar {
+  flex: none;
+  height: 32px;
+  width: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid #dbe2f0;
+  display: grid;
+  place-items: center;
+  background: #e6edfb;
+  color: #3350b0;
+  font-weight: 700;
+  font-size: 0.7rem;
+}
+
+.table-row-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .avatar-button {
   cursor: pointer;
   padding: 0;
@@ -19175,6 +19202,13 @@ body[data-theme="dark"] .cbt-question-source {
   place-items: center;
   font-size: 2rem;
   font-weight: 900;
+  overflow: hidden;
+}
+
+.swipe-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .swipe-student-card h3,

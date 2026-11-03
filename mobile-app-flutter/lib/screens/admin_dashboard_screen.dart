@@ -417,7 +417,7 @@ class _RecentStudentRow extends StatelessWidget {
       children: [
         Row(
           children: [
-            Avatar(name: (item['name'] ?? '').toString()),
+            Avatar(name: (item['name'] ?? '').toString(), pictureUrl: item['profile_picture'] as String?),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
