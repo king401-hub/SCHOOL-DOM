@@ -367,7 +367,7 @@ def _handle_whatsapp_inbound(messages):
             continue
         action = topic or "menu"
         try:
-            if topic in ("fees", "attendance", "results"):
+            if topic in ("fees", "attendance", "results", "receipts"):
                 send_whatsapp_message(from_phone, parent_topic_reply(from_phone, topic))
             elif topic == "contact":
                 send_whatsapp_message(from_phone, parent_contact_reply(from_phone))

@@ -5268,7 +5268,7 @@ def send_parent_balance_response(parent_phone):
 # typing the word) and get a text reply. No payment links.
 
 PARENT_HELP_TEXT = (
-    "SchoolDom: reply FEES, ATTENDANCE or RESULTS to see your children's "
+    "SchoolDom: reply FEES, ATTENDANCE, RESULTS or RECEIPT to see your children's "
     "information, or HELP to reach your school."
 )
 PARENT_NOT_LINKED_TEXT = (
@@ -5277,6 +5277,7 @@ PARENT_NOT_LINKED_TEXT = (
 )
 _PARENT_TOPIC_HEADINGS = {
     "fees": "Fee balance",
+    "receipts": "Recent payments",
     "attendance": "Attendance (last 30 days)",
     "results": "Latest results",
 }
@@ -5313,6 +5314,8 @@ def parent_topic_from_message(message) -> Optional[str]:
         return "attendance"
     if words & {"result", "results", "report", "reportcard"}:
         return "results"
+    if words & {"receipt", "receipts", "reciept", "reciepts", "payment", "payments"}:
+        return "receipts"
     if words & {"help", "contact", "school"} and (tapped or len(text.split()) <= 2):
         return "contact"
     return None
@@ -5333,6 +5336,8 @@ def _parent_student_label(student) -> str:
 
 def _parent_topic_line(topic: str, student) -> str:
     label = _parent_student_label(student)
+    if topic == "receipts":
+        return _parent_receipt_line(student)
     if topic == "fees":
         owed = outstanding_amount_for_student(student)
         return f"{label}: {_format_naira(owed)} outstanding" if owed > 0 else f"{label}: fees fully paid"
@@ -5406,6 +5411,45 @@ def _bank_display_name(bank_code) -> str:
     if value.isdigit():
         return _CBN_BANK_NAMES.get(value.zfill(3), "")
     return value
+
+
+def _parent_receipt_line(student, limit=5) -> str:
+    """The child's most recent successful payments as text (date, amount, fee,
+    reference). Payments live in three places: wallet debits, bank-transfer
+    credits, and split/virtual-account allocations; each is read the same way
+    fee_recorded_paid_amount reads it."""
+    fees = {str(f.id): f.title for f in SchoolFee.objects.filter(student=student)}
+    label = _parent_student_label(student)
+    if not fees:
+        return f"{label}: no payments recorded"
+
+    payments = []
+    ledger = Transaction.objects.filter(
+        status=Transaction.STATUS_SUCCESS, metadata__fee_id__in=list(fees),
+    ).filter(
+        Q(tx_type=Transaction.FEE_DEBIT)
+        | Q(tx_type=Transaction.FEE_CREDIT, metadata__bank_payment_id__isnull=False)
+    )
+    for tx in ledger:
+        payments.append((tx.created_at, tx.amount, fees.get(str(tx.metadata.get("fee_id")), "Fee"), tx.reference))
+    allocations = FeeAllocation.objects.filter(
+        fee__student=student,
+        status__in=[FeeAllocation.STATUS_PAID, FeeAllocation.STATUS_PARTIAL],
+        transaction__status=Transaction.STATUS_SUCCESS,
+    ).select_related("fee", "transaction")
+    for allocation in allocations:
+        payments.append((
+            allocation.transaction.created_at, allocation.amount_allocated,
+            allocation.fee.title, allocation.transaction.reference,
+        ))
+
+    if not payments:
+        return f"{label}: no payments recorded"
+    payments.sort(key=lambda p: p[0], reverse=True)
+    lines = [f"{label}:"]
+    for when, amount, title, reference in payments[:limit]:
+        lines.append(f"  - {timezone.localtime(when):%d %b %Y}: {_format_naira(amount)} ({title}), ref {reference}")
+    return "\n".join(lines)
 
 
 def _parent_payment_lines(tenant, owing_kids) -> list:
@@ -5512,7 +5556,7 @@ _PARENT_AI_SYSTEM = (
     "Use ONLY the school information provided. If the answer is not there, say you are not sure "
     "and tell the parent to contact the school using the phone or email given. Never invent "
     "fees, dates, names or policies. You have no access to any child's fees, attendance or "
-    "results: for those, tell the parent to tap or type FEES, ATTENDANCE or RESULTS. If several "
+    "results: for those, tell the parent to tap or type FEES, ATTENDANCE, RESULTS or RECEIPT (payment history). If several "
     "schools are listed and the question could be about either, ask which school. Reply in plain "
     "text (no markdown), friendly and under 120 words."
 )

@@ -5848,6 +5848,57 @@ class ParentWhatsAppMenuTests(TestCase):
         self.assertEqual(list(template["variables"]), ["body"])
         self.assertTrue(template["variables"]["body"]["school"])
 
+    def test_receipt_words_map_to_the_receipts_topic(self):
+        from finance.services import parent_topic_from_message as topic
+
+        def text(body):
+            return {"type": "text", "text": {"body": body}}
+
+        for body in ("receipt", "my receipt", "payment history", "reciept", "RECEIPTS"):
+            self.assertEqual(topic(text(body)), "receipts", body)
+        self.assertIsNone(topic(text("give me reciept for my payhment")))  # a question: goes to the assistant
+
+    def test_receipts_reply_lists_recent_payments_from_every_source_without_links(self):
+        from finance.models import FeeAllocation, SchoolFee, Transaction
+        from finance.services import parent_topic_reply
+
+        self.assertIn("no payments recorded", parent_topic_reply(self.PHONE, "receipts"))
+
+        fee = SchoolFee.objects.create(
+            student=self.student, title="Tuition", amount=Decimal("50000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PARTIAL,
+        )
+        AdminWallet.objects.create(tenant=self.school, balance=Decimal("0"))
+        wallet = AdminWallet.objects.get(tenant=self.school)
+        Transaction.objects.create(
+            admin_wallet=wallet, amount=Decimal("20000.00"), tx_type=Transaction.FEE_CREDIT,
+            status=Transaction.STATUS_SUCCESS, reference="BANK-REF-1",
+            metadata={"fee_id": str(fee.id), "bank_payment_id": "bp-1"},
+        )
+        split = Transaction.objects.create(
+            amount=Decimal("10000.00"), tx_type=Transaction.SPLIT_PAYMENT,
+            status=Transaction.STATUS_SUCCESS, reference="SPLIT-REF-2",
+        )
+        FeeAllocation.objects.create(
+            fee=fee, transaction=split, amount_allocated=Decimal("10000.00"), status=FeeAllocation.STATUS_PAID,
+        )
+        # A failed payment and a fee-less credit must not be listed.
+        Transaction.objects.create(
+            admin_wallet=wallet, amount=Decimal("999.00"), tx_type=Transaction.FEE_CREDIT,
+            status=Transaction.STATUS_FAILED, reference="FAILED-REF-3",
+            metadata={"fee_id": str(fee.id), "bank_payment_id": "bp-3"},
+        )
+
+        reply = parent_topic_reply(self.PHONE, "receipts")
+        self.assertIn("Recent payments", reply)
+        self.assertIn("20,000", reply)
+        self.assertIn("BANK-REF-1", reply)
+        self.assertIn("10,000", reply)
+        self.assertIn("SPLIT-REF-2", reply)
+        self.assertIn("Tuition", reply)
+        self.assertNotIn("FAILED-REF-3", reply)
+        self.assertNotIn("http", reply)
+
     def test_questions_are_told_apart_from_menu_words(self):
         from finance.services import parent_question_from_message as question
         from finance.services import parent_topic_from_message as topic

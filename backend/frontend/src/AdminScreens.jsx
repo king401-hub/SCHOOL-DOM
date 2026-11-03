@@ -11661,6 +11661,7 @@ function AdminSettingsScreen({
   const [address, setAddress] = useState("");
   const [studentRules, setStudentRules] = useState("");
   const [staffRules, setStaffRules] = useState("");
+  const [parentFaq, setParentFaq] = useState("");
   // Letter grades on/off - only Non K-12 schools can turn them off (the
   // backend enforces this too); K-12 schools never see the switch.
   const [gradingEnabled, setGradingEnabled] = useState(true);
@@ -11732,6 +11733,7 @@ function AdminSettingsScreen({
     setAddress(school.address || "");
     setStudentRules((current) => school.student_rules || school.studentRules || current || "");
     setStaffRules((current) => school.staff_rules || school.staffRules || current || "");
+    setParentFaq((current) => school.parent_faq || school.parentFaq || current || "");
     setGradingEnabled(school.grading_enabled !== false);
     setLogoPreview(school.logo || "");
     setLogoFile(null);
@@ -11746,6 +11748,7 @@ function AdminSettingsScreen({
     data?.term?.id, data?.term?.name, data?.term?.start_date, data?.term?.end_date,
     school.address, school.email, school.grading_enabled, school.logo, school.motto, school.name, school.phone,
     school.staffRules, school.staff_rules, school.studentRules, school.student_rules, school.tagline,
+    school.parent_faq, school.parentFaq,
   ]);
 
   useEffect(() => {
@@ -11803,6 +11806,7 @@ function AdminSettingsScreen({
       address: address.trim(),
       student_rules: studentRules.trim(),
       staff_rules: staffRules.trim(),
+      parent_faq: parentFaq.trim(),
       ...(nonK12 ? { grading_enabled: gradingEnabled } : {}),
       logo: logoFile,
       academic_year_name: academicYearName.trim(),
@@ -11826,7 +11830,7 @@ function AdminSettingsScreen({
       ),
     }),
     [
-      academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, country, email, gradingEnabled, logoFile, motto, name, nonK12, phone, schoolState, staffRules, studentRules, termEnd, termName, termStart,
+      academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, country, email, gradingEnabled, logoFile, motto, name, nonK12, parentFaq, phone, schoolState, staffRules, studentRules, termEnd, termName, termStart,
     ]
   );
 
@@ -12150,6 +12154,20 @@ onClick={() => handleThemeSelect("light")}
                             rows="6"
                             disabled={!canEdit || isSaving}
                           />
+                        </label>
+                        <label className="panel-field full">
+                          Parent WhatsApp Assistant: school information
+                          <textarea
+                            value={parentFaq}
+                            onChange={(event) => setParentFaq(event.target.value)}
+                            placeholder="Facts the assistant may use to answer parents, for example: School closes at 2pm on Fridays and 3pm on other days. Resumption date. Uniform and school bus details. Anything it should tell parents."
+                            rows="6"
+                            maxLength={3000}
+                            disabled={!canEdit || isSaving}
+                          />
+                          <small className="field-note">
+                            When a parent messages the school's WhatsApp number with a question, the assistant answers only from this text, your school's contacts and address. It never sees a child's fees, attendance or results.
+                          </small>
                         </label>
                         {nonK12 ? (
                           <label className="panel-field full checkbox-field">
