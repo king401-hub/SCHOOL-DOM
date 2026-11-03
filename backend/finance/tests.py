@@ -5919,6 +5919,37 @@ class ParentWhatsAppMenuTests(TestCase):
         self.assertIsNone(topic(text("what time does school close?")))  # "school" alone is not a question
         self.assertEqual(topic(text("school")), "contact")
 
+    def test_the_models_json_is_parsed_and_anything_else_is_a_plain_answer(self):
+        from finance.services import _parse_parent_ai_output as parse
+
+        self.assertEqual(parse('{"intent": "receipts", "answer": ""}'), {"intent": "receipts", "answer": ""})
+        self.assertEqual(
+            parse('```json\n{"intent": "question", "answer": "We close at 2pm."}\n```'),
+            {"intent": "question", "answer": "We close at 2pm."},
+        )
+        # A data intent never carries model-written text; an unknown intent is a question.
+        self.assertEqual(parse('{"intent": "fees", "answer": "You owe 5,000"}'), {"intent": "fees", "answer": ""})
+        self.assertEqual(parse('{"intent": "bogus", "answer": "hello"}'), {"intent": "question", "answer": "hello"})
+        self.assertEqual(parse("Just plain words."), {"intent": "question", "answer": "Just plain words."})
+
+    @override_settings(WHATSAPP_AI_ENABLED=True, OPENROUTER_API_KEY="or-key")
+    @patch("ai_chat.services.openrouter_client.OpenRouterClient.chat")
+    def test_the_assistant_reports_what_the_parent_wants(self, mock_chat):
+        from django.core.cache import cache
+        from finance.services import parent_ai_reply, parent_ai_understand
+
+        cache.clear()
+        mock_chat.return_value = {"content": '{"intent": "receipts", "answer": ""}'}
+        self.assertEqual(
+            parent_ai_understand(self.PHONE, "give me reciept for my payhment"), {"intent": "receipts", "answer": ""},
+        )
+        self.assertIsNone(parent_ai_reply(self.PHONE, "give me reciept for my payhment"))  # data intent: no text answer
+
+        mock_chat.return_value = {"content": '{"intent": "question", "answer": "We close at 2pm."}'}
+        self.assertEqual(parent_ai_reply(self.PHONE, "when do you close"), "We close at 2pm.")
+        system = mock_chat.call_args.args[0][0]["content"]
+        self.assertIn("never tell the parent to type a keyword", system)
+
     @override_settings(WHATSAPP_AI_ENABLED=True, OPENROUTER_API_KEY="or-key", WHATSAPP_AI_HOURLY_LIMIT=2)
     @patch("ai_chat.services.openrouter_client.OpenRouterClient.chat")
     def test_ai_answer_uses_school_facts_and_never_child_data(self, mock_chat):
@@ -6077,8 +6108,8 @@ class BahashaWhatsAppWebhookTests(TestCase):
     @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
     @patch("finance.views.students_for_parent_phone")
     @patch("finance.views.send_whatsapp_message")
-    @patch("finance.views.parent_ai_reply", return_value="School closes at 2pm.")
-    def test_a_typed_question_gets_the_ai_answer(self, mock_ai, mock_send, mock_students):
+    @patch("finance.views.parent_ai_understand", return_value={"intent": "question", "answer": "School closes at 2pm."})
+    def test_a_general_question_gets_the_ai_answer(self, mock_ai, mock_send, mock_students):
         mock_students.return_value.exists.return_value = True
         question = "what time does school close?"
         response = self.client.post(self.URL + "?token=s3cret", self._payload(text=question), format="json")
@@ -6088,15 +6119,42 @@ class BahashaWhatsAppWebhookTests(TestCase):
 
     @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
     @patch("finance.views.students_for_parent_phone")
+    @patch("finance.views.send_whatsapp_message")
+    @patch("finance.views.parent_topic_reply", return_value="Recent payments ...")
+    @patch("finance.views.parent_ai_understand", return_value={"intent": "receipts", "answer": ""})
+    def test_a_loosely_worded_request_for_the_childs_data_is_just_answered(self, _ai, mock_reply, mock_send, mock_students):
+        # "give me reciept for my payhment" must not come back as "please type RECEIPT".
+        mock_students.return_value.exists.return_value = True
+        response = self.client.post(
+            self.URL + "?token=s3cret", self._payload(text="give me reciept for my payhment"), format="json",
+        )
+        self.assertEqual(response.json()["processed"], [{"from": "2348012345678", "action": "receipts"}])
+        mock_reply.assert_called_once_with("2348012345678", "receipts")
+        mock_send.assert_called_once_with("2348012345678", "Recent payments ...")
+
+    @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
+    @patch("finance.views.students_for_parent_phone")
     @patch("finance.views.send_parent_menu")
-    @patch("finance.views.parent_ai_reply", return_value=None)
-    def test_the_menu_is_the_fallback_when_the_ai_has_no_answer(self, _ai, mock_menu, mock_students):
+    @patch("finance.views.parent_ai_understand", return_value=None)
+    def test_the_menu_is_the_fallback_when_the_ai_is_unavailable(self, _ai, mock_menu, mock_students):
         mock_students.return_value.exists.return_value = True
         response = self.client.post(
             self.URL + "?token=s3cret", self._payload(text="can you tell me about the fees schedule"), format="json",
         )
         self.assertEqual(response.json()["processed"], [{"from": "2348012345678", "action": "menu"}])
         mock_menu.assert_called_once()
+
+    @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
+    @patch("finance.views.students_for_parent_phone")
+    @patch("finance.views.send_whatsapp_message")
+    @patch("finance.views.parent_topic_reply", side_effect=RuntimeError("lookup exploded"))
+    def test_a_failed_lookup_still_tells_the_parent_instead_of_going_silent(self, _reply, mock_send, mock_students):
+        mock_students.return_value.exists.return_value = True
+        response = self.client.post(self.URL + "?token=s3cret", self._payload(text="receipt"), format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("error", response.json()["processed"][0])
+        mock_send.assert_called_once()
+        self.assertIn("couldn't get that", mock_send.call_args.args[1])
 
     @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
     def test_delivery_status_events_are_accepted(self):

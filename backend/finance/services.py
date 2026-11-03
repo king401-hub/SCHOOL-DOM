@@ -5579,14 +5579,26 @@ def parent_question_from_message(message) -> Optional[str]:
     return None
 
 
+PARENT_AI_INTENTS = ("fees", "attendance", "results", "receipts", "contact")
+
 _PARENT_AI_SYSTEM = (
-    "You are the WhatsApp assistant for the school(s) below, answering a parent's question. "
-    "Use ONLY the school information provided. If the answer is not there, say you are not sure "
-    "and tell the parent to contact the school using the phone or email given. Never invent "
-    "fees, dates, names or policies. You have no access to any child's fees, attendance or "
-    "results: for those, tell the parent to tap or type FEES, ATTENDANCE, RESULTS or RECEIPT (payment history). If several "
-    "schools are listed and the question could be about either, ask which school. Reply in plain "
-    "text (no markdown), friendly and under 120 words."
+    "You are the WhatsApp assistant for the school(s) below. A parent has sent a message. "
+    "Reply with ONLY a JSON object {\"intent\": ..., \"answer\": ...} and nothing else.\n"
+    "Pick \"intent\" by what the parent wants, even if the message has typos or is worded loosely:\n"
+    "- \"fees\": their own child's fee balance or what they owe.\n"
+    "- \"attendance\": their own child's attendance.\n"
+    "- \"results\": their own child's results, scores, grades or position.\n"
+    "- \"receipts\": a receipt or proof of a payment they made, or their payment history.\n"
+    "- \"contact\": they want to reach or speak to the school.\n"
+    "- \"question\": anything else, such as general information about the school (closing time, "
+    "resumption, uniform, rules, location).\n"
+    "For the first five, set \"answer\" to \"\": the system sends the data itself, so never "
+    "tell the parent to type a keyword. For \"question\", write \"answer\" using ONLY the school "
+    "information below. If it is not there, say you are not sure and give the school's phone or "
+    "email. Never invent fees, dates, names or policies, and never state any child's fees, "
+    "attendance, results or payments yourself. If several schools are listed and the question "
+    "could be about either, ask which school. The answer is plain text (no markdown), friendly, "
+    "under 120 words."
 )
 
 
@@ -5602,11 +5614,37 @@ def _parent_ai_context(tenants) -> str:
     return "\n\n".join(blocks)
 
 
-def parent_ai_reply(parent_phone, question: str) -> Optional[str]:
-    """An OpenRouter answer to a recognised parent's free-text question, grounded in
-    the school's own contact details and FAQ. None when the assistant is off, the
-    parent is over their hourly limit, or the model call fails, so the caller can
-    fall back to the menu."""
+def _parse_parent_ai_output(content: str) -> dict:
+    """The model's JSON ({"intent", "answer"}), tolerating code fences or stray text
+    around it. Anything that is not usable JSON is treated as a plain answer, so a
+    model that ignores the format still helps the parent."""
+    import json
+
+    text = (content or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text).strip()
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            data = json.loads(match.group(0))
+        except ValueError:
+            data = None
+        if isinstance(data, dict):
+            intent = str(data.get("intent") or "question").strip().lower()
+            intent = intent if intent in PARENT_AI_INTENTS else "question"
+            answer = "" if intent != "question" else str(data.get("answer") or "").strip()[:900]
+            return {"intent": intent, "answer": answer}
+    return {"intent": "question", "answer": text[:900]}
+
+
+def parent_ai_understand(parent_phone, question: str) -> Optional[dict]:
+    """Ask OpenRouter what a recognised parent's free-text message wants.
+
+    Returns {"intent": one of PARENT_AI_INTENTS, "answer": ""} when they want their
+    own child's data (the caller sends it), or {"intent": "question", "answer": text}
+    for general school information, grounded in the school's contacts, address and
+    `parent_faq`. None when the assistant is off, the parent is over their hourly
+    limit, or the model call fails, so the caller falls back to the menu."""
     if not getattr(settings, "WHATSAPP_AI_ENABLED", False) or not getattr(settings, "OPENROUTER_API_KEY", ""):
         return None
 
@@ -5642,13 +5680,24 @@ def parent_ai_reply(parent_phone, question: str) -> Optional[str]:
                 {"role": "user", "content": question},
             ],
             max_tokens=300,
-            temperature=0.2,
+            temperature=0,
         )
     except (OpenRouterError, OpenRouterTimeout):
         logger.exception("WhatsApp AI answer failed")
         return None
-    answer = (result.get("content") or "").strip()
-    return answer[:900] or None
+    parsed = _parse_parent_ai_output(result.get("content") or "")
+    if parsed["intent"] == "question" and not parsed["answer"]:
+        return None
+    return parsed
+
+
+def parent_ai_reply(parent_phone, question: str) -> Optional[str]:
+    """Just the text answer for a general question (None when the message is a
+    request for the child's own data, or the assistant is unavailable)."""
+    understood = parent_ai_understand(parent_phone, question)
+    if understood and understood["intent"] == "question":
+        return understood["answer"] or None
+    return None
 
 
 def send_parent_menu(parent_phone):

@@ -113,7 +113,8 @@ from finance.services import (
     dispatch_payment_receipt_notifications,
     send_payment_receipt_notifications,
     send_fee_reminders,
-    parent_ai_reply,
+    PARENT_AI_INTENTS,
+    parent_ai_understand,
     parent_contact_reply,
     parent_question_from_message,
     parent_topic_from_message,
@@ -365,24 +366,41 @@ def _handle_whatsapp_inbound(messages):
         if not students_for_parent_phone(from_phone).exists():
             processed.append({"from": from_phone, "action": "unrecognized_ignored"})
             continue
-        action = topic or "menu"
+        # A typed message that is not a menu word: let the assistant work out what
+        # the parent wants. They may want their own child's data (sent directly, no
+        # "type FEES" detour) or general school information (answered from the
+        # school's own text). Without the assistant, or if it fails, they get the menu.
+        answer = None
+        if topic is None:
+            question = parent_question_from_message(message)
+            understood = parent_ai_understand(from_phone, question) if question else None
+            if understood:
+                if understood["intent"] in PARENT_AI_INTENTS:
+                    topic = understood["intent"]
+                else:
+                    answer = understood["answer"]
+        action = topic or ("ai_answer" if answer else "menu")
         try:
             if topic in ("fees", "attendance", "results", "receipts"):
                 send_whatsapp_message(from_phone, parent_topic_reply(from_phone, topic))
             elif topic == "contact":
                 send_whatsapp_message(from_phone, parent_contact_reply(from_phone))
+            elif answer:
+                send_whatsapp_message(from_phone, answer)
             else:
-                question = parent_question_from_message(message)
-                answer = parent_ai_reply(from_phone, question) if question else None
-                if answer:
-                    action = "ai_answer"
-                    send_whatsapp_message(from_phone, answer)
-                else:
-                    send_parent_menu(from_phone)
+                send_parent_menu(from_phone)
             processed.append({"from": from_phone, "action": action})
         except Exception as exc:
             logger.exception("WhatsApp %s reply to %s failed", action, from_phone)
             processed.append({"from": from_phone, "action": action, "error": str(exc)})
+            try:
+                send_whatsapp_message(
+                    from_phone,
+                    "SchoolDom: sorry, we couldn't get that for you right now. Please try again in a "
+                    "moment, or contact your school office.",
+                )
+            except Exception:
+                logger.exception("WhatsApp failure notice to %s also failed", from_phone)
     return processed
 
 
