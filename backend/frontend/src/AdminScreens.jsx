@@ -2135,7 +2135,14 @@ function AdminFinanceScreen({
   const selectedStudentFee = studentFeeRows.find((fee) => fee.id === editingStudentFeeId);
   const renderCashPaymentRow = (payment) => (
                     <tr key={payment.id}>
-                      <td>{payment.student_name || "-"}<small>{payment.student_id || ""}</small></td>
+                      <td>
+                        <div className="table-row-person">
+                          <span className="table-row-avatar">
+                            {payment.profile_picture ? <img src={payment.profile_picture} alt="" /> : <span>{userInitials({ full_name: payment.student_name })}</span>}
+                          </span>
+                          <span>{payment.student_name || "-"}<small>{payment.student_id || ""}</small></span>
+                        </div>
+                      </td>
                       <td>{payment.receipt_number || payment.bank_reference || "-"}</td>
                       <td>{PAYMENT_METHOD_LABELS[payment.payment_method]?.replace(" payment", "") || (payment.payment_method || "-").replace("_", " ")}</td>
                       <td>{payment.note || "-"}</td>
@@ -2158,10 +2165,15 @@ function AdminFinanceScreen({
                       </td>
                     </tr>
                   );
-  const renderStudentPaymentRow = (row) => (<tr key={row.id}><td>{row.name}<small>{row.student_id}</small>{Number(row.outstanding_bill_amount || 0) > 0 ? <small>Includes {formatFinanceAmount(row.outstanding_bill_amount)} outstanding bill{row.outstanding_bill_from ? ` from ${row.outstanding_bill_from}` : ""}</small> : null}</td><td>{row.class_name}</td><td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td><td>{formatFinanceAmount(row.expected_amount)}</td><td>{formatFinanceAmount(row.amount_paid)}</td><td>{formatFinanceAmount(row.remaining_balance)}</td></tr>);
-  const renderStudentFeeRow = (fee) => (<tr key={fee.id}><td>{fee.student_name}<small>{fee.student_identifier}</small></td><td>{fee.class_label}</td><td>{fee.title}{fee.is_outstanding_bill ? <small>Outstanding bill{fee.outstanding_from ? ` from ${fee.outstanding_from}` : ""}</small> : null}</td><td>{formatFinanceAmount(fee.amount)}</td><td>{formatFinanceAmount(fee.amount_paid)}</td><td>{formatFinanceAmount(fee.remaining_balance)}</td><td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td><td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td></tr>);
+  const renderStudentPersonCell = (profilePicture, name) => (
+    <span className="table-row-avatar">
+      {profilePicture ? <img src={profilePicture} alt="" /> : <span>{userInitials({ full_name: name })}</span>}
+    </span>
+  );
+  const renderStudentPaymentRow = (row) => (<tr key={row.id}><td><div className="table-row-person">{renderStudentPersonCell(row.profile_picture, row.name)}<span>{row.name}<small>{row.student_id}</small>{Number(row.outstanding_bill_amount || 0) > 0 ? <small>Includes {formatFinanceAmount(row.outstanding_bill_amount)} outstanding bill{row.outstanding_bill_from ? ` from ${row.outstanding_bill_from}` : ""}</small> : null}</span></div></td><td>{row.class_name}</td><td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td><td>{formatFinanceAmount(row.expected_amount)}</td><td>{formatFinanceAmount(row.amount_paid)}</td><td>{formatFinanceAmount(row.remaining_balance)}</td></tr>);
+  const renderStudentFeeRow = (fee) => (<tr key={fee.id}><td><div className="table-row-person">{renderStudentPersonCell(fee.profile_picture, fee.student_name)}<span>{fee.student_name}<small>{fee.student_identifier}</small></span></div></td><td>{fee.class_label}</td><td>{fee.title}{fee.is_outstanding_bill ? <small>Outstanding bill{fee.outstanding_from ? ` from ${fee.outstanding_from}` : ""}</small> : null}</td><td>{formatFinanceAmount(fee.amount)}</td><td>{formatFinanceAmount(fee.amount_paid)}</td><td>{formatFinanceAmount(fee.remaining_balance)}</td><td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td><td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td></tr>);
   const renderClassFeeRow = (fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>);
-  const renderTokenActivityRow = (row) => (<tr key={row.id}><td>{row.student_name}<small>{row.student_id}</small></td><td><span className={`finance-status status-${row.active_until ? "paid" : "pending"}`}>{row.active_until ? "active" : "inactive"}</span></td><td>{row.credits_assigned}</td><td>{formatDate(row.active_until)}</td><td>{formatDate(row.inactive_since)}</td><td>{row.is_excluded_from_auto_deductions ? "Yes" : "No"}</td></tr>);
+  const renderTokenActivityRow = (row) => (<tr key={row.id}><td><div className="table-row-person">{renderStudentPersonCell(row.profile_picture, row.student_name)}<span>{row.student_name}<small>{row.student_id}</small></span></div></td><td><span className={`finance-status status-${row.active_until ? "paid" : "pending"}`}>{row.active_until ? "active" : "inactive"}</span></td><td>{row.credits_assigned}</td><td>{formatDate(row.active_until)}</td><td>{formatDate(row.inactive_since)}</td><td>{row.is_excluded_from_auto_deductions ? "Yes" : "No"}</td></tr>);
   const renderTokenPurchaseRow = (row) => (<tr key={row.id || row.reference}><td>{formatDate(row.created_at)}</td><td>{row.reference}</td><td>{Number(row.total_credits || row.credits || 0).toLocaleString()}<small>{Number(row.bonus_credits || 0) ? `${row.bonus_credits} bonus` : ""}</small></td><td>{formatFinanceAmount(row.amount)}</td><td><span className={`finance-status status-${row.status || "pending"}`}>{row.status || "pending"}</span></td></tr>);
   const renderLedgerRow = (item) => (
                     <tr key={item.id}>

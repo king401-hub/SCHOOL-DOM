@@ -246,6 +246,19 @@ def _class_label(class_obj):
     return f"{class_obj.name} - {section}" if section else class_obj.name
 
 
+def _user_profile_picture_url(request, user_obj):
+    if not user_obj or not user_obj.profile_picture:
+        return ""
+    try:
+        url = user_obj.profile_picture.url
+    except Exception:
+        return ""
+    try:
+        return request.build_absolute_uri(url) if request else url
+    except Exception:
+        return url
+
+
 def _school_payload(request, school):
     if not school:
         return {}
@@ -611,7 +624,7 @@ def _classes_for_user(user):
     return Class.objects.filter(tenant=legacy_tenant)
 
 
-def _admin_finance_snapshot(user):
+def _admin_finance_snapshot(user, request=None):
     sync_tenant_class_fees(user.tenant, actor=user)
 
     students = list(
@@ -712,6 +725,7 @@ def _admin_finance_snapshot(user):
                 "id": str(student.id),
                 "name": student.user.get_full_name() or student.user.email,
                 "student_id": student.student_id or student.admission_number,
+                "profile_picture": _user_profile_picture_url(request, student.user),
                 # Record Payment accepts a student ID, admission number or email;
                 # the web app finds the student in these rows to warn before a
                 # payment is recorded for someone who owes nothing.
@@ -738,6 +752,7 @@ def _admin_finance_snapshot(user):
                 "student_name": student.user.get_full_name() or student.user.email,
                 "student_email": student.user.email,
                 "student_identifier": student.student_id or student.admission_number,
+                "profile_picture": _user_profile_picture_url(request, student.user),
                 "class_name": _class_label(student.current_class),
                 "active_until": activation_credit.active_until,
                 "credits_assigned": activation_credit.credits_assigned,
@@ -782,7 +797,7 @@ def _admin_finance_snapshot(user):
     student_fee_rows = SchoolFeeSerializer(
         sorted([*generated_fees, *manual_fees], key=lambda fee: (fee.student.user.last_name, fee.student.user.first_name, fee.due_date, fee.title)),
         many=True,
-        context={"paid_amounts": paid_amounts, "bill_classes": bill_classes},
+        context={"paid_amounts": paid_amounts, "bill_classes": bill_classes, "request": request},
     ).data
 
     pool = get_or_create_activation_credit_pool(user.tenant)
@@ -831,7 +846,7 @@ def _admin_finance_snapshot(user):
         "student_payment_rows": student_rows,
         "student_fee_rows": student_fee_rows,
         "class_fee_rows": class_fee_rows,
-        "bank_payment_rows": BankPaymentSerializer(bank_payments[:100], many=True).data,
+        "bank_payment_rows": BankPaymentSerializer(bank_payments[:100], many=True, context={"request": request}).data,
         "transaction_history": TransactionSerializer(transaction_history, many=True).data,
         "finance_ledger_logs": finance_ledger_log_rows,
         "activation_credit_pool": ActivationCreditPoolSerializer(pool).data,
@@ -1103,7 +1118,7 @@ def admin_overview(request):
         return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     admin_wallet = get_or_create_admin_wallet(user.tenant)
-    finance_snapshot = _admin_finance_snapshot(user)
+    finance_snapshot = _admin_finance_snapshot(user, request=request)
     overdue_fees = SchoolFee.objects.filter(
         student__user__tenant=user.tenant,
         status=SchoolFee.STATUS_OVERDUE,
@@ -1602,7 +1617,7 @@ def admin_class_fee_create(request):
             "class_fee": ClassFeeSerializer(class_fee).data,
             "assigned_count": assigned_count,
             "message": f"Bill sent to {assigned_count} student{'s' if assigned_count != 1 else ''} in {_class_label(school_class)}.",
-            "finance": _admin_finance_snapshot(user),
+            "finance": _admin_finance_snapshot(user, request=request),
         },
         status=status.HTTP_201_CREATED,
     )
@@ -1632,7 +1647,7 @@ def admin_class_fee_detail(request, fee_id):
             currency=class_fee.currency,
             reference=str(class_fee.id),
         )
-        return Response({"success": True, "message": "Class fee deactivated.", "finance": _admin_finance_snapshot(user)})
+        return Response({"success": True, "message": "Class fee deactivated.", "finance": _admin_finance_snapshot(user, request=request)})
 
     update_fields = []
     if "title" in request.data:
@@ -1683,7 +1698,7 @@ def admin_class_fee_detail(request, fee_id):
             "class_fee": ClassFeeSerializer(class_fee).data,
             "assigned_count": assigned_count,
             "message": f"Bill sent to {assigned_count} student{'s' if assigned_count != 1 else ''} in {_class_label(class_fee.school_class)}.",
-            "finance": _admin_finance_snapshot(user),
+            "finance": _admin_finance_snapshot(user, request=request),
         }
     )
 
@@ -2137,7 +2152,7 @@ def admin_bill_publish(request, bill_id):
             "synced_count": synced_count,
             "send_result": send_result,
             "bill": BillSerializer(bill, context={"bill_status_rollups": rollups}).data,
-            "finance": _admin_finance_snapshot(user),
+            "finance": _admin_finance_snapshot(user, request=request),
         }
     )
 
@@ -2295,7 +2310,7 @@ def admin_school_fee_detail(request, fee_id):
             metadata={"updated_fields": sorted(set(update_fields))},
         )
 
-    return Response({"success": True, "fee": SchoolFeeSerializer(fee).data, "finance": _admin_finance_snapshot(user)})
+    return Response({"success": True, "fee": SchoolFeeSerializer(fee).data, "finance": _admin_finance_snapshot(user, request=request)})
 
 
 @api_view(["POST"])
@@ -2334,7 +2349,7 @@ def admin_apply_wallet_credit_to_fee(request, fee_id):
         "success": True,
         "message": f"Applied {_format_naira(result['amount_applied'])} from wallet credit.",
         "fee": SchoolFeeSerializer(fee).data,
-        "finance": _admin_finance_snapshot(user),
+        "finance": _admin_finance_snapshot(user, request=request),
     })
 
 
@@ -2825,7 +2840,7 @@ def admin_bank_payment_ingest(request):
         except Exception as exc:
             processed.append({"created": False, "error": str(exc), "raw": row})
 
-    return Response({"success": True, "processed": processed, "finance": _admin_finance_snapshot(user)})
+    return Response({"success": True, "processed": processed, "finance": _admin_finance_snapshot(user, request=request)})
 
 
 def _deliver_receipt_after_commit(payment):
@@ -2850,7 +2865,7 @@ def _deliver_receipt_after_commit(payment):
     }
 
 
-def _record_payment_activity_and_snapshot(user, action, description, payment, metadata):
+def _record_payment_activity_and_snapshot(user, action, description, payment, metadata, request=None):
     """The audit entry and refreshed finance snapshot that follow a payment.
 
     They run after the payment has committed, so if either fails the payment
@@ -2870,7 +2885,7 @@ def _record_payment_activity_and_snapshot(user, action, description, payment, me
                 reference=payment.bank_reference,
                 metadata=metadata,
             )
-            return _admin_finance_snapshot(user)
+            return _admin_finance_snapshot(user, request=request)
     except Exception:
         logger.exception("Finance snapshot after payment %s failed", payment.id)
         return None
@@ -2923,6 +2938,7 @@ def admin_bank_payment_recover(request, payment_id):
         f"Matched bank payment to {student.user.get_full_name() or student.user.email}.",
         payment,
         {"student_id": str(student.id), "status": payment.status},
+        request=request,
     )
     return Response({
         "success": True,
@@ -2984,6 +3000,7 @@ def admin_cash_payment_record(request):
         f"Recorded {(payment.metadata or {}).get('payment_method', 'cash').replace('_', ' ')} payment from {student.user.get_full_name() or student.user.email}.",
         payment,
         {"student_id": str(student.id), "status": payment.status},
+        request=request,
     )
     return Response({
         "success": True,
@@ -3077,7 +3094,7 @@ def admin_expense_records(request):
 
     if request.method == "GET":
         records = ExpenseRecord.objects.filter(tenant=user.tenant)
-        finance_snapshot = _admin_finance_snapshot(user)
+        finance_snapshot = _admin_finance_snapshot(user, request=request)
         payroll_records = PayrollRecord.objects.select_related("staff").filter(staff__tenant=user.tenant).order_by("-year", "-month")[:80]
         staff_salary_total = StaffProfile.objects.filter(tenant=user.tenant).aggregate(total=Sum("base_salary"))["total"] or Decimal("0.00")
         unsettled_payroll = [
@@ -3573,7 +3590,7 @@ def admin_assign_fee(request):
         metadata={"student_id": str(student_profile.id), "due_date": str(fee.due_date)},
     )
     return Response(
-        {"success": True, "fee": SchoolFeeSerializer(fee).data, "finance": _admin_finance_snapshot(user)},
+        {"success": True, "fee": SchoolFeeSerializer(fee).data, "finance": _admin_finance_snapshot(user, request=request)},
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
     )
 
@@ -4314,11 +4331,7 @@ def parent_dashboard(request):
             "name": student_obj.user.get_full_name() if student_obj.user else "",
             "class_name": class_obj.name if class_obj else "",
             "student_id": getattr(student_obj, "student_id", "") or getattr(student_obj, "admission_number", ""),
-            "profile_picture": (
-                request.build_absolute_uri(student_obj.user.profile_picture.url)
-                if student_obj.user and student_obj.user.profile_picture
-                else ""
-            ),
+            "profile_picture": _user_profile_picture_url(request, student_obj.user),
             "fees": fee_rows,
             "total_expected": float(student_expected),
             "total_paid": float(student_paid),

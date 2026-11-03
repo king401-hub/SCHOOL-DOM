@@ -104,6 +104,7 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
     payment_status = serializers.SerializerMethodField()
     student_name = serializers.SerializerMethodField()
     student_identifier = serializers.SerializerMethodField()
+    profile_picture = serializers.SerializerMethodField()
     class_label = serializers.SerializerMethodField()
     is_outstanding_bill = serializers.SerializerMethodField()
     outstanding_from = serializers.SerializerMethodField()
@@ -116,6 +117,7 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
             "student",
             "student_name",
             "student_identifier",
+            "profile_picture",
             "class_fee",
             "class_label",
             "is_outstanding_bill",
@@ -170,6 +172,20 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
 
     def get_student_identifier(self, obj):
         return obj.student.student_id or obj.student.admission_number
+
+    def get_profile_picture(self, obj):
+        user_obj = obj.student.user
+        if not user_obj or not user_obj.profile_picture:
+            return ""
+        try:
+            url = user_obj.profile_picture.url
+        except Exception:
+            return ""
+        request = self.context.get("request")
+        try:
+            return request.build_absolute_uri(url) if request else url
+        except Exception:
+            return url
 
     def get_class_label(self, obj):
         school_class = obj.student.current_class
@@ -241,6 +257,7 @@ class StudentPaymentReferenceSerializer(serializers.ModelSerializer):
 class BankPaymentSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
     student_id = serializers.SerializerMethodField()
+    profile_picture = serializers.SerializerMethodField()
     reference_code = serializers.SerializerMethodField()
     payment_method = serializers.SerializerMethodField()
     note = serializers.SerializerMethodField()
@@ -255,6 +272,7 @@ class BankPaymentSerializer(serializers.ModelSerializer):
             "student",
             "student_name",
             "student_id",
+            "profile_picture",
             "reference_code",
             "amount",
             "currency",
@@ -288,6 +306,22 @@ class BankPaymentSerializer(serializers.ModelSerializer):
         if not obj.student_id:
             return ""
         return obj.student.student_id or obj.student.admission_number
+
+    def get_profile_picture(self, obj):
+        if not obj.student_id:
+            return ""
+        user_obj = obj.student.user
+        if not user_obj or not user_obj.profile_picture:
+            return ""
+        try:
+            url = user_obj.profile_picture.url
+        except Exception:
+            return ""
+        request = self.context.get("request")
+        try:
+            return request.build_absolute_uri(url) if request else url
+        except Exception:
+            return url
 
     def get_reference_code(self, obj):
         return obj.payment_reference.code if obj.payment_reference_id else ""
