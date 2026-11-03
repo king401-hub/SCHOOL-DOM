@@ -628,6 +628,11 @@ BAHASHA_PHONE_NUMBER_ID = os.getenv('BAHASHA_PHONE_NUMBER_ID', '')
 # Blank = send the plain-text menu instead.
 BAHASHA_MENU_TEMPLATE = os.getenv('BAHASHA_MENU_TEMPLATE', '')
 BAHASHA_MENU_TEMPLATE_LANGUAGE = os.getenv('BAHASHA_MENU_TEMPLATE_LANGUAGE', 'en_US')
+# WhatsApp assistant: answers a recognised parent's free-text question through
+# OpenRouter (needs OPENROUTER_API_KEY; independent of AI_PROVIDER). Off by default.
+WHATSAPP_AI_ENABLED = os.getenv('WHATSAPP_AI_ENABLED', 'false').lower() == 'true'
+WHATSAPP_AI_MODEL = os.getenv('WHATSAPP_AI_MODEL', '')  # blank = OPENROUTER_DEFAULT_MODEL
+WHATSAPP_AI_HOURLY_LIMIT = int(os.getenv('WHATSAPP_AI_HOURLY_LIMIT', '10'))
 # Name of the body variable holding the school name in the menu template (blank = none).
 BAHASHA_MENU_TEMPLATE_SCHOOL_PARAM = os.getenv('BAHASHA_MENU_TEMPLATE_SCHOOL_PARAM', '')
 BAHASHA_WEBHOOK_VERIFY_TOKEN = os.getenv('BAHASHA_WEBHOOK_VERIFY_TOKEN', '')

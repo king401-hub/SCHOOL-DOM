@@ -1005,6 +1005,7 @@ def _school_payload(school, request=None):
         "motto": getattr(school, "motto", "") or "",
         "tagline": getattr(school, "motto", "") or "",
         "student_rules": getattr(school, "student_rules", "") or "",
+        "parent_faq": getattr(school, "parent_faq", "") or "",
         "staff_rules": getattr(school, "staff_rules", "") or "",
         "grading_enabled": school.is_grading_enabled(),
         "logo": _media_url(request, school.logo),
@@ -7743,6 +7744,7 @@ def scanner_attendance_history(request):
                     "student_id": str(item.student_id),
                     "student_name": item.student.get_full_name() or item.student.email,
                     "student_code": _student_code(item.student),
+                    "profile_picture": _profile_picture_url(request, item.student),
                     "class_id": item.class_group_id,
                     "class_name": _class_label(item.class_group) if item.class_group else "Unassigned",
                     "date": item.date,
@@ -8382,7 +8384,7 @@ def school_settings(request):
                 school.motto = new_motto
                 update_fields.append("motto")
 
-        for field in ("student_rules", "staff_rules"):
+        for field in ("student_rules", "staff_rules", "parent_faq"):
             if field in request.data:
                 new_value = str(request.data.get(field) or "").strip()
                 if getattr(school, field, "") != new_value:

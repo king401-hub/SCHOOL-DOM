@@ -5190,13 +5190,18 @@ def parent_topic_from_message(message) -> Optional[str]:
     if text == "stop":
         return "stop"
     words = set(re.findall(r"[a-z]+", text))
+    tapped = kind in ("button", "interactive")
+    # A longer typed sentence is a question, not a menu word ("what time does
+    # school close?" must not turn into the contact reply).
+    if not tapped and len(text.split()) > 4:
+        return None
     if words & {"balance", "bal", "fee", "fees"}:
         return "fees"
     if any(word.startswith("attend") for word in words):
         return "attendance"
     if words & {"result", "results", "report", "reportcard"}:
         return "results"
-    if words & {"help", "contact", "school"}:
+    if words & {"help", "contact", "school"} and (tapped or len(text.split()) <= 2):
         return "contact"
     return None
 
@@ -5252,6 +5257,84 @@ def _parent_topic_line(topic: str, student) -> str:
     return f"{label}: {term_name}, {', '.join(parts)}"
 
 
+def _parent_fee_lines(student) -> tuple:
+    """(owed, lines): the child's balance line, then what makes it up. Text only,
+    no links."""
+    label = _parent_student_label(student)
+    owed = outstanding_amount_for_student(student)
+    if owed <= 0:
+        return owed, [f"{label}: fees fully paid"]
+    lines = [f"{label}: {_format_naira(owed)} outstanding"]
+    unpaid = list(SchoolFee.objects.filter(
+        student=student,
+        status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_PARTIAL, SchoolFee.STATUS_OVERDUE],
+    ))
+    paid_amounts = bulk_fee_paid_amounts(unpaid)
+    for fee in unpaid[:6]:
+        remaining = fee_outstanding_amount(fee, paid_amounts)
+        if remaining > 0:
+            lines.append(f"  - {fee.title}: {_format_naira(remaining)}")
+    return owed, lines
+
+
+# AdminWallet.bank_code is the CBN bank code used for transfers. Parents need the
+# bank's name, so the common ones are mapped; a value that is not all digits is
+# already a name, and an unmapped code is left out rather than shown as a number.
+_CBN_BANK_NAMES = {
+    "044": "Access Bank", "058": "GTBank", "057": "Zenith Bank", "011": "First Bank",
+    "033": "UBA", "070": "Fidelity Bank", "050": "Ecobank", "214": "FCMB",
+    "232": "Sterling Bank", "035": "Wema Bank", "032": "Union Bank",
+    "221": "Stanbic IBTC", "068": "Standard Chartered", "076": "Polaris Bank",
+    "301": "Jaiz Bank", "082": "Keystone Bank", "215": "Unity Bank", "101": "Providus Bank",
+}
+
+
+def _bank_display_name(bank_code) -> str:
+    value = str(bank_code or "").strip()
+    if value.isdigit():
+        return _CBN_BANK_NAMES.get(value.zfill(3), "")
+    return value
+
+
+def _parent_payment_lines(tenant, owing_kids) -> list:
+    """Where to pay. The parent's own virtual account when they have one, else the
+    school's bank account (account name, number and bank), with a narration."""
+    from finance.models import AdminWallet, ParentVirtualAccount
+    from users.models import ParentProfile
+
+    for kid in owing_kids:
+        parent_ids = ParentProfile.objects.filter(children=kid).values_list("user_id", flat=True)
+        virtual = ParentVirtualAccount.objects.filter(parent_id__in=list(parent_ids), is_active=True).first()
+        if virtual:
+            return [
+                "Pay to your virtual account:",
+                f"Account number: {virtual.account_number}",
+                f"Bank: {virtual.bank_name}",
+                f"Account name: {virtual.account_name}",
+                "Payments are matched automatically.",
+            ]
+
+    wallet = AdminWallet.objects.filter(tenant=tenant).first() if tenant is not None else None
+    if wallet is None or not wallet.bank_account_number:
+        return ["For payment details, please contact the school office."]
+    lines = [
+        "Pay to the school account:",
+        f"Account name: {wallet.bank_account_name}",
+        f"Account number: {wallet.bank_account_number}",
+    ]
+    bank = _bank_display_name(wallet.bank_code)
+    if bank:
+        lines.append(f"Bank: {bank}")
+    for kid in owing_kids:
+        try:
+            narration = school_payment_context(kid)["narration"]
+        except Exception:
+            logger.exception("WhatsApp narration lookup failed for student %s", kid.pk)
+            continue
+        lines.append(f"Narration for {kid.user.first_name or 'your child'}: {narration}")
+    return lines
+
+
 def parent_topic_reply(parent_phone, topic: str) -> str:
     """The text reply for one menu topic, grouped by school then child."""
     students = list(students_for_parent_phone(parent_phone))
@@ -5263,12 +5346,26 @@ def parent_topic_reply(parent_phone, topic: str) -> str:
     sections = []
     for tenant, kids in by_school.items():
         lines = [f"*{getattr(tenant, 'name', '') or 'School'}* - {_PARENT_TOPIC_HEADINGS[topic]}"]
+        owing = []
         for kid in kids:
             try:
-                lines.append(_parent_topic_line(topic, kid))
+                if topic == "fees":
+                    owed, kid_lines = _parent_fee_lines(kid)
+                    lines.extend(kid_lines)
+                    if owed > 0:
+                        owing.append(kid)
+                else:
+                    lines.append(_parent_topic_line(topic, kid))
             except Exception:
                 logger.exception("WhatsApp %s lookup failed for student %s", topic, kid.pk)
                 lines.append(f"{_parent_student_label(kid)}: unavailable right now")
+        if owing:
+            try:
+                lines.append("")
+                lines.extend(_parent_payment_lines(tenant, owing))
+            except Exception:
+                logger.exception("WhatsApp payment details lookup failed")
+                lines.append("For payment details, please contact the school office.")
         lines.append(_school_contact_line(tenant))
         sections.append("\n".join(lines))
     return "\n\n".join(sections)
@@ -5284,6 +5381,90 @@ def parent_contact_reply(parent_phone) -> str:
         if tenant not in tenants:
             tenants.append(tenant)
     return "\n".join(_school_contact_line(t) for t in tenants)
+
+
+def parent_question_from_message(message) -> Optional[str]:
+    """The text of a typed message that reads like a question for the assistant
+    (a "?" or four-plus words), else None - greetings and one-word messages get
+    the menu instead."""
+    if message.get("type", "text") != "text":
+        return None
+    body = str((message.get("text") or {}).get("body") or "").strip()
+    if body and ("?" in body or len(body.split()) >= 4):
+        return body[:500]
+    return None
+
+
+_PARENT_AI_SYSTEM = (
+    "You are the WhatsApp assistant for the school(s) below, answering a parent's question. "
+    "Use ONLY the school information provided. If the answer is not there, say you are not sure "
+    "and tell the parent to contact the school using the phone or email given. Never invent "
+    "fees, dates, names or policies. You have no access to any child's fees, attendance or "
+    "results: for those, tell the parent to tap or type FEES, ATTENDANCE or RESULTS. If several "
+    "schools are listed and the question could be about either, ask which school. Reply in plain "
+    "text (no markdown), friendly and under 120 words."
+)
+
+
+def _parent_ai_context(tenants) -> str:
+    blocks = []
+    for tenant in tenants:
+        parts = [f"School: {getattr(tenant, 'name', '') or 'School'}", _school_contact_line(tenant)]
+        for label, field in (("Address", "address"), ("Motto", "motto"), ("School information", "parent_faq")):
+            value = str(getattr(tenant, field, "") or "").strip()
+            if value:
+                parts.append(f"{label}: {value[:3000]}")
+        blocks.append("\n".join(parts))
+    return "\n\n".join(blocks)
+
+
+def parent_ai_reply(parent_phone, question: str) -> Optional[str]:
+    """An OpenRouter answer to a recognised parent's free-text question, grounded in
+    the school's own contact details and FAQ. None when the assistant is off, the
+    parent is over their hourly limit, or the model call fails, so the caller can
+    fall back to the menu."""
+    if not getattr(settings, "WHATSAPP_AI_ENABLED", False) or not getattr(settings, "OPENROUTER_API_KEY", ""):
+        return None
+
+    from django.core.cache import cache
+
+    limit = int(getattr(settings, "WHATSAPP_AI_HOURLY_LIMIT", 10))
+    key = f"wa-ai:{normalize_phone_number(parent_phone)}:{timezone.now():%Y%m%d%H}"
+    cache.add(key, 0, 3600)
+    try:
+        used = cache.incr(key)
+    except ValueError:
+        used = 1
+    if used > limit:
+        return None
+
+    tenants = []
+    for student in students_for_parent_phone(parent_phone):
+        tenant = getattr(student.user, "tenant", None)
+        if tenant is not None and tenant not in tenants:
+            tenants.append(tenant)
+    if not tenants:
+        return None
+
+    from ai_chat.services.openrouter_client import OpenRouterClient, OpenRouterError, OpenRouterTimeout
+
+    try:
+        client = OpenRouterClient(
+            model=getattr(settings, "WHATSAPP_AI_MODEL", "") or None, timeout=20, max_retries=1,
+        )
+        result = client.chat(
+            [
+                {"role": "system", "content": _PARENT_AI_SYSTEM + "\n\n" + _parent_ai_context(tenants)},
+                {"role": "user", "content": question},
+            ],
+            max_tokens=300,
+            temperature=0.2,
+        )
+    except (OpenRouterError, OpenRouterTimeout):
+        logger.exception("WhatsApp AI answer failed")
+        return None
+    answer = (result.get("content") or "").strip()
+    return answer[:900] or None
 
 
 def send_parent_menu(parent_phone):

@@ -99,7 +99,31 @@ second guardian phone or own phone, which gives the school(s) and child(ren).
 | Contact | help, contact, school | each school's phone and email |
 | (ignored) | stop | no reply |
 
-A number that matches no student gets "this number isn't linked to a student".
+**Unknown numbers get no automatic reply.** If the sender matches no student, SchoolDom
+sends nothing (no menu, no "not linked" text) and logs `unrecognized_ignored`. The
+message stays in Bahasha's Team Inbox for staff, like a normal WhatsApp number.
+
+**Typed questions.** A typed message of four or more words, or with a "?", is treated
+as a question, not a menu word ("what time does school close?" is not the contact
+reply). With `WHATSAPP_AI_ENABLED=true` and `OPENROUTER_API_KEY` set, an OpenRouter
+model answers it using only the school's name, contacts, address, motto and the
+**`parent_faq`** text the school admin fills in (School Settings API field
+`parent_faq`, also editable in Django admin). The model is given no child data; it is
+told to send fees, attendance and results questions to the buttons, and to say it is
+unsure when the FAQ does not cover the answer. Limit: `WHATSAPP_AI_HOURLY_LIMIT`
+(default 10) per parent per hour; over the limit, or if the model call fails, the
+parent gets the menu. Greetings and one-word messages always get the menu.
+
+**Fee reply.** Per child: the balance, then what makes it up (up to six fee lines),
+then where to pay, with no links:
+1. the parent's own virtual account (`ParentVirtualAccount`: number, bank, name), else
+2. the school's bank account from `AdminWallet` (account name, number, bank name) plus
+   a narration per child, else
+3. "please contact the school office".
+
+`AdminWallet.bank_code` holds a CBN code, so common codes are mapped to names in
+`_CBN_BANK_NAMES`; a code that is not in the map is left out rather than shown as a
+number. Add codes there as schools use other banks.
 
 ### Create the menu template in Bahasha
 

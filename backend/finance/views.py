@@ -113,10 +113,13 @@ from finance.services import (
     dispatch_payment_receipt_notifications,
     send_payment_receipt_notifications,
     send_fee_reminders,
+    parent_ai_reply,
     parent_contact_reply,
+    parent_question_from_message,
     parent_topic_from_message,
     parent_topic_reply,
     send_parent_menu,
+    students_for_parent_phone,
     send_payment_receipt,
     send_whatsapp_message,
     update_student_activation_alerts,
@@ -344,6 +347,11 @@ def _handle_whatsapp_inbound(messages):
         if topic == "stop":
             processed.append({"from": from_phone, "action": "stop_ignored"})
             continue
+        # Numbers that are not on SchoolDom get no automatic reply at all: the
+        # message stays in the WhatsApp inbox for staff, like a normal number.
+        if not students_for_parent_phone(from_phone).exists():
+            processed.append({"from": from_phone, "action": "unrecognized_ignored"})
+            continue
         action = topic or "menu"
         try:
             if topic in ("fees", "attendance", "results"):
@@ -351,7 +359,13 @@ def _handle_whatsapp_inbound(messages):
             elif topic == "contact":
                 send_whatsapp_message(from_phone, parent_contact_reply(from_phone))
             else:
-                send_parent_menu(from_phone)
+                question = parent_question_from_message(message)
+                answer = parent_ai_reply(from_phone, question) if question else None
+                if answer:
+                    action = "ai_answer"
+                    send_whatsapp_message(from_phone, answer)
+                else:
+                    send_parent_menu(from_phone)
             processed.append({"from": from_phone, "action": action})
         except Exception as exc:
             logger.exception("WhatsApp %s reply to %s failed", action, from_phone)
@@ -4300,6 +4314,11 @@ def parent_dashboard(request):
             "name": student_obj.user.get_full_name() if student_obj.user else "",
             "class_name": class_obj.name if class_obj else "",
             "student_id": getattr(student_obj, "student_id", "") or getattr(student_obj, "admission_number", ""),
+            "profile_picture": (
+                request.build_absolute_uri(student_obj.user.profile_picture.url)
+                if student_obj.user and student_obj.user.profile_picture
+                else ""
+            ),
             "fees": fee_rows,
             "total_expected": float(student_expected),
             "total_paid": float(student_paid),

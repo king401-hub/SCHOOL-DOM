@@ -79,7 +79,10 @@ class SchoolTenant(models.Model):
     motto = models.CharField(max_length=255, blank=True, default="")
     student_rules = models.TextField(blank=True, default="")
     staff_rules = models.TextField(blank=True, default="")
-    
+    # Facts the WhatsApp assistant may use to answer parents' free-text questions
+    # (fees schedule, term dates, uniform, ...). Written by the school admin.
+    parent_faq = models.TextField(blank=True, default="")
+
     # Branding
     logo = models.ImageField(upload_to='school_logos/', null=True, blank=True)
     favicon = models.ImageField(upload_to='school_favicons/', null=True, blank=True)
