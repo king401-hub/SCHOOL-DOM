@@ -6697,7 +6697,7 @@ def create_student(request):
 
     _sync_student_finance_for_class(student_profile, actor=user)
     student_profile.refresh_from_db()
-    _sync_student_guardians_to_parent_directory(student_profile)
+    guardians = _sync_student_guardians_to_parent_directory(student_profile)
 
     token_assigned = False
     token_message = ""
@@ -6711,6 +6711,24 @@ def create_student(request):
             token_assigned = True
         except ValueError as exc:
             token_message = str(exc)
+
+        # A sibling added to a family that already has a virtual account -
+        # provision_parent_dva's own welcome text (finance/services.py) only
+        # fires when a *new* parent/account is created, which this is not.
+        # Fire it here instead, synchronously, since the account already
+        # exists and there is nothing to wait on.
+        from finance.models import ParentVirtualAccount
+        from finance.services import send_parent_virtual_account_sms
+
+        student_name = student_user.get_full_name() or student_user.email
+        for guardian_profile in guardians:
+            vac = ParentVirtualAccount.objects.filter(parent=guardian_profile.user, is_active=True).first()
+            if not vac:
+                continue
+            try:
+                send_parent_virtual_account_sms(vac, student_names=[student_name])
+            except Exception:
+                logger.exception("Virtual account welcome SMS failed for student %s", student_profile.id)
 
     return Response(
         {

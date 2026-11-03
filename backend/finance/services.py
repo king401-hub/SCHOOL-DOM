@@ -568,6 +568,60 @@ def provision_parent_virtual_account(parent_user, actor=None):
     return vac, created
 
 
+def virtual_account_sms_text(school_name, vac, student_names=None):
+    """The text sent to a parent once their dedicated virtual account is
+    ready. Named students turn it into a welcome ("X has been enrolled...") -
+    in production that is every first-time provisioning, since a parent User
+    only ever gets created by _sync_guardian_parent while onboarding one of
+    their children (see provision_parent_dva's call site in
+    users/signals.py); omitted it reads as a plain account-ready notice, used
+    when no child is known yet (an admin backfilling old parents via the
+    provision_parent_dva management command, say)."""
+    account_line = f"{vac.account_number} ({vac.bank_name}), {vac.account_name}"
+    school_name = school_name or "Your school"
+    if student_names:
+        if len(student_names) == 1:
+            who, verb = student_names[0], "has"
+        else:
+            who, verb = f"{', '.join(student_names[:-1])} and {student_names[-1]}", "have"
+        return (
+            f"{school_name}: Welcome! {who} {verb} been enrolled. Pay school fees anytime "
+            f"via your virtual account {account_line}."
+        )
+    return f"{school_name}: Your virtual account is ready. Pay school fees anytime via {account_line}."
+
+
+def send_parent_virtual_account_sms(vac, student_names=None, actor=None):
+    """Text the parent behind `vac` their newly (re)provisioned virtual
+    account - see virtual_account_sms_text. Never billed to the school's SMS
+    wallet (same reasoning as send_payment_receipt_sms's unbilled branch:
+    this is the account the parent needs in order to pay fees, not a message
+    the school chose to send) and never raises - a failed text must not
+    undo a successful provisioning."""
+    parent_user = vac.parent
+    phone = (getattr(parent_user, "phone", "") or "").strip()
+    if not phone:
+        return {"sent": False, "skipped": True, "reason": "No parent phone on file."}
+
+    message = virtual_account_sms_text(getattr(vac.tenant, "name", ""), vac, student_names=student_names)
+    try:
+        log = send_wallet_sms(
+            vac.tenant,
+            phone,
+            message,
+            category=SmsMessageLog.OTHER,
+            actor=actor,
+            narration="Virtual account provisioned",
+            charge_wallet=False,
+        )
+    except Exception:
+        logger.exception("Virtual account SMS failed for parent %s", parent_user.email)
+        return {"sent": False, "reason": "Virtual account SMS could not be sent."}
+
+    sent = log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED)
+    return {"sent": sent, "phone": phone, "reason": "" if sent else sms_failure_reason(log)}
+
+
 # Seconds between automatic attempts to give a new parent a virtual account when
 # Paystack is unavailable - the same cadence as the Celery task this replaces
 # (every couple of minutes, backing off), three more tries.
@@ -614,6 +668,21 @@ def provision_parent_dva(parent_user_id):
         vac.account_number,
         parent_user.email,
     )
+
+    if created:
+        from users.models import ParentProfile
+
+        parent_profile = ParentProfile.objects.filter(user=parent_user).first()
+        student_names = (
+            [child.user.get_full_name() or child.user.email for child in parent_profile.children.all()]
+            if parent_profile
+            else []
+        )
+        try:
+            send_parent_virtual_account_sms(vac, student_names=student_names)
+        except Exception:
+            logger.exception("Virtual account SMS failed to send for parent %s", parent_user.email)
+
     return {"status": "ok", "created": created, "account_number": vac.account_number}
 
 
