@@ -96,7 +96,7 @@ second guardian phone or own phone, which gives the school(s) and child(ren).
 | Fees | `Fee balance`, balance, bal, fee, fees | `outstanding_amount_for_student` |
 | Attendance | `Attendance` | `academic.AttendanceRecord`, last 30 days, counts per status |
 | Results | `Results`, result, report | newest term with **published** scores, via `_student_result_report` (average and class position) |
-| Receipts | receipt, receipts, payment, payments (typed only; the menu template has three buttons) | each child's last five successful payments: date, amount, fee, reference. Read from wallet debits, bank credits and split/virtual-account allocations. No links |
+| Receipts | receipt, receipts, payment, payments (typed only; the menu template has three buttons) | each child's last five successful payments: date, amount, what for, reference. Recorded payments (`BankPayment`: cash, POS, cheque, bank transfer) carry the official `/r/<code>` receipt link (the one already sent by SMS/email, reused and saved on the payment); wallet debits and split/virtual-account allocations have no receipt page and are text only. Fee replies still carry no links. Sending the receipt as an image is not built: it needs a rendered image and Bahasha's media endpoint, whose docs were not read |
 | Contact | help, contact, school | each school's phone and email |
 | (ignored) | stop | no reply |
 

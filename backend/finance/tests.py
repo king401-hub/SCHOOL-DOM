@@ -5858,8 +5858,8 @@ class ParentWhatsAppMenuTests(TestCase):
             self.assertEqual(topic(text(body)), "receipts", body)
         self.assertIsNone(topic(text("give me reciept for my payhment")))  # a question: goes to the assistant
 
-    def test_receipts_reply_lists_recent_payments_from_every_source_without_links(self):
-        from finance.models import FeeAllocation, SchoolFee, Transaction
+    def test_receipts_reply_links_recorded_payments_and_lists_the_rest_as_text(self):
+        from finance.models import BankPayment, FeeAllocation, PaymentReceiptLink, SchoolFee, Transaction
         from finance.services import parent_topic_reply
 
         self.assertIn("no payments recorded", parent_topic_reply(self.PHONE, "receipts"))
@@ -5868,12 +5868,14 @@ class ParentWhatsAppMenuTests(TestCase):
             student=self.student, title="Tuition", amount=Decimal("50000.00"),
             due_date=timezone.localdate(), status=SchoolFee.STATUS_PARTIAL,
         )
-        AdminWallet.objects.create(tenant=self.school, balance=Decimal("0"))
-        wallet = AdminWallet.objects.get(tenant=self.school)
-        Transaction.objects.create(
-            admin_wallet=wallet, amount=Decimal("20000.00"), tx_type=Transaction.FEE_CREDIT,
-            status=Transaction.STATUS_SUCCESS, reference="BANK-REF-1",
-            metadata={"fee_id": str(fee.id), "bank_payment_id": "bp-1"},
+        recorded = BankPayment.objects.create(
+            tenant=self.school, student=self.student, amount=Decimal("20000.00"),
+            applied_amount=Decimal("20000.00"), narration="Tuition part payment", bank_reference="BANK-REF-1",
+            receipt_number="RCT-0001", status=BankPayment.STATUS_CONFIRMED,
+        )
+        BankPayment.objects.create(  # not confirmed: must not be listed
+            tenant=self.school, student=self.student, amount=Decimal("999.00"), narration="x",
+            bank_reference="BANK-REF-FAILED", status=BankPayment.STATUS_FAILED,
         )
         split = Transaction.objects.create(
             amount=Decimal("10000.00"), tx_type=Transaction.SPLIT_PAYMENT,
@@ -5882,22 +5884,25 @@ class ParentWhatsAppMenuTests(TestCase):
         FeeAllocation.objects.create(
             fee=fee, transaction=split, amount_allocated=Decimal("10000.00"), status=FeeAllocation.STATUS_PAID,
         )
-        # A failed payment and a fee-less credit must not be listed.
-        Transaction.objects.create(
-            admin_wallet=wallet, amount=Decimal("999.00"), tx_type=Transaction.FEE_CREDIT,
-            status=Transaction.STATUS_FAILED, reference="FAILED-REF-3",
-            metadata={"fee_id": str(fee.id), "bank_payment_id": "bp-3"},
-        )
 
         reply = parent_topic_reply(self.PHONE, "receipts")
         self.assertIn("Recent payments", reply)
         self.assertIn("20,000", reply)
-        self.assertIn("BANK-REF-1", reply)
+        self.assertIn("RCT-0001", reply)
+        self.assertIn("Receipt: http", reply)
+        self.assertIn("/r/", reply)
         self.assertIn("10,000", reply)
         self.assertIn("SPLIT-REF-2", reply)
-        self.assertIn("Tuition", reply)
-        self.assertNotIn("FAILED-REF-3", reply)
-        self.assertNotIn("http", reply)
+        self.assertEqual(reply.count("Receipt: http"), 1)  # the split payment has no receipt page
+        self.assertNotIn("BANK-REF-FAILED", reply)
+
+        # The link is saved on the payment and reused, not minted again.
+        recorded.refresh_from_db()
+        self.assertIn("/r/", recorded.receipt_link_url)
+        links_before = PaymentReceiptLink.objects.count()
+        again = parent_topic_reply(self.PHONE, "receipts")
+        self.assertIn(recorded.receipt_link_url, again)
+        self.assertEqual(PaymentReceiptLink.objects.count(), links_before)
 
     def test_questions_are_told_apart_from_menu_words(self):
         from finance.services import parent_question_from_message as question

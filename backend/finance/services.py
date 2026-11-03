@@ -5265,7 +5265,8 @@ def send_parent_balance_response(parent_phone):
 # A parent messages the school's number; the phone number alone says which
 # school(s) and children they belong to (guardian phone on the student). They
 # pick a topic by tapping a quick-reply button on the menu template (or by
-# typing the word) and get a text reply. No payment links.
+# typing the word) and get a text reply. Fee replies carry no payment links;
+# receipts carry the official receipt link.
 
 PARENT_HELP_TEXT = (
     "SchoolDom: reply FEES, ATTENDANCE, RESULTS or RECEIPT to see your children's "
@@ -5413,42 +5414,69 @@ def _bank_display_name(bank_code) -> str:
     return value
 
 
-def _parent_receipt_line(student, limit=5) -> str:
-    """The child's most recent successful payments as text (date, amount, fee,
-    reference). Payments live in three places: wallet debits, bank-transfer
-    credits, and split/virtual-account allocations; each is read the same way
-    fee_recorded_paid_amount reads it."""
-    fees = {str(f.id): f.title for f in SchoolFee.objects.filter(student=student)}
-    label = _parent_student_label(student)
-    if not fees:
-        return f"{label}: no payments recorded"
+def _bank_payment_receipt_url(payment) -> str:
+    """The public /r/<code> receipt page for a recorded payment: the link already
+    minted for it (SMS/email), else a new one, saved on the payment so asking
+    twice does not mint two. "" if it cannot be made, so the line still shows."""
+    if payment.receipt_link_url:
+        return payment.receipt_link_url
+    try:
+        tenant = getattr(payment, "tenant", None) or getattr(payment.student.user, "tenant", None)
+        url = create_receipt_link(build_payment_receipt_data(payment), tenant=tenant)
+        payment.receipt_link_url = url
+        payment.save(update_fields=["receipt_link_url", "updated_at"])
+        return url
+    except Exception:
+        logger.exception("WhatsApp receipt link could not be made for payment %s", payment.pk)
+        return ""
 
-    payments = []
-    ledger = Transaction.objects.filter(
-        status=Transaction.STATUS_SUCCESS, metadata__fee_id__in=list(fees),
-    ).filter(
-        Q(tx_type=Transaction.FEE_DEBIT)
-        | Q(tx_type=Transaction.FEE_CREDIT, metadata__bank_payment_id__isnull=False)
-    )
-    for tx in ledger:
-        payments.append((tx.created_at, tx.amount, fees.get(str(tx.metadata.get("fee_id")), "Fee"), tx.reference))
-    allocations = FeeAllocation.objects.filter(
-        fee__student=student,
-        status__in=[FeeAllocation.STATUS_PAID, FeeAllocation.STATUS_PARTIAL],
-        transaction__status=Transaction.STATUS_SUCCESS,
-    ).select_related("fee", "transaction")
-    for allocation in allocations:
+
+def _parent_receipt_line(student, limit=5) -> str:
+    """The child's most recent successful payments as text: date, amount, what it
+    was for, reference, and the official receipt link where one exists.
+
+    Recorded payments (cash, POS, cheque, bank transfer: `BankPayment`) have an
+    official receipt page, so they carry its link. Wallet debits and split or
+    virtual-account allocations have no receipt page and are listed as text. Bank
+    credits are read from BankPayment only, so they are not listed twice."""
+    from finance.models import BankPayment
+
+    label = _parent_student_label(student)
+    fees = {str(f.id): f.title for f in SchoolFee.objects.filter(student=student)}
+
+    payments = []  # (when, amount, what, reference, receipt_url_or_payment)
+    recorded = BankPayment.objects.filter(
+        student=student, status__in=[BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL],
+    ).select_related("tenant", "student__user", "student__current_class").order_by("-created_at")[:limit]
+    for payment in recorded:
         payments.append((
-            allocation.transaction.created_at, allocation.amount_allocated,
-            allocation.fee.title, allocation.transaction.reference,
+            payment.matched_at or payment.created_at, payment.applied_amount or payment.amount,
+            payment.narration or "School fees", payment.receipt_number or payment.bank_reference, payment,
         ))
+    if fees:
+        for tx in Transaction.objects.filter(
+            tx_type=Transaction.FEE_DEBIT, status=Transaction.STATUS_SUCCESS, metadata__fee_id__in=list(fees),
+        ):
+            payments.append((tx.created_at, tx.amount, fees.get(str(tx.metadata.get("fee_id")), "Fee"), tx.reference, ""))
+        for allocation in FeeAllocation.objects.filter(
+            fee__student=student,
+            status__in=[FeeAllocation.STATUS_PAID, FeeAllocation.STATUS_PARTIAL],
+            transaction__status=Transaction.STATUS_SUCCESS,
+        ).select_related("fee", "transaction"):
+            payments.append((
+                allocation.transaction.created_at, allocation.amount_allocated,
+                allocation.fee.title, allocation.transaction.reference, "",
+            ))
 
     if not payments:
         return f"{label}: no payments recorded"
     payments.sort(key=lambda p: p[0], reverse=True)
     lines = [f"{label}:"]
-    for when, amount, title, reference in payments[:limit]:
-        lines.append(f"  - {timezone.localtime(when):%d %b %Y}: {_format_naira(amount)} ({title}), ref {reference}")
+    for when, amount, what, reference, source in payments[:limit]:
+        lines.append(f"  - {timezone.localtime(when):%d %b %Y}: {_format_naira(amount)} ({what}), ref {reference}")
+        url = _bank_payment_receipt_url(source) if source != "" else ""
+        if url:
+            lines.append(f"    Receipt: {url}")
     return "\n".join(lines)
 
 
