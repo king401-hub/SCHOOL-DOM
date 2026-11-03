@@ -4016,6 +4016,7 @@ def sync_class_fee_for_student(student_profile, class_fee, actor=None):
             "currency": class_fee.currency,
             "due_date": class_fee.due_date,
             "auto_deduct": True,
+            "term": class_fee.term,
             "created_by": actor or class_fee.created_by,
         },
     )
@@ -4032,6 +4033,7 @@ def sync_class_fee_for_student(student_profile, class_fee, actor=None):
             "currency": class_fee.currency,
             "due_date": class_fee.due_date,
             "auto_deduct": True,
+            "term": class_fee.term,
         }.items():
             if getattr(fee, field) != value:
                 setattr(fee, field, value)
@@ -4234,6 +4236,7 @@ def sync_tenant_class_fees(tenant, actor=None):
                     currency=class_fee.currency,
                     due_date=class_fee.due_date,
                     auto_deduct=True,
+                    term=class_fee.term,
                     created_by=actor or class_fee.created_by,
                 )
             )
@@ -4247,6 +4250,7 @@ def sync_tenant_class_fees(tenant, actor=None):
             "currency": class_fee.currency,
             "due_date": class_fee.due_date,
             "auto_deduct": True,
+            "term": class_fee.term,
         }.items():
             if getattr(fee, field) != value:
                 setattr(fee, field, value)
@@ -4261,7 +4265,7 @@ def sync_tenant_class_fees(tenant, actor=None):
         for fee in to_update:
             fee.updated_at = now
         # bulk_update doesn't trigger auto_now, so updated_at is set explicitly above.
-        SchoolFee.objects.bulk_update(to_update, ["title", "amount", "currency", "due_date", "auto_deduct", "updated_at"])
+        SchoolFee.objects.bulk_update(to_update, ["title", "amount", "currency", "due_date", "auto_deduct", "term", "updated_at"])
 
     return len(to_create) + len(to_update)
 
@@ -4526,6 +4530,7 @@ def sync_bill_invoices(bill, actor=None):
             orphan = orphans_by_student.get(student.id)
             if orphan is not None:
                 orphan.bill = bill
+                orphan.term = bill.term
                 if not orphan.is_customized:
                     orphan.title = bill.title
                     orphan.amount = total
@@ -4542,6 +4547,7 @@ def sync_bill_invoices(bill, actor=None):
                     currency="NGN",
                     due_date=bill.due_date or timezone.now().date(),
                     auto_deduct=False,
+                    term=bill.term,
                     invoice_number=bill_invoice_number(bill, student),
                     created_by=actor,
                 )
@@ -4556,6 +4562,7 @@ def sync_bill_invoices(bill, actor=None):
             "title": bill.title,
             "amount": total,
             "due_date": bill.due_date or fee.due_date,
+            "term": bill.term,
         }.items():
             if getattr(fee, field) != value:
                 setattr(fee, field, value)
@@ -4567,9 +4574,9 @@ def sync_bill_invoices(bill, actor=None):
     if to_create:
         SchoolFee.objects.bulk_create(to_create)
     if to_update:
-        SchoolFee.objects.bulk_update(to_update, ["title", "amount", "due_date", "updated_at"])
+        SchoolFee.objects.bulk_update(to_update, ["title", "amount", "due_date", "term", "updated_at"])
     if to_relink:
-        SchoolFee.objects.bulk_update(to_relink, ["bill", "title", "amount", "due_date", "updated_at"])
+        SchoolFee.objects.bulk_update(to_relink, ["bill", "term", "title", "amount", "due_date", "updated_at"])
 
     return len(to_create) + len(to_update) + len(to_relink)
 
@@ -4808,7 +4815,11 @@ def fee_totals_by_student(students, class_ids):
         (fee.student_id, fee.class_fee_id): fee for fee in generated_fees
     }
     manual_fees = list(
-        SchoolFee.objects.filter(student__in=students, class_fee__isnull=True)
+        # closed_at__isnull=True: a manual/bill fee whose remaining balance
+        # was rolled forward into a newer arrears fee by close_term_finance
+        # is excluded here, or that same balance would count twice - once on
+        # this closed fee, once on the arrears fee it became.
+        SchoolFee.objects.filter(student__in=students, class_fee__isnull=True, closed_at__isnull=True)
         .select_related("student", "student__user", "student__current_class")
         .order_by("due_date", "title")
     )
@@ -4839,6 +4850,107 @@ def fee_totals_by_student(students, class_ids):
         "generated_fees": generated_fees,
         "manual_fees": manual_fees,
         "paid_amounts": paid_amounts,
+    }
+
+
+def close_term_finance(closing_term, new_term, school=None, actor=None, dry_run=False):
+    """Closes out one term's finance and carries any unpaid balance forward
+    into the next term as a single arrears fee per student - the finance
+    counterpart to academic.models.check_and_advance_term_transition, which
+    calls this right after it flips the active term. Two things happen:
+
+    1. Every ClassFee tagged to `closing_term` is deactivated (is_active=
+       False) - the same action admin_class_fee_detail's DELETE already does
+       by hand - so it stops generating new SchoolFee rows and drops out of
+       fee_totals_by_student's "expected" total. This is the "start afresh"
+       half: a school creating next term's class fees as usual
+       (admin_class_fee_create, which defaults a new ClassFee's term to
+       whichever term is now active) gets a clean slate with none of last
+       term's fees mixed in.
+
+    2. For every student who still owes something on `closing_term` - summed
+       with fee_outstanding_amount across every SchoolFee tagged to that
+       term, class-fee-sourced and bill-sourced alike - one new "Arrears
+       carried from <closing_term.name>" fee is created, dated into
+       `new_term` (due_date=new_term.start_date) with auto_deduct=True, so
+       any existing wallet credit sweeps it first: process_due_fees pays
+       oldest-due-first, and an arrears fee is always the oldest thing due
+       in the new term. The original unpaid fees are left exactly as they
+       were - status untouched, nothing deleted, for audit history - except
+       each gets closed_at stamped so fee_totals_by_student's manual_fees
+       sum (the one of its two sums with no is_active lever to pull) stops
+       counting it alongside the new arrears fee it became.
+
+    `school` (core.SchoolTenant), when given, is only used to log one
+    FinanceLedgerLog entry via record_finance_activity, so the admin's
+    finance activity feed shows the term actually closed.
+
+    dry_run computes and returns the same breakdown without writing
+    anything - no ClassFee deactivated, no arrears fee created, no SchoolFee
+    closed. Naturally idempotent otherwise: a fee's closed_at, once set,
+    removes it from the next call's own query, and
+    check_and_advance_term_transition only ever calls this once per term
+    (closing_term.is_active only ever flips False once in its lifetime).
+
+    Returns {"students_with_arrears": int, "total_arrears": Decimal,
+    "class_fees_deactivated": int, "rows": [{"profile", "amount"}, ...]}.
+    """
+    outstanding_fees = list(
+        SchoolFee.objects.filter(term=closing_term, closed_at__isnull=True)
+        .exclude(status=SchoolFee.STATUS_PAID)
+        .select_related("student", "student__user")
+    )
+    paid_amounts = bulk_fee_paid_amounts(outstanding_fees)
+
+    by_student = {}
+    for fee in outstanding_fees:
+        outstanding = fee_outstanding_amount(fee, paid_amounts)
+        if outstanding <= 0:
+            continue
+        entry = by_student.setdefault(
+            fee.student_id, {"profile": fee.student, "amount": Decimal("0.00"), "fee_ids": []}
+        )
+        entry["amount"] += outstanding
+        entry["fee_ids"].append(fee.id)
+
+    rows = [{"profile": info["profile"], "amount": info["amount"]} for info in by_student.values()]
+    class_fees_to_deactivate = ClassFee.objects.filter(term=closing_term, is_active=True)
+    class_fee_count = class_fees_to_deactivate.count()
+    total_arrears = sum((info["amount"] for info in by_student.values()), Decimal("0.00"))
+
+    if not dry_run:
+        with transaction.atomic():
+            now = timezone.now()
+            for info in by_student.values():
+                SchoolFee.objects.create(
+                    student=info["profile"],
+                    title=f"Arrears carried from {closing_term.name}",
+                    amount=info["amount"],
+                    currency="NGN",
+                    due_date=new_term.start_date,
+                    term=new_term,
+                    auto_deduct=True,
+                    created_by=actor,
+                )
+                SchoolFee.objects.filter(id__in=info["fee_ids"]).update(closed_at=now)
+            class_fees_to_deactivate.update(is_active=False)
+
+        if school is not None and by_student:
+            record_finance_activity(
+                school,
+                actor,
+                "term_closed",
+                f"Closed {closing_term.name}: {len(by_student)} student(s) carried a total of "
+                f"₦{total_arrears:,.2f} in arrears into {new_term.name}.",
+                amount=total_arrears,
+                reference=str(closing_term.id),
+            )
+
+    return {
+        "students_with_arrears": len(by_student),
+        "total_arrears": total_arrears,
+        "class_fees_deactivated": class_fee_count,
+        "rows": rows,
     }
 
 

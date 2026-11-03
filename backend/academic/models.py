@@ -205,6 +205,29 @@ def check_and_advance_term_transition(legacy_tenant):
     from users.models import User
 
     school = SchoolTenant.objects.filter(schema_name__iexact=legacy_tenant.slug).first()
+
+    if next_term:
+        # Only once a next term actually exists - closing a term's finance
+        # before anyone knows which term its arrears move into isn't
+        # possible, and matches this function's own "never auto-creates a
+        # next term, that's an admin decision" rule: finance just stays open
+        # on the ended term until the admin configures the next one
+        # (next_term_missing above already tells them to, via the
+        # notification below).
+        from finance.services import close_term_finance
+
+        try:
+            close_term_finance(term, next_term, school=school)
+        except Exception:
+            # A finance-side failure must never block the academic
+            # transition itself - the popup/notification below still needs
+            # to fire so the admin isn't left in the dark either way.
+            import logging
+
+            logging.getLogger(__name__).exception(
+                "close_term_finance failed for %s -> %s (tenant %s)", term, next_term, legacy_tenant,
+            )
+
     if school:
         if next_term_missing:
             message = f"{term.name} has ended and no next term is set up yet. Please configure the next term/session."

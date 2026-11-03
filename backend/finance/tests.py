@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 import io
 import os
@@ -76,14 +77,17 @@ from finance.services import (
     send_parent_virtual_account_fee_reminder,
     build_payment_receipt_data,
     RECEIPT_AUTO_RETRY_DELAYS,
+    close_term_finance,
     deliver_payment_receipt,
     dispatch_payment_receipt_notifications,
     fee_outstanding_amount,
+    fee_totals_by_student,
     send_payment_receipt_notifications,
     total_outstanding_for_fees,
     send_payment_receipt_sms,
     send_wallet_sms,
     sms_failure_reason,
+    sync_bill_invoices,
     sync_class_fee_assignments,
     sync_student_class_fees,
     sync_tenant_class_fees,
@@ -6667,3 +6671,222 @@ class FinanceLedgerTermFilterTests(TestCase):
         self.client.force_authenticate(user=teacher)
         response = self.client.get("/api/finance/admin/finance-ledger/")
         self.assertEqual(response.status_code, 403)
+
+
+class CloseTermFinanceTests(TestCase):
+    """close_term_finance: an unpaid balance on a closing term must carry
+    forward as one consolidated arrears fee per student, and the closing
+    term's own fees must stop being separately counted afterward - the
+    automated backstop behind "close term 1's finance, start afresh for
+    term 2" (academic.models.check_and_advance_term_transition calls this
+    automatically; see CheckAndAdvanceTermTransitionClosesFinanceTests below
+    for that wiring)."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Arrears School", schema_name="arrears_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+
+        self.term1 = Term.objects.create(
+            tenant=self.legacy_tenant, name="Term 1", start_date=date(2026, 9, 1),
+            end_date=date(2026, 12, 1), is_active=False,
+        )
+        self.term2 = Term.objects.create(
+            tenant=self.legacy_tenant, name="Term 2", start_date=date(2027, 1, 5),
+            end_date=date(2027, 4, 1), is_active=True,
+        )
+
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+
+        self.student_user = User.objects.create_user(
+            email="student@arrears.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="ARR001", admission_number="ADM-ARR-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+
+        # ClassFee's post_save signal (finance/signals.py) already fans this
+        # out to every student in the class via sync_class_fee_assignments -
+        # creating a SchoolFee by hand here too would double it up.
+        self.class_fee = ClassFee.objects.create(
+            school_class=self.school_class, title="Term 1 Tuition", amount=Decimal("40000.00"),
+            due_date=date(2026, 9, 10), term=self.term1, is_active=True,
+        )
+        self.tuition_fee = SchoolFee.objects.get(student=self.student, class_fee=self.class_fee)
+
+    def test_unpaid_class_fee_carries_forward_as_arrears(self):
+        result = close_term_finance(self.term1, self.term2)
+
+        self.assertEqual(result["students_with_arrears"], 1)
+        self.assertEqual(result["total_arrears"], Decimal("40000.00"))
+        self.assertEqual(result["class_fees_deactivated"], 1)
+
+        arrears = SchoolFee.objects.get(student=self.student, term=self.term2)
+        self.assertEqual(arrears.amount, Decimal("40000.00"))
+        self.assertEqual(arrears.due_date, self.term2.start_date)
+        self.assertTrue(arrears.auto_deduct)
+        self.assertIn("Term 1", arrears.title)
+
+        self.class_fee.refresh_from_db()
+        self.assertFalse(self.class_fee.is_active)
+
+        # The original fee is untouched history, not deleted or rewritten.
+        self.tuition_fee.refresh_from_db()
+        self.assertEqual(self.tuition_fee.status, SchoolFee.STATUS_PENDING)
+        self.assertEqual(self.tuition_fee.amount, Decimal("40000.00"))
+
+    def test_fully_paid_student_gets_no_arrears(self):
+        self.tuition_fee.status = SchoolFee.STATUS_PAID
+        self.tuition_fee.amount_paid = Decimal("40000.00")
+        self.tuition_fee.save(update_fields=["status", "amount_paid"])
+
+        result = close_term_finance(self.term1, self.term2)
+
+        self.assertEqual(result["students_with_arrears"], 0)
+        self.assertFalse(SchoolFee.objects.filter(student=self.student, term=self.term2).exists())
+        # "Start afresh" still happens regardless of whether anyone owed anything.
+        self.class_fee.refresh_from_db()
+        self.assertFalse(self.class_fee.is_active)
+
+    def test_bill_sourced_fee_also_carries_forward_and_stops_double_counting(self):
+        bill = Bill.objects.create(
+            tenant=self.school, title="Term 1 Trip Fee", term=self.term1, status=Bill.STATUS_PUBLISHED,
+        )
+        BillItem.objects.create(bill=bill, description="Trip", amount=Decimal("5000.00"))
+        bill_fee = SchoolFee.objects.create(
+            student=self.student, bill=bill, title="Term 1 Trip Fee", amount=Decimal("5000.00"),
+            due_date=date(2026, 9, 15), term=self.term1, status=SchoolFee.STATUS_PENDING, auto_deduct=False,
+        )
+
+        result = close_term_finance(self.term1, self.term2)
+        # 40000 tuition + 5000 bill, consolidated into one fee.
+        self.assertEqual(result["total_arrears"], Decimal("45000.00"))
+        self.assertEqual(SchoolFee.objects.filter(student=self.student, term=self.term2).count(), 1)
+
+        bill_fee.refresh_from_db()
+        self.assertIsNotNone(bill_fee.closed_at)
+
+        # fee_totals_by_student must not double-count the now-closed bill fee
+        # alongside the new arrears fee it became (class_fee is deactivated
+        # too, so the old tuition fee doesn't double-count either).
+        per_student, _ = fee_totals_by_student([self.student], [self.school_class.id])
+        expected, _paid = per_student[self.student.id]
+        self.assertEqual(expected, Decimal("45000.00"))
+
+    def test_dry_run_writes_nothing(self):
+        result = close_term_finance(self.term1, self.term2, dry_run=True)
+
+        self.assertEqual(result["students_with_arrears"], 1)
+        self.assertFalse(SchoolFee.objects.filter(student=self.student, term=self.term2).exists())
+        self.class_fee.refresh_from_db()
+        self.assertTrue(self.class_fee.is_active)
+
+    def test_running_twice_does_not_duplicate_arrears(self):
+        close_term_finance(self.term1, self.term2)
+        second_result = close_term_finance(self.term1, self.term2)
+
+        self.assertEqual(second_result["students_with_arrears"], 0)
+        self.assertEqual(SchoolFee.objects.filter(student=self.student, term=self.term2).count(), 1)
+
+
+class FeeTermStampingTests(TestCase):
+    """New ClassFee/SchoolFee/Bill-sourced fees must inherit the term they
+    were generated under, so close_term_finance (and any future term-scoped
+    reporting) has real data to work from."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Stamp School", schema_name="stamp_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.term = Term.objects.create(
+            tenant=self.legacy_tenant, name="Term 1", start_date=date(2026, 9, 1),
+            end_date=date(2026, 12, 1), is_active=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 2", section="A")
+        self.student_user = User.objects.create_user(
+            email="student@stamp.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="STM001", admission_number="ADM-STM-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+
+    def test_class_fee_sync_stamps_generated_fee_with_its_term(self):
+        # The post_save signal already fans this out via
+        # sync_class_fee_assignments -> sync_class_fee_for_student the
+        # instant the ClassFee is created.
+        class_fee = ClassFee.objects.create(
+            school_class=self.school_class, title="Books", amount=Decimal("5000.00"),
+            due_date=date(2026, 9, 20), term=self.term, is_active=True,
+        )
+        fee = SchoolFee.objects.get(student=self.student, class_fee=class_fee)
+        self.assertEqual(fee.term_id, self.term.id)
+
+        # sync_tenant_class_fees (the bulk path) must agree it's already in
+        # sync rather than creating a second fee for the same pair.
+        count = sync_tenant_class_fees(self.school)
+        self.assertEqual(count, 0)
+
+    def test_bill_sync_stamps_generated_invoice_with_its_term(self):
+        bill = Bill.objects.create(tenant=self.school, title="Trip", term=self.term, status=Bill.STATUS_PUBLISHED)
+        BillItem.objects.create(bill=bill, description="Trip", amount=Decimal("3000.00"))
+        bill.classes.add(self.school_class)
+
+        sync_bill_invoices(bill)
+
+        fee = SchoolFee.objects.get(student=self.student, bill=bill)
+        self.assertEqual(fee.term_id, self.term.id)
+
+
+class CheckAndAdvanceTermTransitionClosesFinanceTests(TestCase):
+    """academic.models.check_and_advance_term_transition must actually call
+    close_term_finance the moment it flips a school into its next term - the
+    whole point is this requires no separate admin action."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Transition School", schema_name="transition_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+
+        self.term1 = Term.objects.create(
+            tenant=self.legacy_tenant, name="Term 1", start_date=date(2026, 1, 1),
+            end_date=timezone.localdate() - timezone.timedelta(days=1), is_active=True,
+        )
+        self.term2 = Term.objects.create(
+            tenant=self.legacy_tenant, name="Term 2", start_date=timezone.localdate(),
+            end_date=timezone.localdate() + timezone.timedelta(days=90), is_active=False,
+        )
+
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 3", section="A")
+        self.student_user = User.objects.create_user(
+            email="student@transition.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="TRN001", admission_number="ADM-TRN-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        # ClassFee's post_save signal fans this out to the student automatically.
+        self.class_fee = ClassFee.objects.create(
+            school_class=self.school_class, title="Term 1 Tuition", amount=Decimal("25000.00"),
+            due_date=date(2026, 2, 1), term=self.term1, is_active=True,
+        )
+
+    def test_term_transition_closes_finance_and_carries_arrears(self):
+        from academic.models import check_and_advance_term_transition
+
+        check_and_advance_term_transition(self.legacy_tenant)
+
+        self.term1.refresh_from_db()
+        self.term2.refresh_from_db()
+        self.assertFalse(self.term1.is_active)
+        self.assertTrue(self.term2.is_active)
+
+        arrears = SchoolFee.objects.get(student=self.student, term=self.term2)
+        self.assertEqual(arrears.amount, Decimal("25000.00"))
+
+        self.class_fee.refresh_from_db()
+        self.assertFalse(self.class_fee.is_active)

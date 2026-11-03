@@ -566,6 +566,30 @@ class SchoolFee(models.Model):
     sent_at = models.DateTimeField(null=True, blank=True)
     viewed_at = models.DateTimeField(null=True, blank=True)
 
+    # Which term this fee belongs to - stamped from class_fee.term or bill.term
+    # at creation time (see sync_class_fee_for_student/sync_tenant_class_fees/
+    # sync_bill_invoices in finance/services.py), so a fee still carries its
+    # term even if the class_fee/bill it came from is later deleted (both are
+    # SET_NULL). Null on fees created before this field existed - never
+    # backfilled, since guessing a historical fee's term from its due_date
+    # would be a guess, not a fact. close_term_finance (finance/services.py)
+    # is the only thing that reads this to decide what a closing term's
+    # outstanding fees are.
+    term = models.ForeignKey(
+        "academic.Term",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="school_fees",
+    )
+    # Set when this fee's remaining balance has been rolled into a newer
+    # "Arrears carried from <term>" fee by close_term_finance - excluded from
+    # fee_totals_by_student's manual_fees sum from then on, so the same money
+    # is never counted twice (once here, once on the arrears fee). A
+    # class_fee-sourced fee doesn't need this: deactivating its ClassFee
+    # already removes it from that same total.
+    closed_at = models.DateTimeField(null=True, blank=True)
+
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -949,6 +973,20 @@ class ClassFee(models.Model):
     currency = models.CharField(max_length=5, default="NGN")
     due_date = models.DateField()
     is_active = models.BooleanField(default=True)
+    # Which term this fee template belongs to - defaults to the school's
+    # currently active term at creation (see admin_class_fee_create in
+    # finance/views.py) when not given explicitly. close_term_finance
+    # deactivates every ClassFee tagged with the term that just closed, the
+    # same way admin_class_fee_detail's DELETE already deactivates one by
+    # hand - so a class fee never keeps generating or counting fees for a
+    # term that's over. Null for fees created before this field existed.
+    term = models.ForeignKey(
+        "academic.Term",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="class_fees",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
