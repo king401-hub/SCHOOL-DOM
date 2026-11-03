@@ -5825,17 +5825,22 @@ class ParentWhatsAppMenuTests(TestCase):
     @override_settings(BAHASHA_MENU_TEMPLATE="parent_menu", BAHASHA_MENU_TEMPLATE_LANGUAGE="en")
     @patch("finance.services.send_whatsapp_message")
     def test_menu_uses_the_template_and_falls_back_to_text_if_it_fails(self, mock_send):
+        from unittest.mock import call as unittest_call
         from finance.services import PARENT_HELP_TEXT, send_parent_menu
 
+        # A personal greeting as free text first, then the template with the buttons.
         send_parent_menu(self.PHONE)
-        mock_send.assert_called_once_with(
-            self.PHONE, PARENT_HELP_TEXT, template={"name": "parent_menu", "language": "en"},
+        self.assertEqual(mock_send.call_count, 2)
+        greeting_call, template_call = mock_send.call_args_list
+        self.assertIn("Ade Tunde", greeting_call.args[1])
+        self.assertEqual(
+            template_call, unittest_call(self.PHONE, PARENT_HELP_TEXT, template={"name": "parent_menu", "language": "en"}),
         )
 
         mock_send.reset_mock()
-        mock_send.side_effect = [RuntimeError("template not approved"), {"status": "success"}]
+        mock_send.side_effect = [{"status": "success"}, RuntimeError("template not approved"), {"status": "success"}]
         send_parent_menu(self.PHONE)
-        self.assertEqual(mock_send.call_count, 2)
+        self.assertEqual(mock_send.call_count, 3)  # greeting, template (fails), plain-text menu
         mock_send.assert_called_with(self.PHONE, PARENT_HELP_TEXT)
 
     @override_settings(BAHASHA_MENU_TEMPLATE="parent_menu", BAHASHA_MENU_TEMPLATE_SCHOOL_PARAM="school")
@@ -5996,7 +6001,58 @@ class ParentWhatsAppMenuTests(TestCase):
         from finance.services import PARENT_HELP_TEXT, send_parent_menu
 
         send_parent_menu(self.PHONE)
-        mock_send.assert_called_once_with(self.PHONE, PARENT_HELP_TEXT)
+        mock_send.assert_called_once()
+        text = mock_send.call_args.args[1]
+        self.assertTrue(text.endswith(PARENT_HELP_TEXT))
+        self.assertIn("Welcome to Greenfield School", text)  # greeting and menu in one message
+
+    def test_the_parent_is_greeted_by_name_with_their_children(self):
+        from finance.services import parent_greeting, parent_identity, parent_topic_reply
+
+        self.student.guardian_name = "Mr Adeniyi"
+        self.student.save(update_fields=["guardian_name"])
+
+        name, students = parent_identity(self.PHONE)
+        self.assertEqual(name, "Mr Adeniyi")
+        self.assertEqual(len(students), 1)
+        greeting = parent_greeting(self.PHONE)
+        self.assertTrue(greeting.startswith("Hello Mr Adeniyi,"))
+        self.assertIn("Welcome to Greenfield School. Your child: Ade Tunde", greeting)
+        self.assertTrue(parent_topic_reply(self.PHONE, "attendance").startswith("Hello Mr Adeniyi,"))
+
+        second = self._student(self.school, "kemi@menu.test", "Kemi", "Ade", "STU-MENU-2")
+        greeting = parent_greeting(self.PHONE)
+        self.assertIn("Your children:", greeting)
+        self.assertIn("- Ade Kemi", greeting)
+        self.assertIn("- Ade Tunde", greeting)
+        self.assertEqual(second.guardian_phone, self.PHONE)
+
+    def test_the_second_guardian_is_greeted_by_their_own_name(self):
+        from finance.services import parent_identity
+
+        self.student.second_guardian_name = "Mrs Adeniyi"
+        self.student.second_guardian_phone = "08099887766"
+        self.student.save(update_fields=["second_guardian_name", "second_guardian_phone"])
+
+        self.assertEqual(parent_identity("2348099887766")[0], "Mrs Adeniyi")
+        self.assertEqual(parent_identity("08099887766")[0], "Mrs Adeniyi")
+        self.assertEqual(parent_identity(self.PHONE)[0], "Guardian")
+
+    @override_settings(WHATSAPP_AI_ENABLED=True, OPENROUTER_API_KEY="or-key")
+    @patch("ai_chat.services.openrouter_client.OpenRouterClient.chat")
+    def test_the_assistant_is_told_the_parents_name_but_not_the_childs(self, mock_chat):
+        from django.core.cache import cache
+        from finance.services import parent_ai_understand
+
+        cache.clear()
+        self.student.guardian_name = "Mr Adeniyi"
+        self.student.save(update_fields=["guardian_name"])
+        mock_chat.return_value = {"content": '{"intent": "question", "answer": "Hello Mr Adeniyi, we close at 2pm."}'}
+
+        parent_ai_understand(self.PHONE, "when do you close on fridays")
+        system = mock_chat.call_args.args[0][0]["content"]
+        self.assertIn("The parent writing is Mr Adeniyi", system)
+        self.assertNotIn("Tunde", system)
 
 
 class BahashaWhatsAppWebhookTests(TestCase):

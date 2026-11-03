@@ -5590,7 +5590,7 @@ def _parent_payment_lines(tenant, owing_kids) -> list:
 
 def parent_topic_reply(parent_phone, topic: str) -> str:
     """The text reply for one menu topic, grouped by school then child."""
-    students = list(students_for_parent_phone(parent_phone))
+    name, students = parent_identity(parent_phone)
     if not students:
         return PARENT_NOT_LINKED_TEXT
     by_school = {}
@@ -5621,7 +5621,7 @@ def parent_topic_reply(parent_phone, topic: str) -> str:
                 lines.append("For payment details, please contact the school office.")
         lines.append(_school_contact_line(tenant))
         sections.append("\n".join(lines))
-    return "\n\n".join(sections)
+    return (f"Hello {name},\n\n" if name else "") + "\n\n".join(sections)
 
 
 def parent_contact_reply(parent_phone) -> str:
@@ -5729,13 +5729,15 @@ def parent_ai_understand(parent_phone, question: str) -> Optional[dict]:
     if used > limit:
         return None
 
+    parent_name, students = parent_identity(parent_phone)
     tenants = []
-    for student in students_for_parent_phone(parent_phone):
+    for student in students:
         tenant = getattr(student.user, "tenant", None)
         if tenant is not None and tenant not in tenants:
             tenants.append(tenant)
     if not tenants:
         return None
+    who = f"The parent writing is {parent_name}. Address them by that name.\n\n" if parent_name else ""
 
     from ai_chat.services.openrouter_client import OpenRouterClient, OpenRouterError, OpenRouterTimeout
 
@@ -5745,7 +5747,7 @@ def parent_ai_understand(parent_phone, question: str) -> Optional[dict]:
         )
         result = client.chat(
             [
-                {"role": "system", "content": _PARENT_AI_SYSTEM + "\n\n" + _parent_ai_context(tenants)},
+                {"role": "system", "content": _PARENT_AI_SYSTEM + "\n\n" + who + _parent_ai_context(tenants)},
                 {"role": "user", "content": question},
             ],
             max_tokens=300,
@@ -5769,12 +5771,58 @@ def parent_ai_reply(parent_phone, question: str) -> Optional[str]:
     return None
 
 
+def parent_identity(parent_phone):
+    """(name, students): who is writing, and their children. The name is the
+    guardian name on file for the number that matched (first or second guardian),
+    exactly as the school entered it, so "Mr Adeniyi" stays "Mr Adeniyi"; "" when
+    the number only matched a student's own phone."""
+    students = list(students_for_parent_phone(parent_phone))
+    sender = normalize_phone_number(parent_phone)
+    for student in students:
+        for phone, name in (
+            (student.guardian_phone, student.guardian_name),
+            (student.second_guardian_phone, student.second_guardian_name),
+        ):
+            if phone and str(name or "").strip() and normalize_phone_number(phone) == sender:
+                return str(name).strip(), students
+    return "", students
+
+
+def parent_greeting(parent_phone) -> str:
+    """A personal welcome: the parent's name and their child or children, by school."""
+    name, students = parent_identity(parent_phone)
+    by_school = {}
+    for student in students:
+        by_school.setdefault(getattr(student.user, "tenant", None), []).append(student)
+    lines = [f"Hello {name}," if name else "Hello,"]
+    for tenant, kids in by_school.items():
+        school = getattr(tenant, "name", "") or "your school"
+        if len(kids) == 1:
+            lines.append(f"Welcome to {school}. Your child: {_parent_student_label(kids[0])}")
+        else:
+            lines.append(f"Welcome to {school}. Your children:")
+            lines.extend(f"- {_parent_student_label(kid)}" for kid in kids)
+    return "\n".join(lines)
+
+
 def send_parent_menu(parent_phone):
-    """The quick-reply menu template when one is configured and approved, else
-    (or if sending it fails) a plain-text prompt, which works inside the
-    24-hour window the parent's own message just opened."""
+    """Greet the parent by name with their children, then offer the menu: the
+    quick-reply template when one is configured and approved, else (or if sending
+    it fails) a plain-text prompt. The greeting is free text, which works because
+    the parent's own message just opened the 24-hour window."""
+    try:
+        greeting = parent_greeting(parent_phone)
+    except Exception:
+        logger.exception("WhatsApp greeting could not be built for %s", parent_phone)
+        greeting = ""
+
     template_name = getattr(settings, "BAHASHA_MENU_TEMPLATE", "")
     if template_name:
+        if greeting:
+            try:
+                send_whatsapp_message(parent_phone, greeting)
+            except RuntimeError:
+                logger.exception("WhatsApp greeting to %s failed", parent_phone)
         template = {
             "name": template_name,
             "language": getattr(settings, "BAHASHA_MENU_TEMPLATE_LANGUAGE", "en_US"),
@@ -5793,7 +5841,8 @@ def send_parent_menu(parent_phone):
             return send_whatsapp_message(parent_phone, PARENT_HELP_TEXT, template=template)
         except RuntimeError:
             logger.exception("WhatsApp menu template %s failed; sending text instead", template_name)
-    return send_whatsapp_message(parent_phone, PARENT_HELP_TEXT)
+        return send_whatsapp_message(parent_phone, PARENT_HELP_TEXT)
+    return send_whatsapp_message(parent_phone, (greeting + "\n\n" if greeting else "") + PARENT_HELP_TEXT)
 
 
 def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
