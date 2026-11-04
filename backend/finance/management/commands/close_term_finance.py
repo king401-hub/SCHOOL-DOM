@@ -1,10 +1,13 @@
 """Preview or run the term-close/arrears-carry-forward step by hand.
 
-close_term_finance normally runs on its own: academic.models.
-check_and_advance_term_transition calls it automatically the moment a term's
-end_date passes (checked nightly and on every admin dashboard load - see
-[[project-no-celery-in-production]] for why dashboard-load matters here too).
-This command exists for the two cases that automatic path doesn't cover:
+close_term_finance normally runs on its own, from two places: academic.models.
+check_and_advance_term_transition calls it the moment a term's end_date passes
+(checked nightly and on every admin dashboard load - see
+[[project-no-celery-in-production]] for why dashboard-load matters here too),
+and users.app_views.school_settings calls it the moment an admin switches the
+active term by hand from School Settings (creating/activating a different
+Term row there - just editing the current term's own dates does not count).
+This command exists for the cases neither automatic path covers:
 
     python manage.py close_term_finance --term <term-id> --next-term <term-id>
         Dry run: prints exactly which students would get an arrears fee, and

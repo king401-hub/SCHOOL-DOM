@@ -32,7 +32,7 @@ from academic.models import (
 from core.models import Domain, SchoolGroup, SchoolTenant
 from device_fleet.models import Device
 from exams.models import Exam, ExamAttempt, ExamPin, Question, QuestionBank
-from finance.models import ActivationCreditPool, ActivationCreditTransaction, PaymentReceiptLink, SmsMessageLog, StudentPaymentReference
+from finance.models import ActivationCreditPool, ActivationCreditTransaction, ClassFee, PaymentReceiptLink, SchoolFee, SmsMessageLog, StudentPaymentReference
 from finance.services import (
     activate_kids_monitor_subscription,
     get_or_create_activation_credit_pool,
@@ -3642,6 +3642,86 @@ class SchoolSettingsAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+
+class SchoolSettingsTermSwitchClosesFinanceTests(TestCase):
+    """An admin can also start a new term by hand from School Settings, not
+    just via the automatic end_date-based transition - switching the active
+    term that way must close the old term's finance too, the same
+    close_term_finance step academic.models.check_and_advance_term_transition
+    calls automatically. Merely correcting the current term's own dates
+    (same name, same academic year) must not trigger it."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(name="Term Switch School", schema_name="term_switch_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@termswitch.edu", password="AdminPass123", first_name="Admin", last_name="User",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.year = AcademicYear.objects.create(
+            tenant=self.legacy_tenant, name="2026/2027",
+            start_date=timezone.localdate() - timedelta(days=30), end_date=timezone.localdate() + timedelta(days=330), is_active=True,
+        )
+        self.old_term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", academic_year=self.year, is_active=True,
+            start_date=timezone.localdate() - timedelta(days=30), end_date=timezone.localdate() + timedelta(days=60),
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.student_user = User.objects.create_user(
+            email="student@termswitch.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="TSW001", admission_number="ADM-TSW-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        # ClassFee's post_save signal fans this out to every student in the
+        # class as a SchoolFee - the thing close_term_finance should carry
+        # forward as arrears once First Term closes.
+        self.class_fee = ClassFee.objects.create(
+            school_class=self.school_class, title="First Term Tuition", amount=Decimal("40000.00"),
+            due_date=timezone.localdate(), term=self.old_term, is_active=True,
+        )
+
+    def test_switching_the_active_term_in_settings_closes_the_old_terms_finance(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.patch("/api/app/school/settings/", {
+            "term_name": "Second Term",
+            "term_start_date": (timezone.localdate() + timedelta(days=61)).isoformat(),
+            "term_end_date": (timezone.localdate() + timedelta(days=150)).isoformat(),
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+
+        new_term = Term.objects.get(tenant=self.legacy_tenant, name="Second Term")
+        self.old_term.refresh_from_db()
+        self.assertFalse(self.old_term.is_active)
+        self.assertTrue(new_term.is_active)
+
+        self.class_fee.refresh_from_db()
+        self.assertFalse(self.class_fee.is_active)
+
+        arrears = SchoolFee.objects.get(student=self.student, term=new_term)
+        self.assertEqual(arrears.amount, Decimal("40000.00"))
+        self.assertTrue(arrears.auto_deduct)
+        self.assertIn("First Term", arrears.title)
+
+    def test_merely_editing_the_current_terms_dates_does_not_close_finance(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.patch("/api/app/school/settings/", {
+            "term_name": "First Term",
+            "term_start_date": self.old_term.start_date.isoformat(),
+            "term_end_date": (self.old_term.end_date + timedelta(days=5)).isoformat(),
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+
+        self.old_term.refresh_from_db()
+        self.assertTrue(self.old_term.is_active)
+        self.class_fee.refresh_from_db()
+        self.assertTrue(self.class_fee.is_active)
+        self.assertFalse(SchoolFee.objects.filter(student=self.student, title__icontains="Arrears").exists())
 
 
 class ServiceAgreementAPITests(TestCase):

@@ -8702,6 +8702,10 @@ def school_settings(request):
                     )
             if not active_year:
                 active_year = _active_academic_year(user)
+            # Captured before the switch so we can tell "a genuinely new term
+            # was created" apart from "the admin just corrected this term's
+            # own dates" - only the former should close finance below.
+            previous_active_term = Term.objects.filter(tenant=term_tenant, is_active=True).first()
             try:
                 with db_transaction.atomic():
                     Term.objects.filter(tenant=term_tenant, is_active=True).update(is_active=False)
@@ -8719,6 +8723,18 @@ def school_settings(request):
             # Any pending "no next term configured" TermTransitionState is
             # now stale - a new active term exists - and self-heals the next
             # time anything reads it (see _pending_term_transition).
+            if previous_active_term and previous_active_term.pk != active_term.pk:
+                from finance.services import close_term_finance
+
+                try:
+                    close_term_finance(previous_active_term, active_term, school=school)
+                except Exception:
+                    import logging
+
+                    logging.getLogger(__name__).exception(
+                        "close_term_finance failed for %s -> %s (tenant %s)",
+                        previous_active_term, active_term, term_tenant,
+                    )
 
         return Response(
             {
