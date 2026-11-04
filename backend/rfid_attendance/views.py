@@ -31,6 +31,7 @@ from rest_framework.response import Response
 from academic.models import AttendanceRecord, Class
 from attendance.models import TeacherAttendance
 from attendance.views import _apply_clock_out, get_client_ip
+from core.models import SchoolTenant
 from core.schoolgate import require_full_product
 from finance.services import fee_totals_by_student
 from users.models import StudentProfile, User
@@ -43,12 +44,11 @@ from users.app_views import (
     _record_attendance_clock,
     _resolve_school_tenant_for_user,
     _send_attendance_sms_batch,
-    _tenant_for_model,
 )
 
 from .models import CardAssignment, GateSettings
 from .serializers import CardAssignmentSerializer
-from .services import _school_localtime
+from .services import _legacy_tenant_for_attendance, _school_localtime
 
 # Card assignment is admin-only ("built strictly into the desktop app", spec
 # Section 4) - a teacher/staff member can still operate the reader for
@@ -269,12 +269,47 @@ def _school_code_from_request(request):
     return str(request.data.get('school_code') or request.query_params.get('school_code') or '').strip()
 
 
+def _group_tenant_ids(school):
+    """Every true branch of `school` (same school_group AND a non-blank
+    branch_label - see users.branch_views.create_branch, which backfills the
+    original tenant's branch_label to "Main" the moment a second branch is
+    created) - just [school.id] otherwise.
+
+    school_group is shared by two unrelated setups and only one of them
+    should pool card recognition:
+    - Branches of ONE school (users/branch_views.py): one admin login
+      switching which branch is "active" (BranchAwareJWTAuthentication) -
+      every branch gets a branch_label. A student enrolled at Main or at a
+      branch must be recognized at the gate either way, with nobody having
+      to switch branches first just to scan someone in - that's the whole
+      point of them sharing one school.
+    - A proprietor's portfolio of genuinely separate schools
+      (users/proprietor_views.py's proprietor_create_school, which never
+      touches branch_label - it stays "") that happen to share one physical
+      kiosk device. Those must stay strictly isolated: a card assigned at
+      School A must never be recognized while the kiosk is set to School B -
+      see rfid_attendance.tests.SharedDeviceTenantIsolationTestCase, which
+      is exactly this scenario and must keep passing.
+    """
+    if not school.school_group_id or not school.branch_label:
+        return [school.id]
+    return list(
+        SchoolTenant.objects.filter(school_group_id=school.school_group_id)
+        .exclude(branch_label='')
+        .values_list('id', flat=True)
+    )
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def card_assignments_pull(request):
     """Full active-assignment snapshot for the desktop app's local cache
     (Section 1d/4e) - pulled on login and periodically thereafter so a scan can
-    still be matched locally even if the network drops right after."""
+    still be matched locally even if the network drops right after. Spans
+    every branch in the operator's school_group (see _group_tenant_ids), not
+    just whichever one is active right now, so going offline never regresses
+    recognition back to "card not linked" for someone enrolled on a sibling
+    branch - matching attendance_scan_create's own live-lookup scope."""
     if request.user.role not in SCAN_OPERATOR_ROLES:
         return _forbidden('Only school staff can sync card assignments.')
 
@@ -283,7 +318,7 @@ def card_assignments_pull(request):
         return error
 
     assignments = CardAssignment.objects.select_related('holder').filter(
-        tenant=school, status='active',
+        tenant_id__in=_group_tenant_ids(school), status='active',
     ).order_by('holder__first_name', 'holder__last_name')
     return Response({
         'success': True,
@@ -321,8 +356,14 @@ def card_assignment_create(request):
         )
 
     with transaction.atomic():
+        # Group-wide, not just this branch: now that attendance_scan_create
+        # recognizes a card across every branch in the group, letting two
+        # branches each independently hold an active assignment for the same
+        # physical UID would make a scan of it ambiguous (whichever row the
+        # lookup happens to return first). Catch that here instead, with the
+        # same conflict/force flow as a same-branch collision.
         card_conflict = CardAssignment.objects.select_for_update().filter(
-            tenant=school, card_uid=card_uid, status='active',
+            tenant_id__in=_group_tenant_ids(school), card_uid=card_uid, status='active',
         ).exclude(holder=person).select_related('holder').first()
         person_conflict = CardAssignment.objects.select_for_update().filter(
             tenant=school, holder=person, status='active',
@@ -550,8 +591,12 @@ def attendance_scan_create(request):
             'attendance': payload,
         })
 
-    assignment = CardAssignment.objects.select_related('holder').filter(
-        tenant=school, card_uid=card_uid, status='active',
+    # Across the whole school_group (_group_tenant_ids), not just whichever
+    # branch is active for this operator right now - a card assigned while
+    # Main or a branch was active must still be recognized here without
+    # anyone having to switch branches first to scan it.
+    assignment = CardAssignment.objects.select_related('holder', 'tenant').filter(
+        tenant_id__in=_group_tenant_ids(school), card_uid=card_uid, status='active',
     ).first()
     if not assignment:
         # Remembered briefly so the "Assign Student Card" wizard's
@@ -570,10 +615,15 @@ def attendance_scan_create(request):
         )
 
     holder = assignment.holder
+    # The branch that actually holds this assignment - not necessarily
+    # `school` (the operator's own active branch): attendance must land on
+    # the holder's real branch (its own gate hours, timezone, SMS wallet),
+    # whichever branch that is.
+    holder_school = assignment.tenant
 
     if holder.role == 'student':
-        return _record_student_scan(request, school, holder, card_uid, idempotency_key)
-    return _record_staff_scan(request, school, holder, card_uid, idempotency_key)
+        return _record_student_scan(request, holder_school, holder, card_uid, idempotency_key)
+    return _record_staff_scan(request, holder_school, holder, card_uid, idempotency_key)
 
 
 def _too_soon_response(person, clocked_in_at):
@@ -621,9 +671,11 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
 
     student_profile = StudentProfile.objects.select_related('current_class').filter(user=student).first()
 
-    tenant_obj = _tenant_for_model(AttendanceRecord, request.user)
-    if not tenant_obj:
-        return _bad_request('Unable to resolve school attendance records.')
+    # The student's own branch (`school`, which attendance_scan_create may
+    # have resolved to a different branch than the operator's active one -
+    # see holder_school there), never request.user's - a cross-branch scan
+    # must still file the AttendanceRecord under the student's real tenant.
+    tenant_obj = _legacy_tenant_for_attendance(school)
 
     try:
         location = _attendance_location_payload(request, require_location=False)

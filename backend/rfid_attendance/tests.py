@@ -119,6 +119,96 @@ class SharedDeviceTenantIsolationTestCase(TestCase):
         self.assertEqual(settings_b.mode, GateSettings.MODE_FEE_TRACKER)
 
 
+class BranchAwareCardRecognitionTestCase(TestCase):
+    """The opposite case from SharedDeviceTenantIsolationTestCase above: Main
+    and Secondary here are two TRUE branches of the SAME school (non-blank
+    branch_label, same name - see users.branch_views.create_branch), not two
+    genuinely separate schools sharing a kiosk. A card assigned on one must
+    be recognized by a terminal whose active branch is the other, with
+    nobody at the gate switching branches first - that's the whole point of
+    them sharing one school and one login."""
+
+    def setUp(self):
+        owner = User.objects.create_user(email="owner2@test.com", password="testpass123", role="school_admin")
+        self.group = SchoolGroup.objects.create(name="Greenwood Group", owner=owner)
+        self.main = SchoolTenant.objects.create(
+            name="Greenwood School", schema_name="greenwood_main", school_group=self.group, branch_label="Main",
+        )
+        self.secondary = SchoolTenant.objects.create(
+            name="Greenwood School", schema_name="greenwood_secondary", school_group=self.group, branch_label="Secondary",
+        )
+
+        self.scanner_user = User.objects.create_user(
+            email="scanner2@test.com", password="testpass123", role="staff", tenant=self.main,
+        )
+
+        self.student_secondary = self._make_student(self.secondary, "Sam Secondary", "STU-S-001", "ADM-S-001")
+        CardAssignment.objects.create(tenant=self.secondary, holder=self.student_secondary, card_uid="9999")
+
+        GateSettings.objects.create(tenant=self.main)
+        GateSettings.objects.create(tenant=self.secondary)
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.scanner_user)
+
+    def _make_student(self, tenant, name, student_id, admission_number):
+        first, last = name.split(" ", 1)
+        user = User.objects.create_user(
+            email=f"{student_id.lower()}@test.com", password="testpass123", role="student",
+            tenant=tenant, first_name=first, last_name=last,
+        )
+        from users.models import StudentProfile
+
+        StudentProfile.objects.create(
+            user=user,
+            student_id=student_id,
+            admission_number=admission_number,
+            admission_date=datetime.date(2024, 9, 1),
+            guardian_name="Test Guardian",
+            guardian_phone="08010000000",
+            guardian_relation="Parent",
+        )
+        return user
+
+    def _scan(self, card_uid, idempotency_key):
+        return self.client.post(
+            "/api/rfid/attendance/scan/",
+            {"card_uid": card_uid, "idempotency_key": idempotency_key},
+            format="json",
+        )
+
+    def test_a_card_assigned_on_a_sibling_branch_is_recognized_without_switching(self):
+        # scanner_user's active branch is Main; the card was only ever
+        # assigned on Secondary. No switch - the scan must still succeed.
+        resp = self._scan("9999", "key-cross-branch-1")
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data["person"]["name"], "Secondary Sam")  # surname first
+
+        record = AttendanceRecord.objects.get(student=self.student_secondary)
+        self.assertEqual(
+            record.tenant.slug.lower(), "greenwood_secondary",
+            "attendance lands on the holder's own branch, not the operator's active one",
+        )
+
+    def test_assigning_a_card_already_active_on_a_sibling_branch_is_a_conflict(self):
+        admin_user = User.objects.create_user(
+            email="admin2@test.com", password="testpass123", role="school_admin", tenant=self.main,
+        )
+        other_student = User.objects.create_user(
+            email="other@test.com", password="testpass123", role="student", tenant=self.main,
+            first_name="Other", last_name="Student",
+        )
+        self.client.force_authenticate(user=admin_user)
+
+        resp = self.client.post(
+            "/api/rfid/card-assignments/assign/",
+            {"card_uid": "9999", "person_id": str(other_student.id)},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 409, resp.data)
+        self.assertTrue(resp.data["conflict"])
+
+
 @override_settings(SCHOOLGATE_SMS_PROVIDER="kudisms")
 class SchoolGateSmsProviderTests(TestCase):
     """SchoolGate's own SMS (gate clock-in/out, on-demand fee reminder) must
