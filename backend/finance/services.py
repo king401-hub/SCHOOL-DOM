@@ -5771,11 +5771,19 @@ def parent_ai_reply(parent_phone, question: str) -> Optional[str]:
     return None
 
 
+# Values schools type into the guardian name when they do not have one: not a name.
+_PLACEHOLDER_GUARDIAN_NAMES = {
+    "guardian", "parent", "parents", "father", "mother", "mum", "dad", "n/a", "na", "nil", "none",
+    "unknown", "null", "-", "--", "test", "tbd",
+}
+
+
 def parent_identity(parent_phone):
     """(name, students): who is writing, and their children. The name is the
     guardian name on file for the number that matched (first or second guardian),
     exactly as the school entered it, so "Mr Adeniyi" stays "Mr Adeniyi"; "" when
-    the number only matched a student's own phone."""
+    the number only matched a student's own phone, or the school left a
+    placeholder such as "Guardian" instead of a name."""
     students = list(students_for_parent_phone(parent_phone))
     sender = normalize_phone_number(parent_phone)
     for student in students:
@@ -5783,8 +5791,11 @@ def parent_identity(parent_phone):
             (student.guardian_phone, student.guardian_name),
             (student.second_guardian_phone, student.second_guardian_name),
         ):
-            if phone and str(name or "").strip() and normalize_phone_number(phone) == sender:
-                return str(name).strip(), students
+            name = str(name or "").strip()
+            if phone and name and normalize_phone_number(phone) == sender:
+                if name.lower().strip(".") in _PLACEHOLDER_GUARDIAN_NAMES:
+                    return "", students
+                return name, students
     return "", students
 
 

@@ -6036,7 +6036,18 @@ class ParentWhatsAppMenuTests(TestCase):
 
         self.assertEqual(parent_identity("2348099887766")[0], "Mrs Adeniyi")
         self.assertEqual(parent_identity("08099887766")[0], "Mrs Adeniyi")
-        self.assertEqual(parent_identity(self.PHONE)[0], "Guardian")
+        # The first guardian's name is the placeholder "Guardian": not a name, so no greeting by name.
+        self.assertEqual(parent_identity(self.PHONE)[0], "")
+
+    def test_a_placeholder_guardian_name_gives_a_plain_hello(self):
+        from finance.services import parent_greeting
+
+        for placeholder in ("Guardian", "parent", "N/A", "none.", " Test "):
+            self.student.guardian_name = placeholder
+            self.student.save(update_fields=["guardian_name"])
+            greeting = parent_greeting(self.PHONE)
+            self.assertTrue(greeting.startswith("Hello,\n"), (placeholder, greeting))
+            self.assertIn("Your child: Ade Tunde", greeting)
 
     @override_settings(WHATSAPP_AI_ENABLED=True, OPENROUTER_API_KEY="or-key")
     @patch("ai_chat.services.openrouter_client.OpenRouterClient.chat")
