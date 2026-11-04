@@ -357,6 +357,10 @@ def _handle_whatsapp_inbound(messages):
         from_phone = message.get("from", "")
         if not from_phone:
             continue
+        if message.get("type") in ("button", "interactive"):
+            # Bahasha does not document the shape of a tapped button; keep the real one in the log.
+            logger.info("WhatsApp tap from %s: %s", from_phone,
+                        {key: message.get(key) for key in ("type", "button", "interactive")})
         topic = parent_topic_from_message(message)
         if topic == "stop":
             processed.append({"from": from_phone, "action": "stop_ignored"})
