@@ -1,12 +1,16 @@
 """Tests for the dual-school kiosk pairing/switching feature."""
+from datetime import date, timedelta
+
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.tenant import SchoolGroup, SchoolTenant
 
 from .models import Device, ProvisioningKey
+from .services import expire_scanner_devices
 
 User = get_user_model()
 
@@ -138,6 +142,121 @@ class DevicePairingTestCase(TestCase):
         self.device.refresh_from_db()
         self.assertEqual(self.device.tenant_id, self.school_standalone.id)
         self.assertIsNone(self.device.paired_tenant_id)
+
+
+class DeviceAccessExpiryTestCase(TestCase):
+    """A device's access to its school is bounded, not permanent - see
+    device_fleet.services.compute_device_access_expiry/expire_scanner_devices
+    and assign_school's own recomputation of it on every (re)assignment."""
+
+    def setUp(self):
+        cache.clear()
+        from tenants.models import Tenant
+
+        self.admin = User.objects.create_user(
+            email="admin@expiry.test", password="testpass123", role="super_admin", is_superuser=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+        self.k12_school = SchoolTenant.objects.create(
+            name="K12 Expiry School", schema_name="k12_expiry_school", school_type=SchoolTenant.K12,
+        )
+        self.k12_legacy_tenant = Tenant.objects.create(name=self.k12_school.name, slug=self.k12_school.schema_name)
+
+        self.non_k12_school = SchoolTenant.objects.create(
+            name="Non K12 Expiry School", schema_name="non_k12_expiry_school", school_type=SchoolTenant.NON_K12,
+        )
+
+        self.scanner_user = User.objects.create_user(
+            email="scanner@expiry.test", password="testpass123", role="staff",
+        )
+        self.device = Device.objects.create(scanner_user=self.scanner_user, status="unregistered")
+
+    def _assign(self, school):
+        resp = self.client.post(
+            f"/api/device-fleet/devices/{self.device.pk}/assign-school/", {"school_id": str(school.id)},
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.device.refresh_from_db()
+        return resp
+
+    def test_k12_access_expires_with_the_active_term(self):
+        from academic.models import Term
+
+        term = Term.objects.create(
+            tenant=self.k12_legacy_tenant, name="First Term",
+            start_date=date(2026, 9, 1), end_date=date(2026, 12, 15), is_active=True,
+        )
+        self._assign(self.k12_school)
+
+        self.assertIsNotNone(self.device.access_expires_at)
+        self.assertEqual(self.device.access_expires_at.date(), term.end_date)
+
+    def test_k12_with_no_active_term_never_expires(self):
+        self._assign(self.k12_school)
+        self.assertIsNone(self.device.access_expires_at)
+
+    def test_non_k12_access_expires_a_month_after_assignment(self):
+        before = timezone.now()
+        self._assign(self.non_k12_school)
+        after = timezone.now()
+
+        self.assertIsNotNone(self.device.access_expires_at)
+        self.assertGreaterEqual(self.device.access_expires_at, before + timedelta(days=30))
+        self.assertLessEqual(self.device.access_expires_at, after + timedelta(days=30))
+
+    def test_expire_scanner_devices_suspends_only_overdue_active_devices(self):
+        self._assign(self.non_k12_school)
+        self.device.access_expires_at = timezone.now() - timedelta(days=1)
+        self.device.save(update_fields=["access_expires_at"])
+
+        still_valid_device = Device.objects.create(
+            tenant=self.non_k12_school, status="active", access_expires_at=timezone.now() + timedelta(days=1),
+        )
+
+        rows = expire_scanner_devices()
+
+        self.device.refresh_from_db()
+        still_valid_device.refresh_from_db()
+        self.scanner_user.refresh_from_db()
+
+        self.assertEqual(self.device.status, "expired")
+        self.assertFalse(self.scanner_user.is_active)
+        self.assertEqual(still_valid_device.status, "active")
+        self.assertEqual({row["device"].id for row in rows}, {self.device.id})
+
+    def test_expire_scanner_devices_dry_run_changes_nothing(self):
+        self._assign(self.non_k12_school)
+        self.device.access_expires_at = timezone.now() - timedelta(days=1)
+        self.device.save(update_fields=["access_expires_at"])
+
+        rows = expire_scanner_devices(dry_run=True)
+
+        self.device.refresh_from_db()
+        self.scanner_user.refresh_from_db()
+        self.assertEqual(self.device.status, "active")
+        self.assertTrue(self.scanner_user.is_active)
+        self.assertEqual(rows[0]["outcome"], "dry_run")
+
+    def test_reassigning_an_expired_device_renews_it(self):
+        self._assign(self.non_k12_school)
+        self.device.access_expires_at = timezone.now() - timedelta(days=1)
+        self.device.save(update_fields=["access_expires_at"])
+        expire_scanner_devices()
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.status, "expired")
+
+        # Otherwise IdempotencyMiddleware replays this byte-identical POST
+        # (same user, path, body as the first _assign call above) as a
+        # cached JsonResponse instead of actually re-running the view.
+        cache.clear()
+        self._assign(self.non_k12_school)
+
+        self.scanner_user.refresh_from_db()
+        self.assertEqual(self.device.status, "active")
+        self.assertTrue(self.scanner_user.is_active)
+        self.assertGreater(self.device.access_expires_at, timezone.now())
 
 
 class DeviceProvisioningIdGenerationTests(TestCase):

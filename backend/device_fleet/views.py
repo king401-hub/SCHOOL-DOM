@@ -26,6 +26,7 @@ from users.models import User
 
 from .models import AppRelease, Device, DeviceAuditLog, ProvisioningKey
 from .serializers import DeviceAuditLogSerializer, DeviceSerializer, ProvisioningKeySerializer
+from .services import _log, _set_scanner_user_active, compute_device_access_expiry
 
 SUPERADMIN_ROLE = 'super_admin'
 
@@ -37,10 +38,6 @@ def _require_superadmin(user):
             status=status.HTTP_403_FORBIDDEN,
         )
     return None
-
-
-def _log(device, actor, action, details='', result='success'):
-    DeviceAuditLog.objects.create(device=device, actor=actor, action=action, details=details, result=result)
 
 
 @api_view(['GET'])
@@ -187,15 +184,21 @@ def assign_school(request, device_pk):
 
     was_reassignment = device.tenant_id is not None and device.tenant_id != school.id
     old_school_name = device.tenant.name if was_reassignment else None
+    was_expired = device.status == 'expired'
 
     device.tenant = school
     # A stale pairing from before this (re)assignment may not even share a
     # school_group with the new primary school - clear it rather than leave
     # an invisible, possibly-invalid pairing. Staff can re-pair afterward.
     device.paired_tenant = None
-    if device.status in ('unregistered', 'provisioning'):
+    # Assigning a device - even re-assigning it to the SAME school - is also
+    # how its access is renewed: always recompute a fresh access_expires_at
+    # rather than only on first assignment, so a K-12 school's new term (or
+    # a non-K12 school's next billing month) actually extends it.
+    device.access_expires_at = compute_device_access_expiry(school)
+    if device.status in ('unregistered', 'provisioning', 'expired'):
         device.status = 'active'
-    device.save(update_fields=['tenant', 'paired_tenant', 'status', 'updated_at'])
+    device.save(update_fields=['tenant', 'paired_tenant', 'access_expires_at', 'status', 'updated_at'])
 
     # The provisioning key's basic/premium tier only means anything for a
     # SchoolGate tenant - subscription_tier is decorative/unrelated on a
@@ -212,7 +215,13 @@ def assign_school(request, device_pk):
         # assignment, especially on reassignment where the old school's
         # students must stop being reachable through this device at all.
         device.scanner_user.tenant = school
-        device.scanner_user.save(update_fields=['tenant'])
+        update_fields = ['tenant']
+        if was_expired:
+            # expire_scanner_devices deactivated this user when access ran
+            # out - undo that now that access has just been renewed.
+            device.scanner_user.is_active = True
+            update_fields.append('is_active')
+        device.scanner_user.save(update_fields=update_fields)
 
     action = 'device_reassigned' if was_reassignment else 'device_assigned'
     details = f'{old_school_name} -> {school.name}' if was_reassignment else school.name
@@ -235,12 +244,6 @@ def unassign_school(request, device_pk):
     device.save(update_fields=['tenant', 'paired_tenant', 'status', 'updated_at'])
     _log(device, request.user, 'device_unassigned', details=old_school_name or '')
     return Response({'success': True, 'data': DeviceSerializer(device).data})
-
-
-def _set_scanner_user_active(device, is_active):
-    if device.scanner_user_id:
-        device.scanner_user.is_active = is_active
-        device.scanner_user.save(update_fields=['is_active'])
 
 
 @api_view(['POST'])

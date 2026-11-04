@@ -106,6 +106,12 @@ class Device(models.Model):
         ('suspended', 'Suspended'),
         ('revoked', 'Revoked'),
         ('maintenance', 'Maintenance'),
+        # access_expires_at passed while this device was still 'active' - see
+        # device_fleet.services.expire_scanner_devices (the cron job that
+        # makes this transition) and assign_school (the only way out of it:
+        # reassigning the device, even to the same school, renews access by
+        # recomputing a fresh access_expires_at).
+        ('expired', 'Expired'),
     ]
     BATTERY_HEALTH_CHOICES = [
         ('good', 'Good'),
@@ -162,6 +168,18 @@ class Device(models.Model):
         'core.SchoolTenant', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='paired_scanner_devices',
     )
+
+    # When this device's access to `tenant` needs renewing - set by
+    # assign_school (see device_fleet.services.compute_device_access_expiry)
+    # every time a device is assigned to a school, and enforced by the
+    # expire_scanner_devices cron job, not at request time. A K-12 school's
+    # device is only licensed for whatever term is active the moment it's
+    # assigned; a non-K12 school's (no termly calendar - its one implicit
+    # Term/session can span the whole year) gets a flat 30 days instead.
+    # Null means "never expires on its own" - true for a device not yet
+    # assigned to any school, and for a K-12 school with no active term to
+    # bound this to.
+    access_expires_at = models.DateTimeField(null=True, blank=True)
 
     # Permanent-session authorization (spec section 9/19) - independent of
     # `status` so "suspended" and "revoked" both read as unauthorized without
@@ -293,7 +311,10 @@ class Device(models.Model):
         return self.battery_percentage is not None and self.battery_percentage <= 20
 
     def needs_attention(self):
-        return self.is_low_battery or not self.is_online or self.battery_health == 'poor' or self.status == 'suspended'
+        return (
+            self.is_low_battery or not self.is_online or self.battery_health == 'poor'
+            or self.status in ('suspended', 'expired')
+        )
 
 
 class DeviceAuditLog(models.Model):

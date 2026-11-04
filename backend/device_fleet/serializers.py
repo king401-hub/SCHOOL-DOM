@@ -15,7 +15,7 @@ class DeviceSerializer(serializers.ModelSerializer):
         model = Device
         fields = [
             'id', 'device_id', 'name', 'license_key', 'status', 'school_name', 'authorized',
-            'paired_school_id', 'paired_school_name',
+            'access_expires_at', 'paired_school_id', 'paired_school_name',
             'is_online', 'is_low_battery', 'needs_attention',
             'app_version', 'device_model', 'os_version',
             'battery_percentage', 'battery_charging', 'battery_health', 'battery_temperature_c',
