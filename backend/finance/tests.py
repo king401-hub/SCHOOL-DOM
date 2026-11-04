@@ -6039,6 +6039,43 @@ class ParentWhatsAppMenuTests(TestCase):
         # The first guardian's name is the placeholder "Guardian": not a name, so no greeting by name.
         self.assertEqual(parent_identity(self.PHONE)[0], "")
 
+    def test_long_replies_are_split_into_parts_that_fit_one_whatsapp_text(self):
+        from finance.services import split_whatsapp_text as split
+
+        self.assertEqual(split("short"), ["short"])
+        self.assertEqual(split(""), [""])
+
+        blocks = [f"School {n}\n" + "\n".join(f"  - child line {n}-{i} " + "x" * 40 for i in range(8)) for n in range(12)]
+        text = "\n\n".join(blocks)
+        parts = split(text, limit=1000)
+        self.assertGreater(len(parts), 1)
+        self.assertTrue(all(len(part) <= 1000 for part in parts))
+        # Nothing is lost or reordered.
+        self.assertEqual("".join(p.replace("\n", "") for p in parts), text.replace("\n", ""))
+
+        one_school = "Header\n" + "\n".join(f"line {i} " + "y" * 60 for i in range(60))  # a single block over the limit
+        parts = split(one_school, limit=500)
+        self.assertTrue(all(len(part) <= 500 for part in parts))
+        self.assertEqual("".join(p.replace("\n", "") for p in parts), one_school.replace("\n", ""))
+
+        self.assertTrue(all(len(p) <= 100 for p in split("z" * 350, limit=100)))  # one enormous line
+
+    def test_a_parent_with_several_children_gets_every_child_in_each_reply(self):
+        from finance.services import parent_topic_reply
+
+        self.student.guardian_name = "Mr Adeniyi"
+        self.student.save(update_fields=["guardian_name"])
+        names = [("Kemi", "Ade"), ("Dayo", "Ade"), ("Sola", "Ade")]
+        for i, (first, last) in enumerate(names):
+            self._student(self.school, f"sib{i}@menu.test", first, last, f"STU-SIB-{i}")
+
+        reply = parent_topic_reply(self.PHONE, "attendance")
+        self.assertTrue(reply.startswith("Hello Mr Adeniyi,"))
+        for first, _last in names:
+            self.assertIn(first, reply)
+        self.assertIn("Tunde", reply)
+        self.assertEqual(reply.count("Greenfield School"), 2)  # one section header + one contact line, not one per child
+
     def test_a_placeholder_guardian_name_gives_a_plain_hello(self):
         from finance.services import parent_greeting
 

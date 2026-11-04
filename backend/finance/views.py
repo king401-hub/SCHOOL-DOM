@@ -120,6 +120,7 @@ from finance.services import (
     parent_topic_from_message,
     parent_topic_reply,
     send_parent_menu,
+    split_whatsapp_text,
     students_for_parent_phone,
     send_payment_receipt,
     send_whatsapp_message,
@@ -386,9 +387,13 @@ def _handle_whatsapp_inbound(messages):
         action = topic or ("ai_answer" if answer else "menu")
         try:
             if topic in ("fees", "attendance", "results", "receipts"):
-                send_whatsapp_message(from_phone, parent_topic_reply(from_phone, topic))
+                # A parent with several children can produce a long reply; WhatsApp caps
+                # one text at 4096 characters, so it goes out in parts.
+                for part in split_whatsapp_text(parent_topic_reply(from_phone, topic)):
+                    send_whatsapp_message(from_phone, part)
             elif topic == "contact":
-                send_whatsapp_message(from_phone, parent_contact_reply(from_phone))
+                for part in split_whatsapp_text(parent_contact_reply(from_phone)):
+                    send_whatsapp_message(from_phone, part)
             elif answer:
                 send_whatsapp_message(from_phone, answer)
             else:

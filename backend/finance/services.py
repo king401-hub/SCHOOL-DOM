@@ -5444,6 +5444,42 @@ def _parent_topic_line(topic: str, student) -> str:
     return f"{label}: {term_name}, {', '.join(parts)}"
 
 
+def split_whatsapp_text(text: str, limit: int = 3500) -> list:
+    """Cut a long reply into parts that each fit one WhatsApp text (the hard cap is
+    4096 characters; this leaves headroom). Breaks at a blank line (between schools)
+    when it can, else at a line break, and only cuts mid-line for a single line
+    longer than the limit."""
+    text = str(text or "")
+    if len(text) <= limit:
+        return [text]
+    parts, current = [], ""
+    for block in text.split("\n\n"):
+        candidate = f"{current}\n\n{block}" if current else block
+        if len(candidate) <= limit:
+            current = candidate
+            continue
+        if current:
+            parts.append(current)
+            current = ""
+        if len(block) <= limit:
+            current = block
+            continue
+        for line in block.split("\n"):  # one block longer than the limit: break by line
+            candidate = f"{current}\n{line}" if current else line
+            if len(candidate) <= limit:
+                current = candidate
+                continue
+            if current:
+                parts.append(current)
+            while len(line) > limit:  # a single enormous line: hard cut
+                parts.append(line[:limit])
+                line = line[limit:]
+            current = line
+    if current:
+        parts.append(current)
+    return parts
+
+
 def _parent_fee_lines(student) -> tuple:
     """(owed, lines): the child's balance line, then what makes it up. Text only,
     no links."""
@@ -5792,9 +5828,10 @@ def parent_identity(parent_phone):
             (student.second_guardian_phone, student.second_guardian_name),
         ):
             name = str(name or "").strip()
-            if phone and name and normalize_phone_number(phone) == sender:
-                if name.lower().strip(".") in _PLACEHOLDER_GUARDIAN_NAMES:
-                    return "", students
+            if not (phone and name) or normalize_phone_number(phone) != sender:
+                continue
+            # A placeholder is not a name, but a sibling's record may carry the real one.
+            if name.lower().strip(".") not in _PLACEHOLDER_GUARDIAN_NAMES:
                 return name, students
     return "", students
 
