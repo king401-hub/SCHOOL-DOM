@@ -6331,6 +6331,96 @@ def send_fee_reminders(limit=None):
     return sent
 
 
+FEE_INSIGHT_ADMIN_ROLES = ("school_admin", "principal", "accountant", "school_superadmin", "super_admin")
+FEE_INSIGHT_EVENT_TYPE = "ai_fee_insight"
+FEE_INSIGHT_RENOTIFY_AFTER = timedelta(days=7)
+
+
+def generate_fee_insight_notifications():
+    """Per-school: if there are students with fees past their due date,
+    notify that school's admins with a short AI-phrased heads-up (falling
+    back to a plain templated sentence if OpenRouter is unavailable) - shown
+    via the existing GlobalNotificationBell everywhere in the app, not just
+    inside the AI chat widget. Deduped per school so an unresolved backlog
+    doesn't renotify every single day it stays open.
+
+    Intended to run daily via cron (same pattern as send_fee_reminders) -
+    see finance/management/commands/generate_fee_insights.py. Returns the
+    number of Notification rows created.
+    """
+    from core.ai_insights import generate_ai_opinion
+    from core.tenant import SchoolTenant
+    from notifications.models import Notification
+    from notifications.push import push_for_notifications
+    from users.models import User
+
+    today = timezone.now().date()
+    created = 0
+
+    for school in SchoolTenant.objects.filter(is_active=True):
+        overdue_fees = list(
+            SchoolFee.objects.select_related("student")
+            .filter(
+                student__user__tenant=school,
+                student__user__is_active=True,
+                due_date__lt=today,
+            )
+            .exclude(status=SchoolFee.STATUS_PAID)
+        )
+        if not overdue_fees:
+            continue
+
+        paid_amounts = bulk_fee_paid_amounts(overdue_fees)
+        total_outstanding = total_outstanding_for_fees(overdue_fees, paid_amounts)
+        if total_outstanding <= 0:
+            continue
+
+        recent_cutoff = timezone.now() - FEE_INSIGHT_RENOTIFY_AFTER
+        already_notified = Notification.objects.filter(
+            tenant=school, event_type=FEE_INSIGHT_EVENT_TYPE, created_at__gte=recent_cutoff,
+        ).exists()
+        if already_notified:
+            continue
+
+        student_count = len({fee.student_id for fee in overdue_fees})
+        amount_text = _format_naira(total_outstanding)
+
+        prompt = (
+            f"You are an assistant surfacing one short alert on a school admin's dashboard. "
+            f"{school.name} currently has {student_count} student(s) with school fees past their due "
+            f"date, totalling {amount_text} outstanding. "
+            "Write exactly one short, professional sentence (max 30 words) flagging this to the admin "
+            "with a brief, concrete suggestion for what to do next. Plain text only, no markdown, no greeting."
+        )
+        message = generate_ai_opinion(prompt) or (
+            f"{student_count} student(s) have fees past their due date, totalling {amount_text} outstanding. "
+            "Consider sending a reminder or following up with their guardians."
+        )
+
+        admins = User.objects.filter(tenant=school, role__in=FEE_INSIGHT_ADMIN_ROLES, is_active=True)
+        notifications = [
+            Notification(
+                tenant=school,
+                user=admin,
+                title="Overdue fees need attention",
+                message=message,
+                notification_type="alert",
+                priority=3,
+                channel="in_app",
+                event_type=FEE_INSIGHT_EVENT_TYPE,
+                is_delivered=True,
+                delivered_at=timezone.now(),
+            )
+            for admin in admins
+        ]
+        if notifications:
+            Notification.objects.bulk_create(notifications)
+            push_for_notifications(notifications)
+            created += len(notifications)
+
+    return created
+
+
 PAYMENT_METHOD_LABELS = {
     "cash": "Cash payment received at school",
     "pos": "POS payment received at school",

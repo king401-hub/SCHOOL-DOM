@@ -63,6 +63,7 @@ from finance.services import (
     ensure_student_wallet,
     bulk_fee_paid_amounts,
     fee_paid_amount,
+    generate_fee_insight_notifications,
     get_or_create_activation_credit_pool,
     get_or_create_sms_wallet,
     get_or_create_student_activation_credit,
@@ -2340,6 +2341,112 @@ class FeeReminderSecureLinkTests(TestCase):
         self.assertLessEqual(len(sent_message), SMS_CHAR_LIMIT)
         link = PaymentReceiptLink.objects.get(receipt_type="bill")
         self.assertIn("/r/" + link.short_code, sent_message)
+
+
+class FeeInsightNotificationTests(TestCase):
+    """generate_fee_insight_notifications surfaces overdue fees to a school's
+    admins via the normal in-app Notification/bell path (GlobalNotificationBell),
+    not just inside the AI chat widget - with an AI-phrased message when
+    available and a plain template otherwise."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Insight School", schema_name="insight_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@insight.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student_user = User.objects.create_user(
+            email="student@insight.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="INS900", admission_number="ADM-INS-900",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=school_class,
+        )
+
+    @patch("core.ai_insights.generate_ai_opinion")
+    def test_overdue_fee_notifies_admin_with_ai_phrased_message(self, mock_opinion):
+        from datetime import timedelta
+
+        mock_opinion.return_value = "Three fees are overdue - consider a reminder blast."
+        SchoolFee.objects.create(
+            student=self.student, title="Term Fee", amount=Decimal("50000.00"),
+            due_date=timezone.localdate() - timedelta(days=3), status=SchoolFee.STATUS_PENDING,
+        )
+
+        created = generate_fee_insight_notifications()
+
+        self.assertEqual(created, 1)
+        notification = Notification.objects.get(user=self.admin_user, event_type="ai_fee_insight")
+        self.assertEqual(notification.message, "Three fees are overdue - consider a reminder blast.")
+        self.assertEqual(notification.title, "Overdue fees need attention")
+        self.assertTrue(mock_opinion.called)
+
+    @patch("core.ai_insights.generate_ai_opinion")
+    def test_falls_back_to_template_when_ai_unavailable(self, mock_opinion):
+        from datetime import timedelta
+
+        mock_opinion.return_value = None
+        SchoolFee.objects.create(
+            student=self.student, title="Term Fee", amount=Decimal("50000.00"),
+            due_date=timezone.localdate() - timedelta(days=3), status=SchoolFee.STATUS_PENDING,
+        )
+
+        created = generate_fee_insight_notifications()
+
+        self.assertEqual(created, 1)
+        notification = Notification.objects.get(user=self.admin_user, event_type="ai_fee_insight")
+        self.assertIn("NGN 50,000.00", notification.message)
+        self.assertIn("past their due date", notification.message)
+
+    @patch("core.ai_insights.generate_ai_opinion")
+    def test_no_notification_when_fee_not_yet_due(self, mock_opinion):
+        from datetime import timedelta
+
+        SchoolFee.objects.create(
+            student=self.student, title="Term Fee", amount=Decimal("50000.00"),
+            due_date=timezone.localdate() + timedelta(days=3), status=SchoolFee.STATUS_PENDING,
+        )
+
+        created = generate_fee_insight_notifications()
+
+        self.assertEqual(created, 0)
+        self.assertFalse(Notification.objects.filter(event_type="ai_fee_insight").exists())
+        mock_opinion.assert_not_called()
+
+    @patch("core.ai_insights.generate_ai_opinion")
+    def test_paid_fee_past_due_date_is_not_counted(self, mock_opinion):
+        from datetime import timedelta
+
+        SchoolFee.objects.create(
+            student=self.student, title="Term Fee", amount=Decimal("50000.00"),
+            due_date=timezone.localdate() - timedelta(days=3), status=SchoolFee.STATUS_PAID,
+        )
+
+        created = generate_fee_insight_notifications()
+
+        self.assertEqual(created, 0)
+        mock_opinion.assert_not_called()
+
+    @patch("core.ai_insights.generate_ai_opinion")
+    def test_unresolved_backlog_is_not_renotified_within_seven_days(self, mock_opinion):
+        from datetime import timedelta
+
+        mock_opinion.return_value = "Heads up about overdue fees."
+        SchoolFee.objects.create(
+            student=self.student, title="Term Fee", amount=Decimal("50000.00"),
+            due_date=timezone.localdate() - timedelta(days=3), status=SchoolFee.STATUS_PENDING,
+        )
+
+        first_run = generate_fee_insight_notifications()
+        second_run = generate_fee_insight_notifications()
+
+        self.assertEqual(first_run, 1)
+        self.assertEqual(second_run, 0)
+        self.assertEqual(Notification.objects.filter(event_type="ai_fee_insight").count(), 1)
 
 
 class CreditBalanceCarryForwardTests(TestCase):
