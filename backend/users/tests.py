@@ -1634,6 +1634,40 @@ class TeacherDashboardAPITests(TestCase):
         self.assertFalse(exam.is_published)
         self.assertEqual(Notification.objects.filter(event_type="exam_ready_for_publishing").count(), before + 1)
 
+    def test_class_ids_creates_one_independent_exam_per_class(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        second_class = Class.objects.create(name="Grade 8", section="C", tenant=self.legacy_tenant)
+
+        response = self.client.post(
+            "/api/app/exams/create/",
+            data=self._exam_create_payload(class_ids=[self.classroom.id, second_class.id]),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(len(response.data["exams"]), 2)
+        # `exam` (singular) still points at the first one, for every caller
+        # that only ever expects one exam back.
+        self.assertEqual(response.data["exam"]["id"], response.data["exams"][0]["id"])
+
+        created = Exam.objects.filter(title=self._exam_create_payload()["title"]).order_by("class_group__section")
+        self.assertEqual(created.count(), 2)
+        self.assertEqual(list(created.values_list("class_group_id", flat=True)), [self.classroom.id, second_class.id])
+        # Independent rows: deleting one must never touch the other.
+        first_exam, second_exam = created
+        self.assertNotEqual(first_exam.id, second_exam.id)
+        self.assertEqual(set(first_exam.questions.all()), set(second_exam.questions.all()))
+
+        first_exam.delete()
+        self.assertTrue(Exam.objects.filter(id=second_exam.id).exists())
+
+    def test_class_id_alone_still_creates_exactly_one_exam(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.post("/api/app/exams/create/", data=self._exam_create_payload(), format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(len(response.data["exams"]), 1)
+        self.assertEqual(response.data["exams"][0]["id"], response.data["exam"]["id"])
+
     def test_admin_patch_save_draft_never_touches_publish_state(self):
         self.client.force_authenticate(user=self.admin_user)
         create_response = self.client.post(

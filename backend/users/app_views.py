@@ -11996,10 +11996,36 @@ def create_exam(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    class_group = None
-    class_id = request.data.get("class_id")
-    if class_id not in (None, ""):
-        class_group = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), request.user), id=class_id)
+    # class_ids (a JSON array, matching how `questions` arrives when this
+    # request is multipart/form-data for file uploads) lets one "Save"/
+    # "Publish" click target several classes at once - each becomes its own
+    # fully independent Exam row below (own schedule, attempts, grading),
+    # sharing only the question set just submitted. class_id (singular) is
+    # kept working unchanged for every existing caller that only ever sends
+    # one class, including blank/omitted meaning "all classes".
+    class_ids_raw = request.data.get("class_ids")
+    if isinstance(class_ids_raw, str) and class_ids_raw.strip():
+        try:
+            class_ids_raw = json.loads(class_ids_raw)
+        except ValueError:
+            return Response(
+                {"success": False, "message": "class_ids must be a JSON array of class ids."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    class_ids = [str(cid).strip() for cid in (class_ids_raw or []) if str(cid).strip()]
+
+    if class_ids:
+        class_groups = [
+            get_object_or_404(_scope_to_user_tenant(Class.objects.all(), request.user), id=cid)
+            # dict.fromkeys de-dupes while keeping the order the admin picked them in.
+            for cid in dict.fromkeys(class_ids)
+        ]
+    else:
+        class_group = None
+        class_id = request.data.get("class_id")
+        if class_id not in (None, ""):
+            class_group = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), request.user), id=class_id)
+        class_groups = [class_group]
 
     subject = None
     subject_id = request.data.get("subject_id")
@@ -12045,59 +12071,90 @@ def create_exam(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    exam = Exam.objects.create(
-        title=title,
-        subject=subject,
-        class_group=class_group,
-        teacher=request.user,
-        exam_type=exam_type,
-        exam_format=exam_format,
-        start_date=start_date,
-        end_date=end_date,
-        duration_minutes=duration_minutes,
-        instructions=str(request.data.get("instructions") or "").strip(),
-        shuffle_questions=shuffle_questions,
-        show_results_immediately=False,
-        is_published=is_published,
-        tenant=tenant_obj,
-        term=_active_term(request.user),
-        academic_year=_active_academic_year(request.user),
-    )
+    # Created once and shared (via M2M) across every class's exam below,
+    # rather than duplicated per class - same content, one set of uploaded
+    # images/attachments read exactly once. A later edit to a shared
+    # question through one class's exam does also change the others that
+    # still reference it (academic.app_views._sync_exam_questions's own
+    # "don't delete a question still used elsewhere" guard already assumes
+    # this kind of sharing); schedule, publish state, attempts and grading
+    # are what's actually independent per class.
     groups_by_key = _question_groups_from_payload(cleaned_questions, tenant_obj, request.user, request)
     created_questions = [
         _exam_question_from_payload(item, tenant_obj, request.user, request, groups_by_key, index)
         for index, item in enumerate(cleaned_questions, start=1)
     ]
-    exam.questions.add(*created_questions)
     to_bank = [
         question
         for item, question in zip(cleaned_questions, created_questions)
         if item.get("save_to_bank")
     ]
-    if to_bank:
-        _save_questions_to_teacher_bank(tenant_obj, request.user, subject, to_bank, school_class=class_group)
     should_notify = request.user.role == "teacher" and notify_admin_requested
-    if should_notify:
-        _notify_admins_exam_ready(exam, request.user)
+    term = _active_term(request.user)
+    academic_year = _active_academic_year(request.user)
+    instructions = str(request.data.get("instructions") or "").strip()
+
+    created_exams = []
+    for class_group in class_groups:
+        exam = Exam.objects.create(
+            title=title,
+            subject=subject,
+            class_group=class_group,
+            teacher=request.user,
+            exam_type=exam_type,
+            exam_format=exam_format,
+            start_date=start_date,
+            end_date=end_date,
+            duration_minutes=duration_minutes,
+            instructions=instructions,
+            shuffle_questions=shuffle_questions,
+            show_results_immediately=False,
+            is_published=is_published,
+            tenant=tenant_obj,
+            term=term,
+            academic_year=academic_year,
+        )
+        exam.questions.add(*created_questions)
+        if to_bank:
+            _save_questions_to_teacher_bank(tenant_obj, request.user, subject, to_bank, school_class=class_group)
+        if should_notify:
+            _notify_admins_exam_ready(exam, request.user)
+        created_exams.append(exam)
+
+    exam_payloads = [
+        {
+            "id": exam.id,
+            "title": exam.title,
+            "start_date": exam.start_date,
+            "end_date": exam.end_date,
+            "duration_minutes": exam.duration_minutes,
+            "is_published": exam.is_published,
+            "assessment_type": assessment_type,
+            "exam_format": exam.exam_format,
+            "question_count": len(created_questions),
+            "class_name": _class_label(exam.class_group) if exam.class_group else "All classes",
+        }
+        for exam in created_exams
+    ]
+
+    if len(created_exams) > 1:
+        class_names = ", ".join(payload["class_name"] for payload in exam_payloads)
+        message = f"Created {len(created_exams)} independent exams, one each for: {class_names}."
+    else:
+        message = "Exam created and published." if is_published else (
+            "Exam sent to admin for publishing." if should_notify else "Draft saved successfully."
+        )
 
     return Response(
         {
             "success": True,
-            "message": "Exam created and published." if is_published else (
-                "Exam sent to admin for publishing." if should_notify else "Draft saved successfully."
-            ),
-            "exam": {
-                "id": exam.id,
-                "title": exam.title,
-                "start_date": exam.start_date,
-                "end_date": exam.end_date,
-                "duration_minutes": exam.duration_minutes,
-                "is_published": exam.is_published,
-                "assessment_type": assessment_type,
-                "exam_format": exam.exam_format,
-                "question_count": len(created_questions),
-                "class_name": _class_label(exam.class_group) if exam.class_group else "All classes",
-            },
+            "message": message,
+            # Kept singular (the first/only one) so every existing caller that
+            # only ever created one exam at a time keeps working unchanged;
+            # `exams` (plural) is the full list, used when class_ids produced
+            # more than one.
+            "exam": exam_payloads[0],
+            "exams": exam_payloads,
         },
         status=status.HTTP_201_CREATED,
     )
