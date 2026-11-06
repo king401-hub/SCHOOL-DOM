@@ -927,7 +927,7 @@ export function TeacherExamBuilder({
     title: "Mid Term Examination",
     code: "",
     description: "",
-    classId: "",
+    classIds: [],
     subjectId: "",
     examFormat: "objective",
     startDate: "",
@@ -970,8 +970,6 @@ export function TeacherExamBuilder({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState(null);
-  const [publishedPin, setPublishedPin] = useState(null);
-  const [copyFeedback, setCopyFeedback] = useState("");
   const [isPublished, setIsPublished] = useState(Boolean(initialExam?.is_published));
   const [pendingPublish, setPendingPublish] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -1045,7 +1043,9 @@ export function TeacherExamBuilder({
     setMyBankError("");
     const bankParams = new URLSearchParams();
     if (form.subjectId) bankParams.set("subject_id", form.subjectId);
-    if (form.classId) bankParams.set("class_id", form.classId);
+    // Several classes may be selected (multi-class create) - the bank filter
+    // only narrows suggestions, so the first picked class is a fine stand-in.
+    if (form.classIds?.[0]) bankParams.set("class_id", form.classIds[0]);
     const params = bankParams.toString() ? `?${bankParams.toString()}` : "";
     requestJson(session, "GET", `/api/app/exams/question-bank/${params}`)
       .then((result) => {
@@ -1154,7 +1154,7 @@ export function TeacherExamBuilder({
       title: initialExam.title || "",
       code: initialExam.code || "",
       description: initialExam.description || "",
-      classId: initialExam.class_id || "",
+      classIds: initialExam.class_id ? [String(initialExam.class_id)] : [],
       subjectId: initialExam.subject_id || "",
       examFormat: initialExam.exam_format || "objective",
       startDate: dateTimeLocalValue(initialExam.start_date),
@@ -1248,7 +1248,13 @@ export function TeacherExamBuilder({
 
   const buildExamPayload = (preparedQuestions) => ({
     title: form.title.trim(),
-    class_id: form.classId || "",
+    // class_id (the first picked class) is what an edit (PATCH, one existing
+    // exam) reads; class_ids (every class picked) is what a brand-new
+    // exam's create POST reads to fan out into one independent exam per
+    // class - see create_exam in users/app_views.py. Sending both is safe:
+    // whichever endpoint actually receives the request reads only its own field.
+    class_id: (form.classIds && form.classIds[0]) || "",
+    class_ids: form.classIds || [],
     subject_id: form.subjectId || "",
     exam_format: form.examFormat || "objective",
     start_date: makeDateTime(form.startDate),
@@ -1273,7 +1279,7 @@ export function TeacherExamBuilder({
     if (hasFiles) {
       const formData = new FormData();
       Object.entries(payload).forEach(([key, value]) => {
-        formData.append(key, key === "questions" ? JSON.stringify(value) : value);
+        formData.append(key, key === "questions" || key === "class_ids" ? JSON.stringify(value) : value);
       });
       const addedPassageImages = new Set();
       questions.forEach((question) => {
@@ -1347,46 +1353,13 @@ export function TeacherExamBuilder({
       const savedExam = result?.exam || {};
       if (savedExam.id) clearLastActiveExamId(userId);
       if (canPublishExam) setIsPublished(true);
-      const hasExistingPin = Boolean(
-        savedExam.pin_required ||
-          Number(savedExam.active_pin_count || 0) > 0 ||
-          initialExam?.pin_required ||
-          Number(initialExam?.active_pin_count || 0) > 0
-      );
-      if (canPublishExam && savedExam.id && !hasExistingPin) {
-        const pinResult = await requestJson(session, "POST", "/api/app/exams/pins/", {
-          exam_id: savedExam.id,
-          usage_policy: "reusable",
-          expires_at: savedExam.end_date || payload.end_date,
-        });
-        setPublishedPin({
-          pin: pinResult.plain_pin || "",
-          examTitle: savedExam.title || payload.title,
-          expiresAt: savedExam.end_date || payload.end_date,
-        });
-        setCopyFeedback("");
-        setFeedback("Exam published successfully. Share the CBT PIN with eligible students.");
-      } else {
-        setFeedback(
-          hasExistingPin && canPublishExam
-            ? "Exam published successfully. Existing CBT PIN remains active."
-            : result?.message || (canPublishExam ? "Exam published successfully." : "Exam sent to admin for publishing.")
-        );
-      }
+      // No PIN to generate or share - a student gets in with just their
+      // Student ID (see StudentCbtEntryView in exams/exam_views.py).
+      setFeedback(result?.message || (canPublishExam ? "Exam published successfully." : "Exam sent to admin for publishing."));
     } catch (publishError) {
       setError(publishError.message || "Could not publish exam.");
     } finally {
       setPublishing(false);
-    }
-  };
-
-  const copyPublishedPin = async () => {
-    if (!publishedPin?.pin) return;
-    try {
-      await navigator.clipboard.writeText(publishedPin.pin);
-      setCopyFeedback("Copied.");
-    } catch {
-      setCopyFeedback("Select and copy the PIN manually.");
     }
   };
 
@@ -1570,28 +1543,6 @@ export function TeacherExamBuilder({
 
   return (
     <section className={`exam-builder-shell ${isEditing ? "exam-builder-editing" : ""}`}>
-      {publishedPin ? (
-        <div className="cbt-info-modal" role="dialog" aria-modal="true" aria-labelledby="published-pin-title">
-          <div className="cbt-info-card cbt-pin-card">
-            <p className="cbt-info-kicker">Exam published</p>
-            <h3 id="published-pin-title">CBT exam PIN</h3>
-            <p>
-              Share this PIN with students for {publishedPin.examTitle || "this exam"}. It is shown now so it can be copied before you close this popup.
-            </p>
-            <div className="cbt-pin-display" aria-label="Generated CBT exam PIN">
-              {publishedPin.pin}
-            </div>
-            {publishedPin.expiresAt ? (
-              <p className="cbt-pin-meta">Expires when the exam window closes: {formatDate(publishedPin.expiresAt)}</p>
-            ) : null}
-            {copyFeedback ? <p className="cbt-pin-copy-feedback">{copyFeedback}</p> : null}
-            <div className="cbt-flag-actions">
-              <button type="button" onClick={copyPublishedPin}>Copy PIN</button>
-              <button type="button" onClick={() => setPublishedPin(null)}>Done</button>
-            </div>
-          </div>
-        </div>
-      ) : null}
       <aside className="exam-builder-sidebar">
         <div className="exam-builder-brand">
           <div className="exam-builder-mark">E</div>
@@ -1672,7 +1623,27 @@ export function TeacherExamBuilder({
               <label className="panel-field">Exam title<input value={form.title} onChange={(event) => setField("title", event.target.value)} placeholder="e.g. Mathematics mid-term" /></label>
               <label className="panel-field">Exam code<input value={form.code} onChange={(event) => setField("code", event.target.value)} placeholder="Optional" /></label>
               <label className="panel-field full">Description<textarea value={form.description} onChange={(event) => setField("description", event.target.value)} rows={4} placeholder="A line or two about what this exam covers (optional)" /></label>
-              <label className="panel-field">Class / Course<select value={form.classId} onChange={(event) => setField("classId", event.target.value)}><option value="">All classes</option>{classOptions.map((item) => <option key={item.id} value={item.id}>{item.label || item.name}</option>)}</select></label>
+              <label className="panel-field">
+                Class / Course
+                <select
+                  multiple
+                  value={form.classIds}
+                  onChange={(event) => {
+                    const selected = Array.from(event.target.selectedOptions, (option) => option.value);
+                    // "All classes" and picking specific ones are mutually
+                    // exclusive - choosing "All classes" clears any specific
+                    // picks, and vice versa.
+                    setField("classIds", selected.includes("") ? [] : selected);
+                  }}
+                  size={Math.min(6, classOptions.length + 1)}
+                >
+                  <option value="">All classes</option>
+                  {classOptions.map((item) => <option key={item.id} value={item.id}>{item.label || item.name}</option>)}
+                </select>
+                <small>
+                  Ctrl/Cmd-click (or long-press) to pick more than one class - each gets its own independent copy of this exam.
+                </small>
+              </label>
               <label className="panel-field">Subject<select value={form.subjectId} onChange={(event) => setField("subjectId", event.target.value)}><option value="">General</option>{subjectOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
               <label className="panel-field">
                 Exam type
@@ -2280,7 +2251,7 @@ export function TeacherExamBuilder({
                 <h3 id="publish-exam-title">{canPublishExam ? "Publish this exam?" : "Send this exam to your admin?"}</h3>
                 <p>
                   {canPublishExam
-                    ? "Once published, eligible students will be able to access it with a CBT PIN."
+                    ? "Once published, eligible students will be able to access it with just their Student ID."
                     : "Your admin will be notified to review and publish this exam. It stays a draft until they do."}
                 </p>
               </div>
@@ -3080,10 +3051,6 @@ export function TeacherPastExamsPanel({ session, onEditExam, onCreateExam, loadi
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const [pinBusy, setPinBusy] = useState("");
-  const [pinMessage, setPinMessage] = useState("");
-  const [pinPlain, setPinPlain] = useState("");
-  const canManagePins = ["school_admin", "principal", "super_admin"].includes(session?.user?.role);
 
   const loadExams = useCallback(async () => {
     setLoading(true);
@@ -3139,26 +3106,6 @@ export function TeacherPastExamsPanel({ session, onEditExam, onCreateExam, loadi
     return [exam.title, exam.subject, exam.class_name].filter(Boolean).join(" ").toLowerCase().includes(query);
   });
 
-  const generatePin = async (exam) => {
-    setPinBusy(`generate-${exam.id}`);
-    setPinMessage("");
-    setPinPlain("");
-    try {
-      const result = await requestJson(session, "POST", "/api/app/exams/pins/", {
-        exam_id: exam.id,
-        usage_policy: "reusable",
-        expires_at: exam.end_date,
-      });
-      setPinPlain(result.plain_pin || "");
-      setPinMessage(`PIN generated for ${exam.title}.`);
-      await loadExams();
-    } catch (pinError) {
-      setPinMessage(pinError.message || "Could not generate PIN.");
-    } finally {
-      setPinBusy("");
-    }
-  };
-
   const filters = [
     ["all", "All", exams.length],
     ["upcoming", "Upcoming", upcomingExams.length],
@@ -3202,7 +3149,6 @@ export function TeacherPastExamsPanel({ session, onEditExam, onCreateExam, loadi
 
         {error ? <p className="form-feedback error">{error}</p> : null}
         {editError ? <p className="form-feedback error">{editError}</p> : null}
-        {pinMessage ? <p className={`form-feedback ${pinPlain ? "success" : "error"}`}>{pinMessage}{pinPlain ? ` PIN: ${pinPlain}` : ""}</p> : null}
 
         {loading && !exams.length ? (
           <div className="ts-examrows-skeleton" aria-hidden="true">
@@ -3244,16 +3190,6 @@ export function TeacherPastExamsPanel({ session, onEditExam, onCreateExam, loadi
                     <small>{Number(exam.submissions) === 1 ? "submission" : "submissions"}</small>
                   </div>
                   <div className="ts-examrow__actions">
-                    {canManagePins ? (
-                      <button
-                        type="button"
-                        className={`table-action ${exam.pin_required ? "active" : ""}`}
-                        onClick={() => generatePin(exam)}
-                        disabled={pinBusy === `generate-${exam.id}`}
-                      >
-                        {pinBusy === `generate-${exam.id}` ? <><Spinner size={12} /> Generating…</> : exam.pin_required ? `PIN active (${exam.active_pin_count || 1})` : "Generate PIN"}
-                      </button>
-                    ) : null}
                     <button type="button" className="table-action" onClick={() => onEditExam?.(exam.id)} disabled={opening}>
                       {opening ? <><Spinner size={12} /> Opening…</> : exam.is_published ? <><Pencil size={13} aria-hidden="true" /> View / edit</> : <><Pencil size={13} aria-hidden="true" /> Keep editing</>}
                     </button>

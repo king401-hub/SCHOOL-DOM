@@ -391,10 +391,13 @@ class StudentCbtEntryCollisionTests(TestCase):
         self.pin_b.set_pin("654321")
         self.pin_b.save()
 
-    def test_colliding_student_id_with_school_bs_pin_logs_into_school_b_only(self):
+    def test_colliding_student_id_resolves_to_the_school_with_an_open_exam(self):
+        # No PIN at all - only school B's colliding candidate has anything
+        # open right now (school A's never got an exam in setUp), so that's
+        # enough on its own to resolve the collision correctly.
         response = self.client.post(
             reverse("exams:student_cbt_entry"),
-            {"student_id": "STU001", "pin": "654321"},
+            {"student_id": "STU001"},
             format="json",
         )
 
@@ -402,10 +405,12 @@ class StudentCbtEntryCollisionTests(TestCase):
         self.assertEqual(response.data["student"]["id"], str(self.student_user_b.id))
         self.assertEqual(response.data["session"]["school_code"], self.school_b.schema_name)
 
-    def test_colliding_student_id_with_wrong_pin_is_rejected(self):
+    def test_student_id_with_no_open_exam_anywhere_is_not_found(self):
+        # student_profile_a's own admission_number - unique to school A,
+        # which never got an exam in setUp.
         response = self.client.post(
             reverse("exams:student_cbt_entry"),
-            {"student_id": "STU001", "pin": "000000"},
+            {"student_id": "ADM-A-001"},
             format="json",
         )
 

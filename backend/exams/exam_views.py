@@ -92,30 +92,11 @@ def _find_students_by_identifier(identifier):
     )
 
 
-def _exams_for_student(student, *, pin=None, base_queryset=None):
-    """Resolve which of `exams` (or, by default, whichever single exam `pin`
-    matches) this student may actually enter - class/enrollment/tenant scoped.
-
-    `base_queryset` lets a caller supply an already-filtered set of candidate
-    exams (e.g. every member of an ExamGroup) and get the exact same
-    downstream scoping applied, without re-deriving it from a PIN lookup -
-    see _group_exams_for_student below. Default behavior (pin-digest lookup)
-    is unchanged for every existing caller.
-    """
-    now = timezone.now()
-    if base_queryset is not None:
-        exams = base_queryset
-    else:
-        normalized_pin = ExamPin.normalize_pin(pin)
-        pin_digest = ExamPin.digest_pin(normalized_pin)
-        exams = Exam.objects.filter(
-            pins__pin_digest=pin_digest,
-            pins__is_active=True,
-            is_published=True,
-            start_date__lte=now,
-            end_date__gte=now,
-        ).distinct()
-
+def _exams_for_student(student, base_queryset):
+    """Of `base_queryset` (every candidate exam worth considering - e.g.
+    every currently-open, published exam), which ones this student may
+    actually enter - class/enrollment/tenant scoped."""
+    exams = base_queryset
     profile = getattr(student, "student_profile", None)
     enrolled_exam_ids = []
     if profile:
@@ -140,15 +121,6 @@ def _exams_for_student(student, *, pin=None, base_queryset=None):
     if not legacy_tenant:
         return exams.none()
     return exams.filter(Q(class_group__tenant=legacy_tenant) | Q(tenant=legacy_tenant)).order_by("start_date")
-
-
-def _group_exams_for_student(student, group):
-    """Same class/enrollment/tenant scoping as _exams_for_student, applied to
-    every currently-open member exam of an ExamGroup instead of a single
-    pin-matched exam - this is what lets one group PIN resolve to N subjects."""
-    now = timezone.now()
-    base = group.group_exams.filter(is_published=True, start_date__lte=now, end_date__gte=now)
-    return _exams_for_student(student, base_queryset=base)
 
 
 def _published_exam_queryset_for_user(user):
@@ -331,13 +303,6 @@ def _ordered_questions_for_attempt(attempt):
     return ordered
 
 
-def _client_ip(request):
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
-
-
 def _cbt_student_payload(request):
     user = request.user
     profile = getattr(user, "student_profile", None)
@@ -347,48 +312,6 @@ def _cbt_student_payload(request):
         "avatar": _profile_picture_url(request, user),
     }
 
-
-def _record_pin_usage(request, *, exam, pin=None, entered_pin="", status_value=ExamPinUsage.STATUS_REJECTED, message="", attempt=None):
-    digest = ExamPin.digest_pin(entered_pin) if entered_pin else ""
-    return ExamPinUsage.objects.create(
-        tenant=exam.tenant,
-        pin=pin,
-        exam=exam,
-        student=request.user if getattr(request, "user", None) and request.user.is_authenticated else None,
-        attempt=attempt,
-        entered_pin_digest=digest,
-        status=status_value,
-        message=message[:255],
-        ip_address=_client_ip(request),
-        user_agent=str(request.META.get("HTTP_USER_AGENT", ""))[:255],
-    )
-
-
-def _validate_exam_pin_for_start(request, exam, active_attempt=None):
-    active_pins = exam.pins.filter(is_active=True)
-    if not active_pins.exists():
-        return True, None, ""
-
-    entered_pin = ExamPin.normalize_pin(request.data.get("pin") or request.data.get("exam_pin") or "")
-    if not entered_pin:
-        _record_pin_usage(request, exam=exam, entered_pin="", message="PIN was not provided.")
-        return False, None, "Enter the exam PIN to access this CBT exam."
-
-    pin_digest = ExamPin.digest_pin(entered_pin)
-    pin = active_pins.filter(pin_digest=pin_digest).first()
-    if not pin or not pin.check_pin(entered_pin):
-        _record_pin_usage(request, exam=exam, entered_pin=entered_pin, message="Invalid PIN.")
-        return False, None, "Invalid exam PIN."
-
-    if active_attempt and pin.successful_usage_queryset().filter(attempt=active_attempt, student=request.user).exists():
-        return True, pin, ""
-
-    usable, reason = pin.can_be_used()
-    if not usable:
-        _record_pin_usage(request, exam=exam, pin=pin, entered_pin=entered_pin, message=reason)
-        return False, pin, reason
-
-    return True, pin, ""
 
 
 # Pass mark (percent) for CBT results when the school has grading switched off,
@@ -677,175 +600,64 @@ class ExamListView(APIView):
 
 
 class StudentCbtEntryView(APIView):
-    """Start/resume CBT with only Student ID and Exam PIN for desktop exam stations."""
+    """Enter CBT with only a Student ID, for desktop exam stations - no PIN.
+    Mirrors SchoolDom.Cbt.Win7/LanServerService.cs's own Login() (the offline
+    LAN server this app talks to when there's no internet), which dropped
+    PIN the same way: "Exam visibility is by CLASS, not PIN... a student
+    only ever needs their Student ID." Never starts an attempt itself, same
+    as that LAN flow - the student sees everything currently open for them
+    and explicitly picks one, which is what actually calls StartExamView
+    (itself PIN-free) to begin or resume it."""
     permission_classes = [AllowAny]
 
-    @transaction.atomic
     def post(self, request):
         student_identifier = request.data.get("student_id") or request.data.get("admission_number") or request.data.get("student")
-        entered_pin = ExamPin.normalize_pin(request.data.get("pin") or request.data.get("exam_pin") or "")
         candidates = _find_students_by_identifier(student_identifier)
         if not candidates.exists():
             return Response({"success": False, "message": "Student ID was not found."}, status=status.HTTP_404_NOT_FOUND)
-        if not entered_pin:
-            return Response({"success": False, "message": "Enter the exam PIN."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # pin_digest is globally unique, so at most one ExamPin row can ever match -
-        # resolve which exam/group this PIN belongs to once, up front, instead of
-        # re-discovering it inside the per-candidate loop below (which exists purely
-        # to disambiguate student_id collisions across tenants, not to find the PIN).
-        pin_row = ExamPin.objects.filter(
-            pin_digest=ExamPin.digest_pin(entered_pin), is_active=True
-        ).select_related("exam", "group").first()
+        now = timezone.now()
+        open_exams = Exam.objects.filter(is_published=True, start_date__lte=now, end_date__gte=now)
 
-        if pin_row and pin_row.group_id:
-            group = pin_row.group
-            student = None
-            member_exams = None
-            for candidate in candidates:
-                candidate_members = list(_group_exams_for_student(candidate, group))
-                if candidate_members:
-                    student, member_exams = candidate, candidate_members
-                    break
-            if not student or not member_exams:
-                return Response({"success": False, "message": "No open exam matches this Student ID and PIN."}, status=status.HTTP_404_NOT_FOUND)
-
-            if not has_active_cbt_license(group.tenant):
-                return Response(
-                    {"success": False, "message": "This school's CBT license is not active. Ask your admin to activate a license."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
-            already_granted = pin_row.usages.filter(status=ExamPinUsage.STATUS_ACCEPTED, student=student, group=group).exists()
-            if not already_granted:
-                usable, reason = pin_row.can_be_used()
-                if not usable:
-                    return Response({"success": False, "message": reason}, status=status.HTTP_403_FORBIDDEN)
-                ExamPinUsage.objects.create(
-                    tenant=group.tenant,
-                    pin=pin_row,
-                    exam=None,
-                    group=group,
-                    student=student,
-                    attempt=None,
-                    entered_pin_digest=ExamPin.digest_pin(entered_pin),
-                    status=ExamPinUsage.STATUS_ACCEPTED,
-                    message="PIN accepted from Student CBT desktop entry (exam group).",
-                    ip_address=_client_ip(request),
-                    user_agent=str(request.META.get("HTTP_USER_AGENT", ""))[:255],
-                )
-
-            # No ExamAttempt is created here - the student hasn't picked a subject
-            # yet. The frontend shows a subject picker, then calls StartExamView
-            # (unchanged) per subject using the access token issued below; that
-            # works because a group's member exams carry no ExamPin rows of their
-            # own, so _validate_exam_pin_for_start's "no active pins on this exam"
-            # branch skips re-asking for a PIN there.
-            tokens = _tokens_for_cbt_student(student)
-            return Response({
-                "success": True,
-                "is_group": True,
-                "group": {"id": group.id, "title": group.title},
-                "exams": [
-                    {
-                        "id": member.id,
-                        "title": member.title,
-                        "subject": member.subject.name if member.subject else "",
-                        "subject_id": member.subject_id,
-                        "duration_minutes": member.duration_minutes,
-                        "exam_format": member.exam_format,
-                        "question_count": member.questions.count(),
-                    }
-                    for member in member_exams
-                ],
-                "student": _student_session_payload(student),
-                "session": {
-                    "user": _student_session_payload(student),
-                    "access": tokens["access"],
-                    "refresh": tokens["refresh"],
-                    "school_code": student.tenant.schema_name if student.tenant else "",
-                    "signedInAt": timezone.now().isoformat(),
-                    "auth_mode": "cbt_entry",
-                    "group_id": group.id,
-                },
-            }, status=status.HTTP_200_OK)
-
-        # student_id/admission_number can collide across schools - only accept a candidate
-        # whose OWN tenant has an exam this PIN actually unlocks, never the first match.
+        # student_id/admission_number can collide across schools (each field is
+        # only unique on its own - see _find_students_by_identifier) - only
+        # accept a candidate who actually has something open right now, never
+        # just the first match. If more than one candidate genuinely has an
+        # open exam at the same moment, this has no further way to tell them
+        # apart (that used to be the PIN's other job) and picks whichever the
+        # query happens to return first - an accepted limit of dropping PIN
+        # entirely, not a bug.
         student = None
-        exam = None
+        exams_for_student = []
         for candidate in candidates:
-            candidate_exam = _exams_for_student(candidate, pin=entered_pin).first()
-            if candidate_exam:
-                student, exam = candidate, candidate_exam
+            candidate_exams = list(_exams_for_student(candidate, base_queryset=open_exams))
+            if candidate_exams:
+                student, exams_for_student = candidate, candidate_exams
                 break
-        if not student or not exam:
-            return Response({"success": False, "message": "No open exam matches this Student ID and PIN."}, status=status.HTTP_404_NOT_FOUND)
+        if not student:
+            return Response({"success": False, "message": "No open exam for this Student ID right now."}, status=status.HTTP_404_NOT_FOUND)
 
-        if not has_active_cbt_license(exam.tenant):
+        if not has_active_cbt_license(student.tenant):
             return Response(
                 {"success": False, "message": "This school's CBT license is not active. Ask your admin to activate a license."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        submitted_count = ExamAttempt.objects.filter(exam=exam, student=student, is_submitted=True).count()
-        if submitted_count >= exam.max_attempts:
-            return Response(
-                {"success": False, "message": f"Maximum {exam.max_attempts} attempt(s) allowed."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        active_attempt = ExamAttempt.objects.select_for_update().filter(
-            exam=exam,
-            student=student,
-            is_submitted=False,
-        ).first()
-
-        active_pins = exam.pins.filter(is_active=True)
-        pin = active_pins.filter(pin_digest=ExamPin.digest_pin(entered_pin)).first()
-        if not pin or not pin.check_pin(entered_pin):
-            return Response({"success": False, "message": "Invalid exam PIN."}, status=status.HTTP_403_FORBIDDEN)
-
-        if not (active_attempt and pin.successful_usage_queryset().filter(attempt=active_attempt, student=student).exists()):
-            usable, reason = pin.can_be_used()
-            if not usable:
-                return Response({"success": False, "message": reason}, status=status.HTTP_403_FORBIDDEN)
-
-        if active_attempt:
-            attempt = active_attempt
-            if not attempt.question_order:
-                attempt.question_order = _build_attempt_question_order(exam)
-                attempt.save(update_fields=["question_order", "updated_at"])
-        else:
-            attempt = ExamAttempt.objects.create(
-                exam=exam,
-                student=student,
-                tenant=exam.tenant,
-                is_offline=bool(request.data.get("is_offline", False)),
-                device_id=request.data.get("device_id") or _client_ip(request),
-                question_order=_build_attempt_question_order(exam),
-            )
-
-        if not pin.successful_usage_queryset().filter(attempt=attempt, student=student).exists():
-            ExamPinUsage.objects.create(
-                tenant=exam.tenant,
-                pin=pin,
-                exam=exam,
-                student=student,
-                attempt=attempt,
-                entered_pin_digest=ExamPin.digest_pin(entered_pin),
-                status=ExamPinUsage.STATUS_ACCEPTED,
-                message="PIN accepted from Student CBT desktop entry.",
-                ip_address=_client_ip(request),
-                user_agent=str(request.META.get("HTTP_USER_AGENT", ""))[:255],
-            )
-
         tokens = _tokens_for_cbt_student(student)
         return Response({
             "success": True,
-            "attempt_id": attempt.id,
-            "exam_id": exam.id,
-            "exam": ExamSerializer(exam).data,
+            "exams": [
+                {
+                    "id": exam.id,
+                    "title": exam.title,
+                    "subject": exam.subject.name if exam.subject else "",
+                    "subject_id": exam.subject_id,
+                    "duration_minutes": exam.duration_minutes,
+                    "exam_format": exam.exam_format,
+                    "question_count": exam.questions.count(),
+                }
+                for exam in exams_for_student
+            ],
             "student": _student_session_payload(student),
             "session": {
                 "user": _student_session_payload(student),
@@ -898,13 +710,6 @@ class StartExamView(APIView):
             is_submitted=False
         ).first()
 
-        pin_valid, validated_pin, pin_error = _validate_exam_pin_for_start(request, exam, active_attempt=active_attempt)
-        if not pin_valid:
-            return Response(
-                {'error': pin_error or 'Invalid exam PIN'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
         if active_attempt:
             if not active_attempt.question_order:
                 active_attempt.question_order = _build_attempt_question_order(exam)
@@ -926,17 +731,7 @@ class StartExamView(APIView):
             device_id=request.data.get('device_id', None),
             question_order=_build_attempt_question_order(exam),
         )
-        if validated_pin:
-            _record_pin_usage(
-                request,
-                exam=exam,
-                pin=validated_pin,
-                entered_pin=request.data.get("pin") or request.data.get("exam_pin") or "",
-                status_value=ExamPinUsage.STATUS_ACCEPTED,
-                message="PIN accepted and exam attempt started.",
-                attempt=attempt,
-            )
-        
+
         # Prepare response
         return Response({
             'attempt_id': attempt.id,
