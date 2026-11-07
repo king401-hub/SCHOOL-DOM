@@ -31,14 +31,31 @@ object ApiClient {
         appContext = context.applicationContext
     }
 
-    private fun parseError(data: JSONObject?, fallback: String): String {
+    /** Not private - LoginActivity also needs this (see below) since
+     * /api/auth/login/ is the one endpoint in this app that doesn't go
+     * through apiRequest's own error handling. */
+    fun parseError(data: JSONObject?, fallback: String): String {
         if (data == null) return fallback
         for (k in listOf("message", "detail", "error")) {
-            if (data.has(k) && !data.isNull(k)) return data.getString(k)
+            if (data.has(k) && !data.isNull(k)) {
+                // DRF's own ValidationError({"error": "Invalid credentials."})
+                // still serializes the value as a one-item list, not a plain
+                // string - getString() would throw on that, so unwrap it the
+                // same way the "first key found" fallback below already does.
+                val v = data.get(k)
+                return if (v is JSONArray && v.length() > 0) v.get(0).toString() else v.toString()
+            }
         }
+        // users.views.login_view's validation-error shape is
+        // {"success": false, "errors": {...}} - none of the flat keys above,
+        // so unwrap "errors" and look again before falling back to "first
+        // key found" (which would otherwise just print "success: false").
+        val errors = data.optJSONObject("errors")
+        if (errors != null) return parseError(errors, fallback)
         val keys = data.keys()
-        if (keys.hasNext()) {
+        while (keys.hasNext()) {
             val first = keys.next()
+            if (first == "success") continue
             val v = data.get(first)
             val text = if (v is JSONArray && v.length() > 0) v.get(0).toString() else v.toString()
             return "$first: $text"

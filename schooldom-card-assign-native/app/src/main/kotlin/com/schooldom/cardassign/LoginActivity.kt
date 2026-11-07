@@ -116,7 +116,7 @@ class LoginActivity : Activity() {
     private fun handleAuthResponse(status: Int, data: JSONObject, email: String) {
         setBusy(false)
         if (status !in 200..299 || !data.optBoolean("success", false)) {
-            showError(data.optString("message", "Sign in failed ($status)."))
+            showError(ApiClient.parseError(data, "Sign in failed ($status)."))
             return
         }
         if (data.optBoolean("requires_otp", false)) {
