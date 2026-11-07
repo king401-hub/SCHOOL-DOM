@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import FormattedTextarea from "./components/FormattedTextarea";
 import RichText from "./components/RichText";
-import { formatDate, MetricCard, requestJson, Spinner } from "./AppShared";
+import { formatDate, MetricCard, MultiSelectBox, requestJson, Spinner } from "./AppShared";
 import { CalendarClock, ClipboardList, Clock3, FileCheck, Hourglass, Megaphone, Pencil, Plus, RefreshCw, Search, Send } from "lucide-react";
 import { EmptyState, MetricTile, Skeleton, clockTime, dateTile, relativeDay, stagger, toneIndex } from "./teacher/TeacherKit";
 import { setLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
@@ -991,7 +991,9 @@ export function TeacherExamBuilder({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentExamId, userId]);
 
-  const selectedClass = classOptions.find((item) => String(item.id) === String(form.classId));
+  const selectedClassLabels = classOptions
+    .filter((item) => (form.classIds || []).map(String).includes(String(item.id)))
+    .map((item) => item.label || item.name);
   const selectedSubject = subjectOptions.find((item) => String(item.id) === String(form.subjectId));
   const canPublishExam = ["school_admin", "principal", "super_admin"].includes(session?.user?.role);
   const builderSections = [
@@ -1063,7 +1065,7 @@ export function TeacherExamBuilder({
     return () => {
       cancelled = true;
     };
-  }, [session, form.subjectId, form.classId]);
+  }, [session, form.subjectId, form.classIds]);
 
   const addFromMyBank = (item) => {
     setQuestions((previous) => [...previous, normalizeBankQuestion(item)]);
@@ -1623,25 +1625,16 @@ export function TeacherExamBuilder({
               <label className="panel-field">Exam title<input value={form.title} onChange={(event) => setField("title", event.target.value)} placeholder="e.g. Mathematics mid-term" /></label>
               <label className="panel-field">Exam code<input value={form.code} onChange={(event) => setField("code", event.target.value)} placeholder="Optional" /></label>
               <label className="panel-field full">Description<textarea value={form.description} onChange={(event) => setField("description", event.target.value)} rows={4} placeholder="A line or two about what this exam covers (optional)" /></label>
-              <label className="panel-field">
+              <label className="panel-field full">
                 Class / Course
-                <select
-                  multiple
-                  value={form.classIds}
-                  onChange={(event) => {
-                    const selected = Array.from(event.target.selectedOptions, (option) => option.value);
-                    // "All classes" and picking specific ones are mutually
-                    // exclusive - choosing "All classes" clears any specific
-                    // picks, and vice versa.
-                    setField("classIds", selected.includes("") ? [] : selected);
-                  }}
-                  size={Math.min(6, classOptions.length + 1)}
-                >
-                  <option value="">All classes</option>
-                  {classOptions.map((item) => <option key={item.id} value={item.id}>{item.label || item.name}</option>)}
-                </select>
+                <MultiSelectBox
+                  options={classOptions}
+                  selected={form.classIds}
+                  onChange={(ids) => setField("classIds", ids)}
+                  emptyText="No classes found."
+                />
                 <small>
-                  Ctrl/Cmd-click (or long-press) to pick more than one class - each gets its own independent copy of this exam.
+                  Leave none checked for "All classes". Check more than one to give each its own independent copy of this exam.
                 </small>
               </label>
               <label className="panel-field">Subject<select value={form.subjectId} onChange={(event) => setField("subjectId", event.target.value)}><option value="">General</option>{subjectOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -1683,7 +1676,7 @@ export function TeacherExamBuilder({
                       <h3>My question bank</h3>
                       <p>
                         Questions you've saved for reuse{form.subjectId ? " in this subject" : ""}
-                        {form.classId ? ` and class` : ""} - and any a colleague has shared.
+                        {form.classIds?.[0] ? ` and class` : ""} - and any a colleague has shared.
                       </p>
                     </div>
                   </div>
@@ -2157,7 +2150,7 @@ export function TeacherExamBuilder({
           {activeSection === "review" ? (
             <div className="exam-review-grid">
               <MetricCard label="Exam" value={form.title || "Untitled"} trend={form.code || "No code yet"} />
-              <MetricCard label="Class" value={selectedClass?.label || selectedClass?.name || "All classes"} trend={selectedSubject?.name || "General"} />
+              <MetricCard label="Class" value={selectedClassLabels.length ? selectedClassLabels.join(", ") : "All classes"} trend={selectedSubject?.name || "General"} />
               <MetricCard label="Duration" value={`${manualDuration || 0} mins`} trend={`${form.startDate || "-"} to ${form.endDate || "-"}`} />
               <MetricCard label="Questions" value={questions.length} trend={`${totalMarks} total marks`} />
               <article className="app-panel full">
