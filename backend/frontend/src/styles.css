@@ -5078,15 +5078,31 @@ body[data-theme="dark"] .data-table tbody tr:hover { background: #0f2040 !import
 .exam-question-toggle.is-open .exam-question-chevron { transform: rotate(180deg); }
 
 .exam-question-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
   color: #64748b;
   font-weight: 400;
   font-size: 0.85em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
   max-width: 24rem;
 }
 body[data-theme="dark"] .exam-question-summary { color: #94a3b8; }
+
+.exam-question-summary-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exam-question-summary-meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: #475569;
+  font-weight: 600;
+}
+body[data-theme="dark"] .exam-question-summary-meta { color: #cbd5e1; }
 
 .promo-student-row td { padding-left: 2.1rem; color: #64748b; background: #f8fafc; font-weight: 400; }
 body[data-theme="dark"] .promo-student-row td { background: #0f1623; color: #94a3b8; }
@@ -8408,9 +8424,25 @@ body[data-theme="dark"] .token-usage-toast {
   gap: 0.35rem;
   justify-self: start;
   border: 1px solid #e2e8f0;
-  border-bottom: 0;
-  border-radius: 10px 10px 0 0;
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
   background: #f8fafc;
+  padding: 0.3rem;
+  /* Collapsed by default - slides/fades out from under the editor once it
+     has focus (see .is-focused below), instead of taking up space always. */
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  border-width: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  transition: max-height 180ms ease, opacity 150ms ease, padding 180ms ease, border-width 180ms ease;
+}
+
+.formatted-textarea.is-focused .formatted-textarea-toolbar {
+  max-height: 44px;
+  opacity: 1;
+  border-width: 1px;
   padding: 0.3rem;
 }
 
@@ -8436,7 +8468,7 @@ body[data-theme="dark"] .token-usage-toast {
   outline: none;
 }
 
-.formatted-textarea .formatted-textarea-editor { border-top-left-radius: 0; }
+.formatted-textarea.is-focused .formatted-textarea-editor { border-bottom-left-radius: 0; }
 
 .underline-format { text-decoration: underline; text-underline-offset: 3px; }
 
@@ -16971,6 +17003,28 @@ body[data-theme="dark"] .exam-builder-bottom-actions p {
   border-radius: 8px;
   margin-bottom: 14px;
   background: #f8fafc;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+/* Subtle expanded/collapsed distinction - the open question reads as "the
+   one you're working on", the rest recede without going flat/invisible. */
+.exam-builder-question.is-expanded {
+  border-color: #6366f1;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.exam-builder-question.is-collapsed {
+  background: #eef1f6;
+}
+
+body[data-theme="dark"] .exam-builder-question.is-expanded {
+  border-color: #6366f1;
+  background: #141b2e;
+}
+
+body[data-theme="dark"] .exam-builder-question.is-collapsed {
+  background: #0c1220;
 }
 
 .exam-builder-question .exam-builder-row {
@@ -16979,12 +17033,115 @@ body[data-theme="dark"] .exam-builder-bottom-actions p {
   background: transparent;
 }
 
+/* Lightweight expand/collapse - stays mounted (no remount flicker, keeps any
+   in-progress typing) and animates via max-height/opacity instead of a
+   heavier JS-measured height or a library. The max-height is a generous cap,
+   not a real height, so content is never clipped while open. */
+.exam-question-body {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 220ms ease, opacity 160ms ease;
+}
+
+.exam-question-body.is-expanded {
+  max-height: 3000px;
+  opacity: 1;
+}
+
 .cbt-option-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   padding: 0 14px 14px;
 }
+
+.exam-option-list {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0 14px 14px;
+}
+
+.exam-option-list-label {
+  margin: 0 0 0.1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+body[data-theme="dark"] .exam-option-list-label { color: #94a3b8; }
+
+.exam-option-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  background: #ffffff;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+body[data-theme="dark"] .exam-option-row {
+  border-color: #1e293b;
+  background: #111827;
+}
+
+.exam-option-row.is-correct {
+  border-color: #16a34a;
+  background: #f0fdf4;
+}
+body[data-theme="dark"] .exam-option-row.is-correct {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.exam-option-letter {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 8px;
+  background: #eef1f6;
+  color: #334155;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+body[data-theme="dark"] .exam-option-letter { background: #1e293b; color: #e2e8f0; }
+.exam-option-row.is-correct .exam-option-letter { background: #16a34a; color: #ffffff; }
+
+.exam-option-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0.3rem 0;
+  font-size: 0.875rem;
+  color: #0f172a;
+  font-family: inherit;
+}
+.exam-option-input:focus { outline: none; }
+body[data-theme="dark"] .exam-option-input { color: #e5e7eb; }
+
+.exam-option-radio {
+  flex: 0 0 auto;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  border: 2px solid #cbd5e1;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.exam-option-radio:hover { border-color: #16a34a; }
+.exam-option-radio.is-selected {
+  border-color: #16a34a;
+  background: #16a34a;
+  box-shadow: inset 0 0 0 3px #ffffff;
+}
+body[data-theme="dark"] .exam-option-radio.is-selected { box-shadow: inset 0 0 0 3px #111827; }
 
 .cbt-bank-picker {
   display: grid;

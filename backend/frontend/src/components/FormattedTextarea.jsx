@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function normalizeEditorHtml(html) {
   return String(html || "")
@@ -21,6 +21,11 @@ function normalizeEditorHtml(html) {
 
 export default function FormattedTextarea({ value = "", onChange, className = "", rows = 3, ...props }) {
   const editorRef = useRef(null);
+  // The B/I/U toolbar stays hidden until the editor has focus, then slides
+  // out from underneath it - keeps a page with many of these (lesson plans,
+  // report card remarks, exam questions) from showing a formatting toolbar
+  // on every single field all the time.
+  const [toolbarOpen, setToolbarOpen] = useState(false);
 
   const emitChange = (nextValue) => {
     onChange?.({ target: { value: nextValue } });
@@ -54,8 +59,25 @@ export default function FormattedTextarea({ value = "", onChange, className = ""
   };
 
   return (
-    <div className="formatted-textarea">
-      <div className="formatted-textarea-toolbar" aria-label="Text formatting controls">
+    <div className={`formatted-textarea${toolbarOpen ? " is-focused" : ""}`}>
+      <div
+        {...props}
+        ref={editorRef}
+        className={`formatted-textarea-editor ${className}`.trim()}
+        contentEditable
+        data-placeholder={props.placeholder || ""}
+        onInput={syncValue}
+        onFocus={() => setToolbarOpen(true)}
+        onBlur={() => {
+          syncValue();
+          setToolbarOpen(false);
+        }}
+        onPaste={handlePaste}
+        role="textbox"
+        aria-multiline="true"
+        style={{ minHeight: `${Math.max(Number(rows) || 3, 2) * 1.7}rem` }}
+      />
+      <div className="formatted-textarea-toolbar" aria-label="Text formatting controls" aria-hidden={!toolbarOpen}>
         <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => format("bold")} title="Bold selected text">
           <strong>B</strong>
         </button>
@@ -66,19 +88,6 @@ export default function FormattedTextarea({ value = "", onChange, className = ""
           <span className="underline-format">U</span>
         </button>
       </div>
-      <div
-        {...props}
-        ref={editorRef}
-        className={`formatted-textarea-editor ${className}`.trim()}
-        contentEditable
-        data-placeholder={props.placeholder || ""}
-        onInput={syncValue}
-        onBlur={syncValue}
-        onPaste={handlePaste}
-        role="textbox"
-        aria-multiline="true"
-        style={{ minHeight: `${Math.max(Number(rows) || 3, 2) * 1.7}rem` }}
-      />
     </div>
   );
 }

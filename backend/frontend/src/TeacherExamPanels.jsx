@@ -941,14 +941,12 @@ export function TeacherExamBuilder({
   const [questions, setQuestions] = useState([
     { ...newBuilderQuestion(), id: 1 },
   ]);
-  const [collapsedQuestionIds, setCollapsedQuestionIds] = useState(() => new Set());
-  const toggleQuestionCollapsed = useCallback((id) => {
-    setCollapsedQuestionIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  // Accordion: at most one question editor open at a time, matching how a
+  // teacher actually works through an exam (write/edit one question, move to
+  // the next) instead of a long page of every card open simultaneously.
+  const [expandedQuestionId, setExpandedQuestionId] = useState(questions[0]?.id ?? null);
+  const toggleQuestionExpanded = useCallback((id) => {
+    setExpandedQuestionId((prev) => (prev === id ? null : id));
   }, []);
   const [myBankQuestions, setMyBankQuestions] = useState([]);
   const [myBankLoading, setMyBankLoading] = useState(false);
@@ -1073,7 +1071,9 @@ export function TeacherExamBuilder({
   }, [session, form.subjectId, form.classIds]);
 
   const addFromMyBank = (item) => {
-    setQuestions((previous) => [...previous, normalizeBankQuestion(item)]);
+    const bankQuestion = normalizeBankQuestion(item);
+    setQuestions((previous) => [...previous, bankQuestion]);
+    setExpandedQuestionId(bankQuestion.id);
     setFeedback("Question added from your bank.");
     setError("");
   };
@@ -1196,11 +1196,9 @@ export function TeacherExamBuilder({
         questionAttachmentName: question.attachment ? question.attachment.split("/").pop() : "",
       };
     });
-    setQuestions(
-      loadedQuestions.length
-        ? loadedQuestions
-        : [{ ...newBuilderQuestion(), id: 1 }]
-    );
+    const nextQuestions = loadedQuestions.length ? loadedQuestions : [{ ...newBuilderQuestion(), id: 1 }];
+    setQuestions(nextQuestions);
+    setExpandedQuestionId(nextQuestions[0]?.id ?? null);
     setSections([{ id: 1, title: "Section A", marks: String(initialExam.duration_minutes || 50) }]);
     setActiveSection("details");
     setFeedback("");
@@ -1379,7 +1377,9 @@ export function TeacherExamBuilder({
   };
 
   const addQuestion = (questionType = "mcq", extra = {}) => {
-    setQuestions((previous) => [...previous, newBuilderQuestion(questionType, extra)]);
+    const question = newBuilderQuestion(questionType, extra);
+    setQuestions((previous) => [...previous, question]);
+    setExpandedQuestionId(question.id);
   };
 
   /* Removing a question needs no renumbering or re-totalling code of its own:
@@ -1870,14 +1870,19 @@ export function TeacherExamBuilder({
                 const questionType = question.questionType || "mcq";
                 const isTheoryQuestion = THEORY_QUESTION_TYPES.has(questionType);
                 const isComposition = isCompositionQuestion(question);
+                const isExpanded = expandedQuestionId === question.id;
+                const correctOptionLabel = !isTheoryQuestion && question.options?.length
+                  ? String.fromCharCode(65 + Number(question.correctIndex))
+                  : "";
                 return (
-                <div key={question.id} className="exam-builder-question">
+                <div key={question.id} className={`exam-builder-question${isExpanded ? " is-expanded" : " is-collapsed"}`}>
                   {question.sourceLabel ? <div className="cbt-question-source">From {question.sourceLabel}</div> : null}
                   <div className="exam-builder-row question-reorder-row">
                     <button
                       type="button"
-                      className={`exam-question-toggle${collapsedQuestionIds.has(question.id) ? "" : " is-open"}`}
-                      onClick={() => toggleQuestionCollapsed(question.id)}
+                      className={`exam-question-toggle${isExpanded ? " is-open" : ""}`}
+                      onClick={() => toggleQuestionExpanded(question.id)}
+                      aria-expanded={isExpanded}
                     >
                       <span className="exam-question-chevron">▾</span>
                       <span className="question-index">
@@ -1887,8 +1892,14 @@ export function TeacherExamBuilder({
                           {question.groupKey ? " · in passage" : ""}
                         </small>
                       </span>
-                      {collapsedQuestionIds.has(question.id) && question.text ? (
-                        <span className="exam-question-summary">{questionTextPreview(question.text)}</span>
+                      {!isExpanded ? (
+                        <span className="exam-question-summary">
+                          {question.text ? <span className="exam-question-summary-text">{questionTextPreview(question.text)}</span> : null}
+                          <span className="exam-question-summary-meta">
+                            {questionMarkValue(question)} mark{questionMarkValue(question) === 1 ? "" : "s"}
+                            {correctOptionLabel ? ` · Correct: ${correctOptionLabel}` : ""}
+                          </span>
+                        </span>
                       ) : null}
                     </button>
                     <div className="table-actions-inline">
@@ -1902,8 +1913,7 @@ export function TeacherExamBuilder({
                       </button>
                     </div>
                   </div>
-                  {collapsedQuestionIds.has(question.id) ? null : (
-                  <>
+                  <div className={`exam-question-body${isExpanded ? " is-expanded" : ""}`}>
                   <div className="exam-builder-row">
                     <label className="panel-field full">
                       {isComposition ? "Composition topic / instructions" : "Question text"}
@@ -2067,32 +2077,33 @@ export function TeacherExamBuilder({
                   </div>
                   {!isTheoryQuestion ? (
                     <>
-                      <div className="cbt-option-grid">
-                        {(question.options || []).map((option, optionIndex) => (
-                          <label key={optionIndex} className="panel-field">
-                            Option {String.fromCharCode(65 + optionIndex)}
-                            <input
-                              value={option}
-                              onChange={(event) => updateQuestionOption(question.id, optionIndex, event.target.value)}
-                              placeholder={`Answer option ${String.fromCharCode(65 + optionIndex)}`}
-                            />
-                          </label>
-                        ))}
+                      <div className="exam-option-list">
+                        <p className="exam-option-list-label">Answer options &middot; select the correct answer</p>
+                        {(question.options || []).map((option, optionIndex) => {
+                          const letter = String.fromCharCode(65 + optionIndex);
+                          const isCorrect = Number(question.correctIndex) === optionIndex;
+                          return (
+                            <div key={optionIndex} className={`exam-option-row${isCorrect ? " is-correct" : ""}`}>
+                              <span className="exam-option-letter">{letter}</span>
+                              <input
+                                className="exam-option-input"
+                                value={option}
+                                onChange={(event) => updateQuestionOption(question.id, optionIndex, event.target.value)}
+                                placeholder={`Answer option ${letter}`}
+                              />
+                              <button
+                                type="button"
+                                className={`exam-option-radio${isCorrect ? " is-selected" : ""}`}
+                                onClick={() => updateQuestion(question.id, { correctIndex: optionIndex })}
+                                aria-pressed={isCorrect}
+                                aria-label={`Mark option ${letter} as the correct answer`}
+                                title="Correct answer"
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
                       <div className="exam-builder-row">
-                        <label className="panel-field">
-                          Correct answer
-                          <select
-                            value={question.correctIndex}
-                            onChange={(event) => updateQuestion(question.id, { correctIndex: Number(event.target.value) })}
-                          >
-                            {(question.options || []).map((option, optionIndex) => (
-                              <option key={optionIndex} value={optionIndex}>
-                                {String.fromCharCode(65 + optionIndex)} {option ? `- ${option.slice(0, 40)}` : ""}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
                         <label className="panel-field full">
                           Teacher note / explanation
                           <FormattedTextarea
@@ -2127,8 +2138,7 @@ export function TeacherExamBuilder({
                       </label>
                     </div>
                   )}
-                  </>
-                  )}
+                  </div>
                 </div>
                 );
               })}
