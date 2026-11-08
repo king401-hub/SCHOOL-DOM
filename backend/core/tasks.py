@@ -140,19 +140,24 @@ def send_daily_attendance_report(*, school_code="", today=None, dry_run=False):
     """Send each school's admin(s) a WhatsApp summary of today's student and
     staff attendance - present/absent/late counts only.
 
-    Sent via Termii (send_termii_whatsapp), the same proactive-send path
-    send_parent_virtual_account_fee_reminder already uses for messages the
-    platform starts rather than replies to - not Bahasha, whose free-form
-    text only works for 24 hours after the recipient last messaged us (see
-    finance/docs/whatsapp-bahasha.md). The recipient is each admin's own
-    User.phone - there is no separate "admin WhatsApp number" setting.
+    Sent via send_whatsapp_message, which uses Bahasha when it's configured
+    (as it is in production) and only falls back to Termii when it isn't.
+    No template is passed, so this is a free-form message - it only goes
+    through for an admin whose 24-hour customer-service window is currently
+    open (i.e. they've messaged the school's WhatsApp number recently);
+    otherwise Bahasha rejects it and that admin's row comes back "failed:
+    Customer service window is closed...". An approved template removes that
+    limitation (see finance/docs/whatsapp-bahasha.md) - pass it as
+    template={...} here once one exists for this report. The recipient is
+    each admin's own User.phone - there is no separate "admin WhatsApp
+    number" setting.
 
     Runs once daily via cron, not Celery - see [[project-no-celery-in-production]].
     """
     from django.utils import timezone
 
     from academic.models import AttendanceRecord
-    from finance.services import send_termii_whatsapp
+    from finance.services import send_whatsapp_message
     from hr.models import StaffAttendance, StaffProfile
     from users.models import User
 
@@ -202,7 +207,11 @@ def send_daily_attendance_report(*, school_code="", today=None, dry_run=False):
             if dry_run:
                 rows.append({"admin": admin, "outcome": "dry_run", "phone": phone})
                 continue
-            send_result = send_termii_whatsapp(phone, message)
+            try:
+                send_result = send_whatsapp_message(phone, message)
+            except RuntimeError as exc:
+                rows.append({"admin": admin, "outcome": f"failed: {exc}", "phone": phone})
+                continue
             if send_result.get("status") == "success":
                 rows.append({"admin": admin, "outcome": "sent", "phone": phone})
             else:
