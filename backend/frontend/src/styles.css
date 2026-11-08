@@ -17826,6 +17826,15 @@ body[data-theme="dark"] .result-batch-modal-actions { border-top-color: #1e293b;
   gap: 0.4rem;
 }
 
+.exam-builder-import-picker,
+.add-question-picker {
+  max-width: 360px;
+}
+
+.exam-builder-import-picker {
+  margin-bottom: 0.9rem;
+}
+
 .exam-builder-total {
   margin: 0.6rem 0 0;
   color: #475569;

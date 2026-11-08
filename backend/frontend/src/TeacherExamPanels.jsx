@@ -966,6 +966,11 @@ export function TeacherExamBuilder({
   const [importFeedback, setImportFeedback] = useState("");
   const [importError, setImportError] = useState("");
   const [extractedImages, setExtractedImages] = useState([]);
+  // Which of the three "bring in questions from elsewhere" panels (my bank /
+  // central bank / paste-upload) is open, if any - collapses them behind one
+  // dropdown instead of showing all three permanently, since most exams only
+  // ever use one. "" means none open (just write questions below).
+  const [importSource, setImportSource] = useState("");
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1669,7 +1674,27 @@ export function TeacherExamBuilder({
 
           {activeSection === "questions" ? (
             <div className="exam-builder-list">
-              {form.examFormat !== "theory" ? (
+              {(() => {
+                const importOptions = [];
+                if (form.examFormat !== "theory") importOptions.push({ value: "bank", label: "My question bank" });
+                if (form.examFormat !== "theory" && centralBoards.length) {
+                  importOptions.push({ value: "central", label: "Central question bank (JAMB/WAEC/NECO)" });
+                }
+                if (form.examFormat === "objective") importOptions.push({ value: "paste", label: "Paste or upload questions" });
+                if (!importOptions.length) return null;
+                return (
+                  <label className="panel-field full exam-builder-import-picker">
+                    Add questions from
+                    <select value={importSource} onChange={(event) => setImportSource(event.target.value)}>
+                      <option value="">Write new questions below</option>
+                      {importOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                );
+              })()}
+              {importSource === "bank" && form.examFormat !== "theory" ? (
                 <div className="cbt-bank-picker my-question-bank-picker">
                   <div className="cbt-bank-picker-head">
                     <div>
@@ -1716,7 +1741,7 @@ export function TeacherExamBuilder({
                   )}
                 </div>
               ) : null}
-              {form.examFormat !== "theory" && centralBoards.length ? (
+              {importSource === "central" && form.examFormat !== "theory" && centralBoards.length ? (
                 <div className="cbt-bank-picker">
                   <div className="cbt-bank-picker-head">
                     <div>
@@ -1776,7 +1801,7 @@ export function TeacherExamBuilder({
                   </div>
                 </div>
               ) : null}
-              {form.examFormat === "objective" ? (
+              {importSource === "paste" && form.examFormat === "objective" ? (
                 <div className="standard-question-import">
                   <div className="cbt-bank-picker-head">
                     <div>
@@ -2107,26 +2132,32 @@ export function TeacherExamBuilder({
                 </div>
                 );
               })}
-              <div className="table-actions-inline exam-builder-add-row">
-                {form.examFormat !== "theory" ? (
-                  <button type="button" className="table-action" onClick={() => addQuestion("mcq")}>
-                    {form.examFormat === "mixed" ? "+ Objective question" : "+ Add a question"}
-                  </button>
-                ) : null}
-                {form.examFormat !== "objective" ? (
-                  <button type="button" className="table-action" onClick={() => addQuestion("short_answer")}>+ Theory question</button>
-                ) : null}
-                {form.examFormat !== "objective" ? (
-                  <button type="button" className="table-action" onClick={() => addQuestion("essay", { kind: COMPOSITION_KIND, marks: "20" })}>
-                    + Composition
-                  </button>
-                ) : null}
-                {/* A passage question is an ordinary question with a group attached;
-                    the group carries the passage, and further questions join it from
-                    the "Passage / group" picker on each question. */}
-                <button type="button" className="table-action" onClick={addPassageQuestion}>
-                  + Passage / comprehension
-                </button>
+              <div className="exam-builder-add-row">
+                <label className="panel-field add-question-picker">
+                  Add a question
+                  <select
+                    value=""
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value === "mcq") addQuestion("mcq");
+                      else if (value === "theory") addQuestion("short_answer");
+                      else if (value === "composition") addQuestion("essay", { kind: COMPOSITION_KIND, marks: "20" });
+                      // A passage question is an ordinary question with a group
+                      // attached; the group carries the passage, and further
+                      // questions join it from the "Passage / group" picker on
+                      // each question.
+                      else if (value === "passage") addPassageQuestion();
+                    }}
+                  >
+                    <option value="">Choose a question type...</option>
+                    {form.examFormat !== "theory" ? (
+                      <option value="mcq">{form.examFormat === "mixed" ? "Objective question" : "Add a question"}</option>
+                    ) : null}
+                    {form.examFormat !== "objective" ? <option value="theory">Theory question</option> : null}
+                    {form.examFormat !== "objective" ? <option value="composition">Composition</option> : null}
+                    <option value="passage">Passage / comprehension</option>
+                  </select>
+                </label>
               </div>
               <p className="exam-builder-total">
                 {questions.length} question{questions.length === 1 ? "" : "s"} &bull; {totalMarks} mark{totalMarks === 1 ? "" : "s"} in all
