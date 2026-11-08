@@ -1,13 +1,16 @@
 import re
 from datetime import timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from django.conf import settings
 from django.test import TestCase
 from django.utils import timezone
 
+from academic.models import AttendanceRecord
 from core.models import SchoolGroup, SchoolTenant, primary_school_tenants
-from core.tasks import send_compliance_reminders
+from core.tasks import send_compliance_reminders, send_daily_attendance_report
+from hr.models import StaffAttendance, StaffProfile
 from notifications.models import Notification
 from users.models import User
 
@@ -210,3 +213,127 @@ class ComplianceReminderTaskTests(TestCase):
         school.refresh_from_db()
         self.assertTrue(school.is_active)
         self.assertFalse(Notification.objects.filter(tenant=school).exists())
+
+
+class DailyAttendanceReportTests(TestCase):
+    """The daily WhatsApp attendance report: present/absent/late counts for
+    students and staff, folding anyone excused/half-day/never-marked into
+    "absent" (the 3-bucket report that was asked for), sent to every
+    school_admin/principal's own phone via Termii."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Roll Call School", schema_name="roll_call_school", is_active=True)
+        self.admin = User.objects.create_user(
+            email="admin@rollcall.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True, phone="+2348012345678",
+        )
+        self.today = timezone.localdate()
+
+    def _student(self, email, status=None):
+        student = User.objects.create_user(
+            email=email, password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        if status:
+            AttendanceRecord.objects.create(student=student, date=self.today, status=status)
+        return student
+
+    def _staff(self, code, status=None):
+        staff = StaffProfile.objects.create(
+            tenant=self.school, staff_code=code, first_name="Staff", last_name=code, role="Teacher",
+        )
+        if status:
+            StaffAttendance.objects.create(staff=staff, date=self.today, status=status)
+        return staff
+
+    @patch("finance.services.send_termii_whatsapp")
+    def test_counts_fold_unmarked_excused_and_half_day_into_absent_and_sends_whatsapp(self, mock_send):
+        mock_send.return_value = {"status": "success", "message_id": "abc"}
+        self._student("present@rollcall.edu", "present")
+        self._student("late@rollcall.edu", "late")
+        self._student("excused@rollcall.edu", "excused")
+        self._student("unmarked@rollcall.edu")  # no AttendanceRecord at all
+        self._staff("ST1", StaffAttendance.PRESENT)
+        self._staff("ST2", StaffAttendance.LATE)
+        self._staff("ST3", StaffAttendance.HALF_DAY)
+        self._staff("ST4")  # no StaffAttendance row at all
+
+        results = send_daily_attendance_report()
+
+        result = results[self.school.schema_name]
+        self.assertEqual(result["students"], {"total": 4, "present": 1, "late": 1, "absent": 2})
+        self.assertEqual(result["staff"], {"total": 4, "present": 1, "late": 1, "absent": 2})
+        self.assertIn("Present: 1", result["message"])
+        self.assertIn("Absent: 2", result["message"])
+
+        mock_send.assert_called_once_with("+2348012345678", result["message"])
+        self.assertEqual(result["rows"], [{"admin": self.admin, "outcome": "sent", "phone": "+2348012345678"}])
+
+    @patch("finance.services.send_termii_whatsapp")
+    def test_dry_run_sends_nothing(self, mock_send):
+        self._student("present@rollcall.edu", "present")
+
+        results = send_daily_attendance_report(dry_run=True)
+
+        mock_send.assert_not_called()
+        self.assertEqual(results[self.school.schema_name]["rows"], [{"admin": self.admin, "outcome": "dry_run", "phone": "+2348012345678"}])
+
+    @patch("finance.services.send_termii_whatsapp")
+    def test_admin_with_no_phone_is_skipped_not_crashed(self, mock_send):
+        self.admin.phone = ""
+        self.admin.save(update_fields=["phone"])
+        self._student("present@rollcall.edu", "present")
+
+        results = send_daily_attendance_report()
+
+        mock_send.assert_not_called()
+        self.assertEqual(results[self.school.schema_name]["rows"], [{"admin": self.admin, "outcome": "skipped_no_phone"}])
+
+    @patch("finance.services.send_termii_whatsapp")
+    def test_whatsapp_failure_is_reported_not_raised(self, mock_send):
+        mock_send.return_value = {"status": "error", "reason": "Termii credentials not configured."}
+        self._student("present@rollcall.edu", "present")
+
+        results = send_daily_attendance_report()
+
+        row = results[self.school.schema_name]["rows"][0]
+        self.assertEqual(row["outcome"], "failed: Termii credentials not configured.")
+
+    @patch("finance.services.send_termii_whatsapp")
+    def test_school_with_no_students_or_staff_is_excluded(self, mock_send):
+        results = send_daily_attendance_report()
+
+        self.assertNotIn(self.school.schema_name, results)
+        mock_send.assert_not_called()
+
+    @patch("finance.services.send_termii_whatsapp")
+    def test_school_filter_limits_to_one_school(self, mock_send):
+        mock_send.return_value = {"status": "success", "message_id": "abc"}
+        other_school = SchoolTenant.objects.create(name="Other School", schema_name="other_roll_call_school", is_active=True)
+        User.objects.create_user(
+            email="admin@other.edu", password="AdminPass123", role="school_admin",
+            tenant=other_school, is_active=True, is_verified=True, phone="+2348099999999",
+        )
+        self._student("present@rollcall.edu", "present")
+        User.objects.create_user(
+            email="student@other.edu", password="StudentPass123", role="student",
+            tenant=other_school, is_active=True, is_verified=True,
+        )
+
+        results = send_daily_attendance_report(school_code="roll_call_school")
+
+        self.assertEqual(list(results.keys()), [self.school.schema_name])
+        mock_send.assert_called_once()
+
+    @patch("finance.services.send_termii_whatsapp")
+    def test_report_date_can_be_overridden(self, mock_send):
+        mock_send.return_value = {"status": "success", "message_id": "abc"}
+        yesterday = self.today - timedelta(days=1)
+        student = self._student("present@rollcall.edu")
+        AttendanceRecord.objects.create(student=student, date=yesterday, status="present")
+
+        today_results = send_daily_attendance_report()
+        yesterday_results = send_daily_attendance_report(today=yesterday)
+
+        self.assertEqual(today_results[self.school.schema_name]["students"]["present"], 0)
+        self.assertEqual(yesterday_results[self.school.schema_name]["students"]["present"], 1)

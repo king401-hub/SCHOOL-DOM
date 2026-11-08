@@ -125,3 +125,94 @@ def send_compliance_reminders():
             reminders_sent += 1
 
     return {"reminders_sent": reminders_sent, "suspended": suspended, "skipped_no_recipient": skipped_no_recipient}
+
+
+# Folded into "absent" rather than given their own bucket: a student/staff
+# member excused, on a half day (staff only), or never marked at all for the
+# day. Matches the 3-bucket present/absent/late report that was asked for -
+# see admin_attendance_summary (users/app_views.py) and
+# staff_attendance_day_summary (hr/views.py) for the 4/5-bucket detailed
+# version this intentionally simplifies.
+ATTENDANCE_REPORT_ADMIN_ROLES = ("school_admin", "principal")
+
+
+def send_daily_attendance_report(*, school_code="", today=None, dry_run=False):
+    """Send each school's admin(s) a WhatsApp summary of today's student and
+    staff attendance - present/absent/late counts only.
+
+    Sent via Termii (send_termii_whatsapp), the same proactive-send path
+    send_parent_virtual_account_fee_reminder already uses for messages the
+    platform starts rather than replies to - not Bahasha, whose free-form
+    text only works for 24 hours after the recipient last messaged us (see
+    finance/docs/whatsapp-bahasha.md). The recipient is each admin's own
+    User.phone - there is no separate "admin WhatsApp number" setting.
+
+    Runs once daily via cron, not Celery - see [[project-no-celery-in-production]].
+    """
+    from django.utils import timezone
+
+    from academic.models import AttendanceRecord
+    from finance.services import send_termii_whatsapp
+    from hr.models import StaffAttendance, StaffProfile
+    from users.models import User
+
+    from core.models import SchoolTenant
+
+    report_date = today or timezone.localdate()
+    schools = SchoolTenant.objects.filter(is_active=True)
+    if school_code:
+        schools = schools.filter(schema_name__iexact=school_code)
+
+    results = {}
+    for school in schools:
+        total_students = User.objects.filter(tenant=school, role="student", is_active=True).count()
+        student_qs = AttendanceRecord.objects.filter(student__tenant=school, date=report_date)
+        students_present = student_qs.filter(status="present").count()
+        students_late = student_qs.filter(status="late").count()
+        students_absent = max(total_students - students_present - students_late, 0)
+
+        total_staff = StaffProfile.objects.filter(tenant=school).exclude(employment_status=StaffProfile.EXITED).count()
+        staff_qs = StaffAttendance.objects.filter(staff__tenant=school, date=report_date)
+        staff_present = staff_qs.filter(status=StaffAttendance.PRESENT).count()
+        staff_late = staff_qs.filter(status=StaffAttendance.LATE).count()
+        staff_absent = max(total_staff - staff_present - staff_late, 0)
+
+        if total_students == 0 and total_staff == 0:
+            continue
+
+        message = (
+            f"{school.name}\n"
+            f"Attendance report - {report_date.strftime('%d %b %Y')}\n\n"
+            f"Students ({total_students})\n"
+            f"Present: {students_present}\n"
+            f"Absent: {students_absent}\n"
+            f"Late: {students_late}\n\n"
+            f"Staff ({total_staff})\n"
+            f"Present: {staff_present}\n"
+            f"Absent: {staff_absent}\n"
+            f"Late: {staff_late}"
+        )
+
+        rows = []
+        for admin in User.objects.filter(tenant=school, role__in=ATTENDANCE_REPORT_ADMIN_ROLES, is_active=True):
+            phone = (admin.phone or "").strip()
+            if not phone:
+                rows.append({"admin": admin, "outcome": "skipped_no_phone"})
+                continue
+            if dry_run:
+                rows.append({"admin": admin, "outcome": "dry_run", "phone": phone})
+                continue
+            send_result = send_termii_whatsapp(phone, message)
+            if send_result.get("status") == "success":
+                rows.append({"admin": admin, "outcome": "sent", "phone": phone})
+            else:
+                rows.append({"admin": admin, "outcome": f"failed: {send_result.get('reason', 'unknown error')}", "phone": phone})
+
+        results[school.schema_name] = {
+            "message": message,
+            "students": {"total": total_students, "present": students_present, "absent": students_absent, "late": students_late},
+            "staff": {"total": total_staff, "present": staff_present, "absent": staff_absent, "late": staff_late},
+            "rows": rows,
+        }
+
+    return results
