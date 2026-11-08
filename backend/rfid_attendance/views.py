@@ -1027,7 +1027,13 @@ def people_lookup(request):
     exclude_assigned = str(request.query_params.get('exclude_assigned') or '').lower() == 'true'
 
     results = []
-    for person in qs.order_by('first_name', 'last_name')[:300]:
+    # This screen has no "load more" - the kiosk app shows exactly what comes
+    # back. A low cap here (this used to be 300) silently hides anyone past
+    # it in alphabetical order, which looks like "the app isn't pulling
+    # everyone" on any school with more assignable people than the cap. The
+    # cap stays only as a sanity ceiling, set far above any real school's
+    # headcount, not as a page size.
+    for person in qs.order_by('first_name', 'last_name')[:10000]:
         has_card = person.id in active_card_holder_ids
         if exclude_assigned and has_card:
             continue

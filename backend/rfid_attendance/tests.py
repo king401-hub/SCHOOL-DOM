@@ -592,6 +592,57 @@ class PendingCardScanTapToCaptureTests(TestCase):
         self.assertFalse(response.data["found"])
 
 
+class PeopleLookupTestCase(TestCase):
+    """people_lookup backs the Card Assign app's picker. It used to cap the
+    result set at 300 rows with no pagination and no signal to the client -
+    any school with more than 300 assignable people in a role would just
+    silently lose everyone past the 300th in alphabetical order."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Big School", schema_name="big_school")
+        self.admin = User.objects.create_user(
+            email="admin@test.com", password="testpass123", role="school_admin", tenant=self.school,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def _make_student(self, tenant, first, last):
+        return User.objects.create_user(
+            email=f"{first}.{last}@test.com".lower(), password="testpass123",
+            role="student", tenant=tenant, first_name=first, last_name=last,
+        )
+
+    def test_every_student_past_the_old_300_cap_is_still_returned(self):
+        # bulk_create with one shared pre-hashed password, not 320 individual
+        # create_user() calls - password hashing is deliberately slow, and
+        # none of these accounts is ever logged in with.
+        from django.contrib.auth.hashers import make_password
+
+        shared_password = make_password("testpass123")
+        User.objects.bulk_create([
+            User(
+                email=f"student{i:04d}@test.com", password=shared_password,
+                role="student", tenant=self.school, first_name=f"Student{i:04d}", last_name="Zzz",
+            )
+            for i in range(320)
+        ])
+
+        response = self.client.get("/api/rfid/people/?roles=student")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["data"]), 320)
+
+    def test_a_different_schools_people_are_never_counted_into_the_cap(self):
+        other_school = SchoolTenant.objects.create(name="Other School", schema_name="other_school")
+        self._make_student(other_school, "Outside", "Student")
+        self._make_student(self.school, "Inside", "Student")
+
+        response = self.client.get("/api/rfid/people/?roles=student")
+
+        names = [row["name"] for row in response.data["data"]]
+        self.assertEqual(names, ["Student Inside"])  # surname first
+
+
 class MarkSchoolgateAbsenteesTestCase(TestCase):
     """mark_schoolgate_absentees - the server-side no-show backstop that
     marks a student absent once their school's gate clock-out window has
