@@ -1020,8 +1020,11 @@ export function TeacherExamBuilder({
   };
   const manualDuration = Number(form.duration) || 0;
   const normalizeBankQuestion = (item) => {
+    // Preserve however many options the bank question actually has (teachers
+    // can add/remove options in the editor now) rather than forcing every
+    // question to exactly 4 - only pad up to the backend's real minimum of 2.
     const options = [...(item.options || [])];
-    while (options.length < 4) {
+    while (options.length < 2) {
       options.push("");
     }
     const correctIndex = Math.max(0, options.findIndex((option) => option === item.correct_answer));
@@ -1173,8 +1176,11 @@ export function TeacherExamBuilder({
     });
     setIsPublished(Boolean(initialExam.is_published));
     const loadedQuestions = (initialExam.questions || []).map((question, index) => {
+      // Preserve however many options this saved question actually has
+      // (teachers can add/remove options now) rather than forcing every
+      // question to exactly 4 - only pad up to the backend's real minimum of 2.
       const options = [...(question.options || [])];
-      while (options.length < 4) {
+      while (options.length < 2) {
         options.push("");
       }
       const correctIndex = Math.max(0, options.findIndex((option) => option === question.correct_answer));
@@ -1392,6 +1398,59 @@ export function TeacherExamBuilder({
     setPendingRemoval(null);
     setFeedback("Question removed. Save the exam to keep this change.");
     setError("");
+  };
+
+  const duplicateQuestion = (questionId) => {
+    setQuestions((previous) => {
+      const sourceIndex = previous.findIndex((item) => item.id === questionId);
+      if (sourceIndex === -1) return previous;
+      const copy = {
+        ...previous[sourceIndex],
+        id: Date.now() + Math.random(),
+        cbtBankQuestionId: null,
+        sourceLabel: "",
+        saveToBank: false,
+      };
+      const next = [...previous];
+      next.splice(sourceIndex + 1, 0, copy);
+      setExpandedQuestionId(copy.id);
+      return next;
+    });
+  };
+
+  const moveQuestion = (questionId, direction) => {
+    setQuestions((previous) => {
+      const index = previous.findIndex((item) => item.id === questionId);
+      const targetIndex = index + direction;
+      if (index === -1 || targetIndex < 0 || targetIndex >= previous.length) return previous;
+      const next = [...previous];
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      return next;
+    });
+  };
+
+  // An MCQ needs at least 2 options (same floor the backend enforces in
+  // _clean_exam_questions_payload) - removeOption refuses to go below that
+  // rather than letting the teacher save a question that would fail.
+  const MIN_MCQ_OPTIONS = 2;
+
+  const addOption = (questionId) => {
+    setQuestions((previous) =>
+      previous.map((item) => (item.id === questionId ? { ...item, options: [...(item.options || []), ""] } : item))
+    );
+  };
+
+  const removeOption = (questionId, optionIndex) => {
+    setQuestions((previous) =>
+      previous.map((item) => {
+        if (item.id !== questionId || (item.options || []).length <= MIN_MCQ_OPTIONS) return item;
+        const options = item.options.filter((_, index) => index !== optionIndex);
+        let correctIndex = Number(item.correctIndex) || 0;
+        if (optionIndex === correctIndex) correctIndex = 0;
+        else if (optionIndex < correctIndex) correctIndex -= 1;
+        return { ...item, options, correctIndex: Math.max(0, Math.min(correctIndex, options.length - 1)) };
+      })
+    );
   };
 
   const importStandardQuestions = () => {
@@ -1902,7 +1961,36 @@ export function TeacherExamBuilder({
                         </span>
                       ) : null}
                     </button>
-                    <div className="table-actions-inline">
+                    <div className="table-actions-inline exam-question-header-actions">
+                      <button
+                        type="button"
+                        className="exam-question-icon-action"
+                        onClick={() => moveQuestion(question.id, -1)}
+                        disabled={index === 0}
+                        aria-label={`Move question ${index + 1} up`}
+                        title="Move up"
+                      >
+                        &uarr;
+                      </button>
+                      <button
+                        type="button"
+                        className="exam-question-icon-action"
+                        onClick={() => moveQuestion(question.id, 1)}
+                        disabled={index === questions.length - 1}
+                        aria-label={`Move question ${index + 1} down`}
+                        title="Move down"
+                      >
+                        &darr;
+                      </button>
+                      <button
+                        type="button"
+                        className="table-action"
+                        onClick={() => duplicateQuestion(question.id)}
+                        aria-label={`Duplicate question ${index + 1}`}
+                        title="Duplicate this question"
+                      >
+                        Duplicate
+                      </button>
                       <button
                         type="button"
                         className="table-action danger"
@@ -1969,184 +2057,203 @@ export function TeacherExamBuilder({
                     )}
                     <label className="panel-field">Marks<input type="number" min="1" value={question.marks} onChange={(event) => updateQuestion(question.id, { marks: event.target.value })} /></label>
                   </div>
-                  <div className="exam-builder-row question-media-row">
-                    <label className="panel-field">
-                      Question image
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0] || null;
-                          updateQuestion(question.id, {
-                            questionImageFile: file,
-                            questionImagePreview: file ? filePreviewUrl(file) : question.questionImagePreview || "",
-                          });
-                        }}
-                      />
-                    </label>
-                    {question.questionImagePreview ? (
-                      <img className="question-builder-image-preview" src={question.questionImagePreview} alt="Question attachment preview" />
-                    ) : null}
-                    {isTheoryQuestion ? (
+                  {!isTheoryQuestion ? (
+                    <div className="exam-option-list">
+                      <p className="exam-option-list-label">Answer options &middot; select the correct answer</p>
+                      {(question.options || []).map((option, optionIndex) => {
+                        const letter = String.fromCharCode(65 + optionIndex);
+                        const isCorrect = Number(question.correctIndex) === optionIndex;
+                        return (
+                          <div key={optionIndex} className={`exam-option-row${isCorrect ? " is-correct" : ""}`}>
+                            <span className="exam-option-letter">{letter}</span>
+                            <input
+                              className="exam-option-input"
+                              value={option}
+                              onChange={(event) => updateQuestionOption(question.id, optionIndex, event.target.value)}
+                              placeholder={`Answer option ${letter}`}
+                            />
+                            <button
+                              type="button"
+                              className={`exam-option-radio${isCorrect ? " is-selected" : ""}`}
+                              onClick={() => updateQuestion(question.id, { correctIndex: optionIndex })}
+                              aria-pressed={isCorrect}
+                              aria-label={`Mark option ${letter} as the correct answer`}
+                              title="Correct answer"
+                            />
+                            <button
+                              type="button"
+                              className="exam-option-remove"
+                              onClick={() => removeOption(question.id, optionIndex)}
+                              disabled={(question.options || []).length <= MIN_MCQ_OPTIONS}
+                              aria-label={`Remove option ${letter}`}
+                              title="Remove this option"
+                            >
+                              &times;
+                            </button>
+                          </div>
+                        );
+                      })}
+                      <button type="button" className="exam-option-add" onClick={() => addOption(question.id)}>
+                        + Add option
+                      </button>
+                    </div>
+                  ) : null}
+                  <details className="exam-question-more">
+                    <summary>More options</summary>
+                    <div className="exam-builder-row question-media-row">
                       <label className="panel-field">
-                        File attachment (optional)
+                        Question image
                         <input
                           type="file"
+                          accept="image/*"
                           onChange={(event) => {
                             const file = event.target.files?.[0] || null;
                             updateQuestion(question.id, {
-                              questionAttachmentFile: file,
-                              questionAttachmentName: file ? file.name : question.questionAttachmentName || "",
+                              questionImageFile: file,
+                              questionImagePreview: file ? filePreviewUrl(file) : question.questionImagePreview || "",
                             });
                           }}
                         />
-                        {question.questionAttachmentName ? <small>{question.questionAttachmentName}</small> : null}
                       </label>
-                    ) : null}
-                  </div>
-                  <div className="question-group-builder">
-                    <div className="exam-builder-row">
-                      <label className="panel-field">
-                        Passage / group
-                        <select
-                          value={question.groupKey || ""}
-                          onChange={(event) => {
-                            const nextKey = event.target.value;
-                            if (!nextKey) updateQuestion(question.id, { groupKey: "", group: { title: "", group_type: "passage", passage_text: "", imagePreview: "" } });
-                            else attachQuestionToGroup(question.id, nextKey);
-                          }}
-                        >
-                          <option value="">Standalone question</option>
-                          {groupOptions.map((group) => (
-                            <option key={group.key} value={group.key}>{group.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <button type="button" className="table-action" onClick={() => createQuestionGroup(question.id)}>
-                        New passage group
-                      </button>
-                    </div>
-                    {question.groupKey ? (
-                      <>
-                        <div className="exam-builder-row">
-                          <label className="panel-field">
-                            Group type
-                            <select value={question.group?.group_type || "passage"} onChange={(event) => updateQuestionGroup(question.id, { group_type: event.target.value })}>
-                              <option value="passage">Passage</option>
-                              <option value="comprehension">Comprehension</option>
-                              <option value="register">Register</option>
-                              <option value="diagram">Diagram / chart</option>
-                              <option value="other">Other</option>
-                            </select>
-                          </label>
-                          <label className="panel-field full">
-                            Group title
-                            <input value={question.group?.title || ""} onChange={(event) => updateQuestionGroup(question.id, { title: event.target.value })} placeholder="e.g. Passage A" />
-                          </label>
-                        </div>
-                        <label className="panel-field full">
-                          Passage / shared prompt
-                          <FormattedTextarea
-                            value={question.group?.passage_text || ""}
-                            onChange={(event) => updateQuestionGroup(question.id, { passage_text: event.target.value })}
-                            rows={4}
-                            placeholder="Text shown once before all linked questions"
+                      {question.questionImagePreview ? (
+                        <img className="question-builder-image-preview" src={question.questionImagePreview} alt="Question attachment preview" />
+                      ) : null}
+                      {isTheoryQuestion ? (
+                        <label className="panel-field">
+                          File attachment (optional)
+                          <input
+                            type="file"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] || null;
+                              updateQuestion(question.id, {
+                                questionAttachmentFile: file,
+                                questionAttachmentName: file ? file.name : question.questionAttachmentName || "",
+                              });
+                            }}
                           />
+                          {question.questionAttachmentName ? <small>{question.questionAttachmentName}</small> : null}
                         </label>
-                        <div className="exam-builder-row question-media-row">
-                          <label className="panel-field">
-                            Passage image
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(event) => {
-                                const file = event.target.files?.[0] || null;
-                                updateQuestionGroup(question.id, {
-                                  imageFile: file,
-                                  imagePreview: file ? filePreviewUrl(file) : question.group?.imagePreview || "",
-                                });
-                              }}
+                      ) : null}
+                    </div>
+                    <div className="question-group-builder">
+                      <div className="exam-builder-row">
+                        <label className="panel-field">
+                          Passage / group
+                          <select
+                            value={question.groupKey || ""}
+                            onChange={(event) => {
+                              const nextKey = event.target.value;
+                              if (!nextKey) updateQuestion(question.id, { groupKey: "", group: { title: "", group_type: "passage", passage_text: "", imagePreview: "" } });
+                              else attachQuestionToGroup(question.id, nextKey);
+                            }}
+                          >
+                            <option value="">Standalone question</option>
+                            {groupOptions.map((group) => (
+                              <option key={group.key} value={group.key}>{group.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button type="button" className="table-action" onClick={() => createQuestionGroup(question.id)}>
+                          New passage group
+                        </button>
+                      </div>
+                      {question.groupKey ? (
+                        <>
+                          <div className="exam-builder-row">
+                            <label className="panel-field">
+                              Group type
+                              <select value={question.group?.group_type || "passage"} onChange={(event) => updateQuestionGroup(question.id, { group_type: event.target.value })}>
+                                <option value="passage">Passage</option>
+                                <option value="comprehension">Comprehension</option>
+                                <option value="register">Register</option>
+                                <option value="diagram">Diagram / chart</option>
+                                <option value="other">Other</option>
+                              </select>
+                            </label>
+                            <label className="panel-field full">
+                              Group title
+                              <input value={question.group?.title || ""} onChange={(event) => updateQuestionGroup(question.id, { title: event.target.value })} placeholder="e.g. Passage A" />
+                            </label>
+                          </div>
+                          <label className="panel-field full">
+                            Passage / shared prompt
+                            <FormattedTextarea
+                              value={question.group?.passage_text || ""}
+                              onChange={(event) => updateQuestionGroup(question.id, { passage_text: event.target.value })}
+                              rows={4}
+                              placeholder="Text shown once before all linked questions"
                             />
                           </label>
-                          {question.group?.imagePreview ? (
-                            <img className="question-builder-image-preview" src={question.group.imagePreview} alt="Passage attachment preview" />
-                          ) : null}
-                        </div>
-                      </>
-                    ) : null}
-                  </div>
-                  {!isTheoryQuestion ? (
-                    <>
-                      <div className="exam-option-list">
-                        <p className="exam-option-list-label">Answer options &middot; select the correct answer</p>
-                        {(question.options || []).map((option, optionIndex) => {
-                          const letter = String.fromCharCode(65 + optionIndex);
-                          const isCorrect = Number(question.correctIndex) === optionIndex;
-                          return (
-                            <div key={optionIndex} className={`exam-option-row${isCorrect ? " is-correct" : ""}`}>
-                              <span className="exam-option-letter">{letter}</span>
+                          <div className="exam-builder-row question-media-row">
+                            <label className="panel-field">
+                              Passage image
                               <input
-                                className="exam-option-input"
-                                value={option}
-                                onChange={(event) => updateQuestionOption(question.id, optionIndex, event.target.value)}
-                                placeholder={`Answer option ${letter}`}
+                                type="file"
+                                accept="image/*"
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0] || null;
+                                  updateQuestionGroup(question.id, {
+                                    imageFile: file,
+                                    imagePreview: file ? filePreviewUrl(file) : question.group?.imagePreview || "",
+                                  });
+                                }}
                               />
-                              <button
-                                type="button"
-                                className={`exam-option-radio${isCorrect ? " is-selected" : ""}`}
-                                onClick={() => updateQuestion(question.id, { correctIndex: optionIndex })}
-                                aria-pressed={isCorrect}
-                                aria-label={`Mark option ${letter} as the correct answer`}
-                                title="Correct answer"
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
+                            </label>
+                            {question.group?.imagePreview ? (
+                              <img className="question-builder-image-preview" src={question.group.imagePreview} alt="Passage attachment preview" />
+                            ) : null}
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                    {!isTheoryQuestion ? (
+                      <>
+                        <div className="exam-builder-row">
+                          <label className="panel-field full">
+                            Teacher note / explanation
+                            <FormattedTextarea
+                              value={question.explanation}
+                              onChange={(event) => updateQuestion(question.id, { explanation: event.target.value })}
+                              rows={2}
+                              placeholder="Optional review note for teacher records"
+                            />
+                          </label>
+                        </div>
+                        {!question.cbtBankQuestionId ? (
+                          <label className="panel-field full checkbox-field">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(question.saveToBank)}
+                              onChange={(event) => updateQuestion(question.id, { saveToBank: event.target.checked })}
+                            />
+                            Save to my question bank, so I can reuse it in a future exam
+                          </label>
+                        ) : null}
+                      </>
+                    ) : (
                       <div className="exam-builder-row">
                         <label className="panel-field full">
-                          Teacher note / explanation
+                          Model answer / grading notes (optional, for the grader only - students never see this)
                           <FormattedTextarea
                             value={question.explanation}
                             onChange={(event) => updateQuestion(question.id, { explanation: event.target.value })}
-                            rows={2}
-                            placeholder="Optional review note for teacher records"
+                            rows={3}
+                            placeholder="Optional notes to guide manual grading"
                           />
                         </label>
                       </div>
-                      {!question.cbtBankQuestionId ? (
-                        <label className="panel-field full checkbox-field">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(question.saveToBank)}
-                            onChange={(event) => updateQuestion(question.id, { saveToBank: event.target.checked })}
-                          />
-                          Save to my question bank, so I can reuse it in a future exam
-                        </label>
-                      ) : null}
-                    </>
-                  ) : (
-                    <div className="exam-builder-row">
-                      <label className="panel-field full">
-                        Model answer / grading notes (optional, for the grader only - students never see this)
-                        <FormattedTextarea
-                          value={question.explanation}
-                          onChange={(event) => updateQuestion(question.id, { explanation: event.target.value })}
-                          rows={3}
-                          placeholder="Optional notes to guide manual grading"
-                        />
-                      </label>
-                    </div>
-                  )}
+                    )}
+                  </details>
                   </div>
                 </div>
                 );
               })}
               <div className="exam-builder-add-row">
-                <label className="panel-field add-question-picker">
-                  Add a question
+                <div className="exam-add-question-trigger" title="Add a question">
+                  <span className="exam-add-question-icon" aria-hidden="true">+</span>
                   <select
                     value=""
+                    aria-label="Add a question"
                     onChange={(event) => {
                       const value = event.target.value;
                       if (value === "mcq") addQuestion("mcq");
@@ -2159,7 +2266,7 @@ export function TeacherExamBuilder({
                       else if (value === "passage") addPassageQuestion();
                     }}
                   >
-                    <option value="">Choose a question type...</option>
+                    <option value="" disabled>Add a question</option>
                     {form.examFormat !== "theory" ? (
                       <option value="mcq">{form.examFormat === "mixed" ? "Objective question" : "Add a question"}</option>
                     ) : null}
@@ -2167,7 +2274,7 @@ export function TeacherExamBuilder({
                     {form.examFormat !== "objective" ? <option value="composition">Composition</option> : null}
                     <option value="passage">Passage / comprehension</option>
                   </select>
-                </label>
+                </div>
               </div>
               <p className="exam-builder-total">
                 {questions.length} question{questions.length === 1 ? "" : "s"} &bull; {totalMarks} mark{totalMarks === 1 ? "" : "s"} in all

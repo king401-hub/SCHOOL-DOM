@@ -17983,14 +17983,127 @@ body[data-theme="dark"] .result-batch-modal-actions { border-top-color: #1e293b;
   gap: 0.4rem;
 }
 
-.exam-builder-import-picker,
-.add-question-picker {
-  max-width: 360px;
-}
-
 .exam-builder-import-picker {
+  max-width: 360px;
   margin-bottom: 0.9rem;
 }
+
+/* A native <select> visually disguised as a round "+" button: the select
+   itself is stretched invisibly over the whole circle so the real dropdown
+   (with real option text, real keyboard/screen-reader support) still opens
+   on click - only its own text is hidden, replaced by the decorative badge
+   drawn on top of it. */
+.exam-add-question-trigger {
+  position: relative;
+  width: 2.6rem;
+  height: 2.6rem;
+}
+
+.exam-add-question-icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #4f46e5;
+  color: #ffffff;
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  transition: background 150ms ease, transform 150ms ease;
+}
+
+.exam-add-question-trigger:hover .exam-add-question-icon { background: #4338ca; }
+
+.exam-add-question-trigger select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.exam-question-icon-action {
+  width: 1.9rem;
+  height: 1.9rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0;
+}
+.exam-question-icon-action:hover:not(:disabled) { border-color: #6366f1; color: #4f46e5; }
+.exam-question-icon-action:disabled { opacity: 0.35; cursor: not-allowed; }
+body[data-theme="dark"] .exam-question-icon-action { background: #111827; border-color: #1e293b; color: #cbd5e1; }
+
+.exam-question-header-actions { flex-wrap: nowrap; }
+
+/* Native <details> for "More options" - a free, accessible, animation-free
+   disclosure (no extra React state per question needed) that hides the
+   occasional-use fields (image, passage group, explanation/marking notes,
+   save-to-bank) behind one click instead of always showing them. */
+.exam-question-more {
+  margin: 0 14px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0;
+}
+body[data-theme="dark"] .exam-question-more { border-color: #1e293b; }
+
+.exam-question-more summary {
+  cursor: pointer;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #4f46e5;
+  list-style: none;
+}
+.exam-question-more summary::-webkit-details-marker { display: none; }
+.exam-question-more summary::before { content: "▸ "; }
+.exam-question-more[open] summary::before { content: "▾ "; }
+.exam-question-more[open] summary { border-bottom: 1px solid #e2e8f0; }
+body[data-theme="dark"] .exam-question-more[open] summary { border-bottom-color: #1e293b; }
+
+.exam-question-more .exam-builder-row:first-of-type { margin-top: 10px; }
+
+.exam-option-add {
+  justify-self: start;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: transparent;
+  color: #4f46e5;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+}
+.exam-option-add:hover { border-color: #4f46e5; background: rgba(79, 70, 229, 0.05); }
+body[data-theme="dark"] .exam-option-add { border-color: #334155; }
+
+.exam-option-remove {
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.exam-option-remove:hover:not(:disabled) { background: #fee2e2; color: #dc2626; }
+.exam-option-remove:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .exam-builder-total {
   margin: 0.6rem 0 0;
