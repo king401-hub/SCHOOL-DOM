@@ -14,7 +14,10 @@ from finance.models import (
     BankPayment,
     ExpenseRecord,
     FinanceLedgerLog,
+    OneTimeBillingCharge,
+    RecurringBillingPlan,
     SchoolFee,
+    StudentBillingSubscription,
     StudentPaymentReference,
     StudentActivationCredit,
     Transaction,
@@ -370,6 +373,100 @@ class ClassFeeSerializer(serializers.ModelSerializer):
     def get_class_label(self, obj):
         section = getattr(obj.school_class, "section", "") or ""
         return f"{obj.school_class.name} - {section}" if section else obj.school_class.name
+
+
+class RecurringBillingPlanSerializer(serializers.ModelSerializer):
+    class_labels = serializers.SerializerMethodField()
+    subscriber_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RecurringBillingPlan
+        fields = [
+            "id",
+            "title",
+            "description",
+            "amount",
+            "currency",
+            "classes",
+            "class_labels",
+            "applies_to_all_classes",
+            "frequency",
+            "effective_start_date",
+            "effective_end_date",
+            "auto_apply_to_new_students",
+            "status",
+            "subscriber_count",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_class_labels(self, obj):
+        return [
+            f"{c.name} - {c.section}" if getattr(c, "section", "") else c.name
+            for c in obj.classes.all()
+        ]
+
+    def get_subscriber_count(self, obj):
+        return obj.subscriptions.filter(status=StudentBillingSubscription.STATUS_ACTIVE).count()
+
+
+class StudentBillingSubscriptionSerializer(serializers.ModelSerializer):
+    student_name = serializers.SerializerMethodField()
+    plan_title = serializers.CharField(source="plan.title", read_only=True)
+
+    class Meta:
+        model = StudentBillingSubscription
+        fields = [
+            "id",
+            "plan",
+            "plan_title",
+            "student",
+            "student_name",
+            "billing_anchor_date",
+            "next_billing_date",
+            "cycles_billed",
+            "status",
+            "cancelled_at",
+            "created_at",
+        ]
+
+    def get_student_name(self, obj):
+        return obj.student.user.get_full_name() or obj.student.user.email
+
+
+class OneTimeBillingChargeSerializer(serializers.ModelSerializer):
+    class_labels = serializers.SerializerMethodField()
+    applied_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OneTimeBillingCharge
+        fields = [
+            "id",
+            "title",
+            "description",
+            "amount",
+            "currency",
+            "classes",
+            "class_labels",
+            "applies_to_all_classes",
+            "effective_start_date",
+            "expiry_date",
+            "due_in_days",
+            "auto_apply_to_new_students",
+            "status",
+            "applied_count",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_class_labels(self, obj):
+        return [
+            f"{c.name} - {c.section}" if getattr(c, "section", "") else c.name
+            for c in obj.classes.all()
+        ]
+
+    def get_applied_count(self, obj):
+        return obj.applications.count()
 
 
 class BillItemSerializer(serializers.ModelSerializer):

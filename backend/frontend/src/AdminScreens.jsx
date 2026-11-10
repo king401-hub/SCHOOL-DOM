@@ -1547,6 +1547,7 @@ const FINANCE_RECORD_TABS = [
   { key: "student-payments", label: "Student Payments" },
   { key: "student-fees", label: "Student Fees" },
   { key: "class-fees", label: "Fee Schedule", action: "generate-bill" },
+  { key: "recurring-billing", label: "Recurring Billing", action: "recurring-plan" },
   { key: "transactions", label: "Transactions" },
   { key: "token-activity", label: "Token Activity", action: "assign-tokens" },
   { key: "token-purchases", label: "Token Purchases", action: "buy-tokens" },
@@ -1557,6 +1558,8 @@ const FINANCE_RECORD_TABS = [
 const FINANCE_ACTION_LABELS = {
   "cash-payment": "Record Payment",
   "generate-bill": "Generate Bill",
+  "recurring-plan": "Create Recurring Plan",
+  "one-time-charge": "Create One-Time Charge",
   "assign-tokens": "Assign Tokens",
   "buy-tokens": "Buy Tokens",
   "virtual-accounts": "Provision Virtual Accounts",
@@ -1891,6 +1894,14 @@ function AdminFinanceScreen({
   onBillDelete,
   onBillRecipientsLoad,
   onBillSend,
+  onRecurringPlansLoad,
+  onRecurringPlanSave,
+  onRecurringPlanDelete,
+  onRecurringPlanEnroll,
+  onOneTimeChargesLoad,
+  onOneTimeChargeSave,
+  onOneTimeChargeDelete,
+  onOneTimeChargeApply,
   onStudentFeeSave,
   onApplyWalletCredit,
   onPaymentAccountSave,
@@ -1986,6 +1997,20 @@ function AdminFinanceScreen({
   const [editingBill, setEditingBill] = useState(null);
   const [sendingBill, setSendingBill] = useState(null);
   const [billActionBusyId, setBillActionBusyId] = useState("");
+  const [recurringPlans, setRecurringPlans] = useState([]);
+  const [recurringPlansLoading, setRecurringPlansLoading] = useState(false);
+  const [recurringPlansError, setRecurringPlansError] = useState("");
+  const [oneTimeCharges, setOneTimeCharges] = useState([]);
+  const [oneTimeChargesLoading, setOneTimeChargesLoading] = useState(false);
+  const [oneTimeChargesError, setOneTimeChargesError] = useState("");
+  const [recurringPlanForm, setRecurringPlanForm] = useState({
+    title: "", description: "", amount: "", class_ids: [], applies_to_all_classes: false,
+    effective_start_date: "", effective_end_date: "", auto_apply_to_new_students: true,
+  });
+  const [oneTimeChargeForm, setOneTimeChargeForm] = useState({
+    title: "", description: "", amount: "", class_ids: [], applies_to_all_classes: false,
+    effective_start_date: "", expiry_date: "", due_in_days: "0", auto_apply_to_new_students: true,
+  });
   const [billActionError, setBillActionError] = useState("");
   const [studentFeeForm, setStudentFeeForm] = useState({
     title: "",
@@ -2581,6 +2606,137 @@ function AdminFinanceScreen({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [financeSection, recordSection, loadBills]);
+
+  const loadRecurringPlans = useCallback(async () => {
+    if (!onRecurringPlansLoad) return;
+    setRecurringPlansLoading(true);
+    setRecurringPlansError("");
+    try {
+      setRecurringPlans(await onRecurringPlansLoad());
+    } catch (err) {
+      setRecurringPlansError(err.message || "Could not load recurring plans.");
+    } finally {
+      setRecurringPlansLoading(false);
+    }
+  }, [onRecurringPlansLoad]);
+
+  const loadOneTimeCharges = useCallback(async () => {
+    if (!onOneTimeChargesLoad) return;
+    setOneTimeChargesLoading(true);
+    setOneTimeChargesError("");
+    try {
+      setOneTimeCharges(await onOneTimeChargesLoad());
+    } catch (err) {
+      setOneTimeChargesError(err.message || "Could not load one-time charges.");
+    } finally {
+      setOneTimeChargesLoading(false);
+    }
+  }, [onOneTimeChargesLoad]);
+
+  useEffect(() => {
+    if (financeSection === "records" && recordSection === "recurring-billing") {
+      loadRecurringPlans();
+      loadOneTimeCharges();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [financeSection, recordSection, loadRecurringPlans, loadOneTimeCharges]);
+
+  const handleRecurringPlanFormChange = (field, value) => {
+    setRecurringPlanForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleCreateRecurringPlan = async (event) => {
+    event.preventDefault();
+    setFeedback("");
+    setFormError("");
+    try {
+      await onRecurringPlanSave({
+        title: recurringPlanForm.title,
+        description: recurringPlanForm.description,
+        amount: Number(recurringPlanForm.amount),
+        class_ids: recurringPlanForm.applies_to_all_classes ? [] : recurringPlanForm.class_ids,
+        applies_to_all_classes: recurringPlanForm.applies_to_all_classes,
+        effective_start_date: recurringPlanForm.effective_start_date,
+        effective_end_date: recurringPlanForm.effective_end_date || null,
+        auto_apply_to_new_students: recurringPlanForm.auto_apply_to_new_students,
+      });
+      setFeedback("Recurring plan created.");
+      setRecurringPlanForm({
+        title: "", description: "", amount: "", class_ids: [], applies_to_all_classes: false,
+        effective_start_date: "", effective_end_date: "", auto_apply_to_new_students: true,
+      });
+      loadRecurringPlans();
+    } catch (err) {
+      setFormError(err.message || "Unable to create recurring plan.");
+    }
+  };
+
+  const handleArchiveRecurringPlan = async (planId) => {
+    setFeedback("");
+    setFormError("");
+    try {
+      await onRecurringPlanDelete(planId);
+      setFeedback("Recurring plan archived.");
+      loadRecurringPlans();
+    } catch (err) {
+      setFormError(err.message || "Unable to archive recurring plan.");
+    }
+  };
+
+  const handleOneTimeChargeFormChange = (field, value) => {
+    setOneTimeChargeForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleCreateOneTimeCharge = async (event) => {
+    event.preventDefault();
+    setFeedback("");
+    setFormError("");
+    try {
+      await onOneTimeChargeSave({
+        title: oneTimeChargeForm.title,
+        description: oneTimeChargeForm.description,
+        amount: Number(oneTimeChargeForm.amount),
+        class_ids: oneTimeChargeForm.applies_to_all_classes ? [] : oneTimeChargeForm.class_ids,
+        applies_to_all_classes: oneTimeChargeForm.applies_to_all_classes,
+        effective_start_date: oneTimeChargeForm.effective_start_date,
+        expiry_date: oneTimeChargeForm.expiry_date || null,
+        due_in_days: Number(oneTimeChargeForm.due_in_days || 0),
+        auto_apply_to_new_students: oneTimeChargeForm.auto_apply_to_new_students,
+      });
+      setFeedback("One-time charge created.");
+      setOneTimeChargeForm({
+        title: "", description: "", amount: "", class_ids: [], applies_to_all_classes: false,
+        effective_start_date: "", expiry_date: "", due_in_days: "0", auto_apply_to_new_students: true,
+      });
+      loadOneTimeCharges();
+    } catch (err) {
+      setFormError(err.message || "Unable to create one-time charge.");
+    }
+  };
+
+  const handleArchiveOneTimeCharge = async (chargeId) => {
+    setFeedback("");
+    setFormError("");
+    try {
+      await onOneTimeChargeDelete(chargeId);
+      setFeedback("One-time charge archived.");
+      loadOneTimeCharges();
+    } catch (err) {
+      setFormError(err.message || "Unable to archive one-time charge.");
+    }
+  };
+
+  const handleApplyOneTimeCharge = async (chargeId) => {
+    setFeedback("");
+    setFormError("");
+    try {
+      const result = await onOneTimeChargeApply(chargeId, []);
+      setFeedback(result?.message || "One-time charge applied.");
+      loadOneTimeCharges();
+    } catch (err) {
+      setFormError(err.message || "Unable to apply one-time charge.");
+    }
+  };
 
   const handleOpenNewBill = () => { setEditingBill(null); setShowBillDesigner(true); };
   const handleOpenEditBill = (bill) => { setEditingBill(bill); setShowBillDesigner(true); };
@@ -3525,6 +3681,21 @@ function AdminFinanceScreen({
                       {!statementData.fees.length ? <tr><td colSpan={5}>No fees in this period.</td></tr> : null}
                     </tbody>
                   </table>
+                  {(statementData.subscriptions || []).length ? (
+                    <table className="finance-statement-table">
+                      <thead><tr><th>Subscription</th><th>Next Billing</th><th>Cycles Billed</th><th>Status</th></tr></thead>
+                      <tbody>
+                        {statementData.subscriptions.map((subscription) => (
+                          <tr key={subscription.id}>
+                            <td>{subscription.plan_title}</td>
+                            <td>{formatDate(subscription.next_billing_date)}</td>
+                            <td>{subscription.cycles_billed}</td>
+                            <td>{subscription.status}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : null}
                   <table className="finance-statement-table">
                     <thead><tr><th>Payment</th><th>Date</th><th>Amount</th></tr></thead>
                     <tbody>
@@ -3635,6 +3806,89 @@ function AdminFinanceScreen({
                 <button type="button" onClick={handleOpenNewBill} disabled={!onBillSave}>Open bill designer</button>
                 <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("class-fees")}>View generated bills</button>
               </div>
+            </FinanceActionCard>
+
+            <FinanceActionCard
+              id="recurring-plan"
+              title="Create Recurring Plan"
+              description="A monthly charge billed on each student's own enrollment anniversary - never a shared, school-wide due date. Changing the amount later only affects cycles not yet billed."
+              icon="money"
+              open={openActionCard === "recurring-plan"}
+              onToggle={setOpenActionCard}
+            >
+              <form onSubmit={handleCreateRecurringPlan}>
+                <div className="panel-form-grid">
+                  <label className="panel-field">Title<input value={recurringPlanForm.title} onChange={(event) => handleRecurringPlanFormChange("title", event.target.value)} placeholder="Monthly Feeding Fee" required /></label>
+                  <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={recurringPlanForm.amount} onChange={(event) => handleRecurringPlanFormChange("amount", event.target.value)} required /></label>
+                  <label className="panel-field">Effective from<input type="date" value={recurringPlanForm.effective_start_date} onChange={(event) => handleRecurringPlanFormChange("effective_start_date", event.target.value)} required /></label>
+                  <label className="panel-field">Ends on (optional)<input type="date" value={recurringPlanForm.effective_end_date} onChange={(event) => handleRecurringPlanFormChange("effective_end_date", event.target.value)} /></label>
+                  {!recurringPlanForm.applies_to_all_classes ? (
+                    <label className="panel-field">
+                      Classes
+                      <select
+                        multiple
+                        value={recurringPlanForm.class_ids}
+                        onChange={(event) => handleRecurringPlanFormChange("class_ids", Array.from(event.target.selectedOptions, (option) => option.value))}
+                      >
+                        {classOptions.map((item) => (
+                          <option key={item.id || item.value} value={item.id || item.value}>{item.label || item.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  <label className="panel-field">Description (optional)<textarea value={recurringPlanForm.description} onChange={(event) => handleRecurringPlanFormChange("description", event.target.value)} /></label>
+                </div>
+                <div className="panel-field-row">
+                  <label><input type="checkbox" checked={recurringPlanForm.applies_to_all_classes} onChange={(event) => handleRecurringPlanFormChange("applies_to_all_classes", event.target.checked)} /> Applies to all classes</label>
+                  <label><input type="checkbox" checked={recurringPlanForm.auto_apply_to_new_students} onChange={(event) => handleRecurringPlanFormChange("auto_apply_to_new_students", event.target.checked)} /> Auto-enroll new students</label>
+                </div>
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={!onRecurringPlanSave}>Create plan</button>
+                  <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("recurring-billing")}>View recurring plans</button>
+                </div>
+              </form>
+            </FinanceActionCard>
+
+            <FinanceActionCard
+              id="one-time-charge"
+              title="Create One-Time Charge"
+              description="A single charge (registration, exam fee) applied once per eligible student, never recurring."
+              icon="money"
+              open={openActionCard === "one-time-charge"}
+              onToggle={setOpenActionCard}
+            >
+              <form onSubmit={handleCreateOneTimeCharge}>
+                <div className="panel-form-grid">
+                  <label className="panel-field">Title<input value={oneTimeChargeForm.title} onChange={(event) => handleOneTimeChargeFormChange("title", event.target.value)} placeholder="Registration Fee" required /></label>
+                  <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={oneTimeChargeForm.amount} onChange={(event) => handleOneTimeChargeFormChange("amount", event.target.value)} required /></label>
+                  <label className="panel-field">Effective from<input type="date" value={oneTimeChargeForm.effective_start_date} onChange={(event) => handleOneTimeChargeFormChange("effective_start_date", event.target.value)} required /></label>
+                  <label className="panel-field">Expires on (optional)<input type="date" value={oneTimeChargeForm.expiry_date} onChange={(event) => handleOneTimeChargeFormChange("expiry_date", event.target.value)} /></label>
+                  <label className="panel-field">Due in (days)<input type="number" min="0" step="1" value={oneTimeChargeForm.due_in_days} onChange={(event) => handleOneTimeChargeFormChange("due_in_days", event.target.value)} /></label>
+                  {!oneTimeChargeForm.applies_to_all_classes ? (
+                    <label className="panel-field">
+                      Classes
+                      <select
+                        multiple
+                        value={oneTimeChargeForm.class_ids}
+                        onChange={(event) => handleOneTimeChargeFormChange("class_ids", Array.from(event.target.selectedOptions, (option) => option.value))}
+                      >
+                        {classOptions.map((item) => (
+                          <option key={item.id || item.value} value={item.id || item.value}>{item.label || item.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  <label className="panel-field">Description (optional)<textarea value={oneTimeChargeForm.description} onChange={(event) => handleOneTimeChargeFormChange("description", event.target.value)} /></label>
+                </div>
+                <div className="panel-field-row">
+                  <label><input type="checkbox" checked={oneTimeChargeForm.applies_to_all_classes} onChange={(event) => handleOneTimeChargeFormChange("applies_to_all_classes", event.target.checked)} /> Applies to all classes</label>
+                  <label><input type="checkbox" checked={oneTimeChargeForm.auto_apply_to_new_students} onChange={(event) => handleOneTimeChargeFormChange("auto_apply_to_new_students", event.target.checked)} /> Auto-apply to new students</label>
+                </div>
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={!onOneTimeChargeSave}>Create charge</button>
+                  <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("recurring-billing")}>View one-time charges</button>
+                </div>
+              </form>
             </FinanceActionCard>
 
             <FinanceActionCard
@@ -4092,6 +4346,75 @@ function AdminFinanceScreen({
                   </tbody>
                 </table>
               </div>
+              </article>
+            ) : null}
+
+            {recordSection === "recurring-billing" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>Recurring Plans</h3>
+                  <small>{recurringPlans.length} plan{recurringPlans.length === 1 ? "" : "s"}</small>
+                </div>
+                {recurringPlansError ? <p className="form-feedback error">{recurringPlansError}</p> : null}
+                <div className="table-scroll">
+                  <table className="data-table">
+                    <thead><tr><th>Title</th><th>Amount</th><th>Classes</th><th>Starts</th><th>Auto-apply</th><th>Subscribers</th><th>Status</th><th>Action</th></tr></thead>
+                    <tbody>
+                      {recurringPlans.length ? recurringPlans.map((plan) => (
+                        <tr key={plan.id}>
+                          <td>{plan.title}</td>
+                          <td>{formatFinanceAmount(plan.amount)}</td>
+                          <td>{plan.applies_to_all_classes ? "All classes" : (plan.class_labels || []).join(", ") || "-"}</td>
+                          <td>{formatDate(plan.effective_start_date)}</td>
+                          <td>{plan.auto_apply_to_new_students ? "Yes" : "No"}</td>
+                          <td>{plan.subscriber_count || 0}</td>
+                          <td><span className={`finance-status status-${plan.status}`}>{plan.status}</span></td>
+                          <td>
+                            {plan.status !== "archived" ? (
+                              <button type="button" className="table-action danger" onClick={() => handleArchiveRecurringPlan(plan.id)}>Archive</button>
+                            ) : null}
+                          </td>
+                        </tr>
+                      )) : <tr><td colSpan="8">{recurringPlansLoading ? "Loading..." : "No recurring plans yet."}</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            ) : null}
+
+            {recordSection === "recurring-billing" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>One-Time Charges</h3>
+                  <small>{oneTimeCharges.length} charge{oneTimeCharges.length === 1 ? "" : "s"}</small>
+                </div>
+                {oneTimeChargesError ? <p className="form-feedback error">{oneTimeChargesError}</p> : null}
+                <div className="table-scroll">
+                  <table className="data-table">
+                    <thead><tr><th>Title</th><th>Amount</th><th>Classes</th><th>Starts</th><th>Due in</th><th>Applied</th><th>Status</th><th>Action</th></tr></thead>
+                    <tbody>
+                      {oneTimeCharges.length ? oneTimeCharges.map((charge) => (
+                        <tr key={charge.id}>
+                          <td>{charge.title}</td>
+                          <td>{formatFinanceAmount(charge.amount)}</td>
+                          <td>{charge.applies_to_all_classes ? "All classes" : (charge.class_labels || []).join(", ") || "-"}</td>
+                          <td>{formatDate(charge.effective_start_date)}</td>
+                          <td>{charge.due_in_days} day{charge.due_in_days === 1 ? "" : "s"}</td>
+                          <td>{charge.applied_count || 0}</td>
+                          <td><span className={`finance-status status-${charge.status}`}>{charge.status}</span></td>
+                          <td>
+                            <div className="table-actions-inline">
+                              <button type="button" className="table-action" onClick={() => handleApplyOneTimeCharge(charge.id)}>Apply to classes</button>
+                              {charge.status !== "archived" ? (
+                                <button type="button" className="table-action danger" onClick={() => handleArchiveOneTimeCharge(charge.id)}>Archive</button>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      )) : <tr><td colSpan="8">{oneTimeChargesLoading ? "Loading..." : "No one-time charges yet."}</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
               </article>
             ) : null}
 

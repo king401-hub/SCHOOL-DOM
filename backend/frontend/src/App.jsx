@@ -7962,6 +7962,114 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleAdminRecurringPlansLoad = useCallback(
+    async () => {
+      const result = await requestJson(session, "GET", "/api/finance/admin/recurring-plans/");
+      return result?.plans || [];
+    },
+    [session]
+  );
+
+  const handleAdminRecurringPlanSave = useCallback(
+    async (payload) => {
+      const { id, ...body } = payload;
+      const method = id ? "PATCH" : "POST";
+      const url = id ? `/api/finance/admin/recurring-plans/${id}/` : "/api/finance/admin/recurring-plans/";
+      const result = await requestJson(session, method, url, body);
+      addAdminNotification({
+        category: "Finance",
+        module: "Recurring Billing",
+        action: `${id ? "Updated" : "Created"} recurring plan '${payload?.title || ""}'.`,
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handleAdminRecurringPlanDelete = useCallback(
+    async (planId) => {
+      const result = await requestJson(session, "DELETE", `/api/finance/admin/recurring-plans/${planId}/`);
+      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleAdminRecurringPlanEnroll = useCallback(
+    async (planId, studentIds) => {
+      const result = await requestJson(session, "POST", `/api/finance/admin/recurring-plans/${planId}/enroll/`, { student_ids: studentIds });
+      addAdminNotification({
+        category: "Finance",
+        module: "Recurring Billing",
+        action: result?.message || "Enrolled student(s) into a recurring plan.",
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handleAdminOneTimeChargesLoad = useCallback(
+    async () => {
+      const result = await requestJson(session, "GET", "/api/finance/admin/one-time-charges/");
+      return result?.charges || [];
+    },
+    [session]
+  );
+
+  const handleAdminOneTimeChargeSave = useCallback(
+    async (payload) => {
+      const { id, ...body } = payload;
+      const method = id ? "PATCH" : "POST";
+      const url = id ? `/api/finance/admin/one-time-charges/${id}/` : "/api/finance/admin/one-time-charges/";
+      const result = await requestJson(session, method, url, body);
+      addAdminNotification({
+        category: "Finance",
+        module: "Recurring Billing",
+        action: `${id ? "Updated" : "Created"} one-time charge '${payload?.title || ""}'.`,
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handleAdminOneTimeChargeDelete = useCallback(
+    async (chargeId) => {
+      const result = await requestJson(session, "DELETE", `/api/finance/admin/one-time-charges/${chargeId}/`);
+      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleAdminOneTimeChargeApply = useCallback(
+    async (chargeId, studentIds) => {
+      const result = await requestJson(session, "POST", `/api/finance/admin/one-time-charges/${chargeId}/apply/`, { student_ids: studentIds });
+      addAdminNotification({
+        category: "Finance",
+        module: "Recurring Billing",
+        action: result?.message || "Applied one-time charge to student(s).",
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleAdminStudentFeeSave = useCallback(
     async (payload) => {
       const { id, ...body } = payload;
@@ -9429,6 +9537,14 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onBillDelete={handleAdminBillDelete}
         onBillRecipientsLoad={handleAdminBillRecipientsLoad}
         onBillSend={handleAdminBillSend}
+        onRecurringPlansLoad={handleAdminRecurringPlansLoad}
+        onRecurringPlanSave={handleAdminRecurringPlanSave}
+        onRecurringPlanDelete={handleAdminRecurringPlanDelete}
+        onRecurringPlanEnroll={handleAdminRecurringPlanEnroll}
+        onOneTimeChargesLoad={handleAdminOneTimeChargesLoad}
+        onOneTimeChargeSave={handleAdminOneTimeChargeSave}
+        onOneTimeChargeDelete={handleAdminOneTimeChargeDelete}
+        onOneTimeChargeApply={handleAdminOneTimeChargeApply}
         onStudentFeeSave={handleAdminStudentFeeSave}
         onApplyWalletCredit={handleAdminApplyWalletCreditToFee}
         onPurchaseCredits={handleActivationCreditPurchase}

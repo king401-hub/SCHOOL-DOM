@@ -38,12 +38,16 @@ from finance.models import (
     FeeAllocation,
     FeeWaiver,
     FinanceLedgerLog,
+    OneTimeBillingCharge,
     ParentVirtualAccount,
     PaymentReceiptLink,
+    RecurringBillingPlan,
     SchoolFee,
     SmsMessageLog,
     SmsWalletTransaction,
     StudentActivationCredit,
+    StudentBillingSubscription,
+    StudentOneTimeChargeApplication,
     StudentPaymentReference,
     Transaction,
     Wallet,
@@ -59,7 +63,10 @@ from finance.serializers import (
     ExpenseRecordSerializer,
     FinanceLedgerLogSerializer,
     FinanceSummarySerializer,
+    OneTimeBillingChargeSerializer,
+    RecurringBillingPlanSerializer,
     SchoolFeeSerializer,
+    StudentBillingSubscriptionSerializer,
     StudentPaymentReferenceSerializer,
     TransactionSerializer,
     WalletSerializer,
@@ -85,6 +92,11 @@ from finance.services import (
     find_duplicate_bill,
     ensure_monthly_credit_reminder,
     outstanding_bill_origin,
+    apply_eligible_one_time_charges_for_new_student,
+    apply_eligible_recurring_plans_for_new_student,
+    apply_one_time_charge_to_student,
+    enroll_student_in_recurring_plan,
+    generate_due_subscription_invoices,
     generate_reference,
     get_or_create_admin_wallet,
     get_or_create_activation_credit_pool,
@@ -653,6 +665,10 @@ def _classes_for_user(user):
 
 def _admin_finance_snapshot(user, request=None):
     sync_tenant_class_fees(user.tenant, actor=user)
+    try:
+        generate_due_subscription_invoices(actor=user, tenant=user.tenant)
+    except Exception:
+        pass
 
     students = list(
         StudentProfile.objects.select_related("user", "current_class")
@@ -1367,9 +1383,12 @@ def admin_student_statement(request, student_id):
     # docstring explains.
     total_amount_due = current_billed_balance - authorized_aid
 
+    subscriptions = StudentBillingSubscription.objects.filter(student=student).select_related("plan").order_by("-created_at")
+
     return Response(
         {
             "success": True,
+            "subscriptions": StudentBillingSubscriptionSerializer(subscriptions, many=True).data,
             "student": {
                 "id": str(student.id),
                 "name": student.user.get_full_name() or student.user.email,
@@ -2073,6 +2092,394 @@ def admin_bill_detail(request, bill_id):
         "success": True,
         "bill": BillSerializer(bill, context={"bill_status_rollups": rollups}).data,
         "synced_count": synced_count,
+    })
+
+
+def _billing_template_classes_or_error(user, request):
+    """Shared by recurring-plan/one-time-charge create: resolve
+    applies_to_all_classes + the actual class list, or a 400 Response if
+    neither "every class" nor at least one real class was given - an empty
+    M2M must never silently mean "everyone" (see
+    finance.services._billing_template_applies_to_class)."""
+    applies_to_all_classes = _parse_bool(request.data.get("applies_to_all_classes"), default=False)
+    class_ids = request.data.get("class_ids") or request.data.get("classes") or []
+    classes = list(_classes_for_user(user).filter(id__in=class_ids)) if class_ids else []
+    if not applies_to_all_classes and not classes:
+        return applies_to_all_classes, classes, Response(
+            {"success": False, "message": "Select at least one class, or mark this as applying to all classes."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return applies_to_all_classes, classes, None
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def admin_recurring_plans(request):
+    """List this tenant's recurring billing plans, or create a new one."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == "POST":
+        title = str(request.data.get("title", "")).strip()
+        if not title:
+            return Response({"success": False, "message": "title is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            amount = _parse_amount(request.data.get("amount"))
+        except ValueError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        effective_start_date = parse_date(str(request.data.get("effective_start_date") or "").strip())
+        if not effective_start_date:
+            return Response({"success": False, "message": "effective_start_date must be YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        effective_end_date = None
+        effective_end_raw = str(request.data.get("effective_end_date") or "").strip()
+        if effective_end_raw:
+            effective_end_date = parse_date(effective_end_raw)
+            if not effective_end_date:
+                return Response({"success": False, "message": "effective_end_date must be YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+
+        applies_to_all_classes, classes, error = _billing_template_classes_or_error(user, request)
+        if error:
+            return error
+
+        plan = RecurringBillingPlan.objects.create(
+            tenant=user.tenant,
+            title=title,
+            description=str(request.data.get("description") or "").strip(),
+            amount=amount,
+            currency="NGN",
+            applies_to_all_classes=applies_to_all_classes,
+            frequency=RecurringBillingPlan.FREQUENCY_MONTHLY,
+            effective_start_date=effective_start_date,
+            effective_end_date=effective_end_date,
+            auto_apply_to_new_students=_parse_bool(request.data.get("auto_apply_to_new_students"), default=True),
+            created_by=user,
+        )
+        if classes:
+            plan.classes.set(classes)
+        record_finance_activity(
+            user.tenant, user, "recurring_plan_created", f"Created recurring billing plan '{plan.title}'.",
+            amount=plan.amount, currency=plan.currency, reference=str(plan.id),
+        )
+        return Response({"success": True, "plan": RecurringBillingPlanSerializer(plan).data}, status=status.HTTP_201_CREATED)
+
+    plans = RecurringBillingPlan.objects.filter(tenant=user.tenant).prefetch_related("classes").order_by("-created_at")
+    return Response({"success": True, "plans": RecurringBillingPlanSerializer(plans, many=True).data})
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def admin_recurring_plan_detail(request, plan_id):
+    """Edit or archive a recurring billing plan. Archiving (DELETE) never
+    touches existing subscriptions or their already-generated invoices -
+    it only stops new students from being auto-enrolled. It does NOT
+    automatically pause or cancel an already-active subscription; do that
+    explicitly via admin_student_subscription_detail if that's also
+    wanted."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    plan = get_object_or_404(RecurringBillingPlan.objects.filter(tenant=user.tenant), id=plan_id)
+
+    if request.method == "DELETE":
+        plan.status = RecurringBillingPlan.STATUS_ARCHIVED
+        plan.auto_apply_to_new_students = False
+        plan.save(update_fields=["status", "auto_apply_to_new_students", "updated_at"])
+        record_finance_activity(
+            user.tenant, user, "recurring_plan_archived", f"Archived recurring billing plan '{plan.title}'.",
+            reference=str(plan.id),
+        )
+        return Response({"success": True, "message": "Plan archived."})
+
+    update_fields = []
+    if "title" in request.data:
+        title = str(request.data.get("title") or "").strip()
+        if not title:
+            return Response({"success": False, "message": "title cannot be blank."}, status=status.HTTP_400_BAD_REQUEST)
+        plan.title = title
+        update_fields.append("title")
+    if "description" in request.data:
+        plan.description = str(request.data.get("description") or "").strip()
+        update_fields.append("description")
+    if "amount" in request.data:
+        try:
+            plan.amount = _parse_amount(request.data.get("amount"))
+        except ValueError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        update_fields.append("amount")
+    if "effective_end_date" in request.data:
+        effective_end_raw = str(request.data.get("effective_end_date") or "").strip()
+        plan.effective_end_date = parse_date(effective_end_raw) if effective_end_raw else None
+        update_fields.append("effective_end_date")
+    if "auto_apply_to_new_students" in request.data:
+        plan.auto_apply_to_new_students = _parse_bool(request.data.get("auto_apply_to_new_students"), default=True)
+        update_fields.append("auto_apply_to_new_students")
+    if "status" in request.data:
+        new_status = str(request.data.get("status") or "").strip()
+        if new_status not in dict(RecurringBillingPlan.STATUS_CHOICES):
+            return Response({"success": False, "message": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+        plan.status = new_status
+        update_fields.append("status")
+    if "applies_to_all_classes" in request.data or "class_ids" in request.data or "classes" in request.data:
+        applies_to_all_classes, classes, error = _billing_template_classes_or_error(user, request)
+        if error:
+            return error
+        plan.applies_to_all_classes = applies_to_all_classes
+        update_fields.append("applies_to_all_classes")
+        plan.classes.set(classes)
+
+    if update_fields:
+        update_fields.append("updated_at")
+        plan.save(update_fields=sorted(set(update_fields)))
+        record_finance_activity(
+            user.tenant, user, "recurring_plan_updated", f"Updated recurring billing plan '{plan.title}'.",
+            amount=plan.amount, currency=plan.currency, reference=str(plan.id),
+        )
+    return Response({"success": True, "plan": RecurringBillingPlanSerializer(plan).data})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_recurring_plan_enroll(request, plan_id):
+    """Bulk-enroll specific students into an existing plan. Enrolling an
+    already-enrolled student is a no-op (enroll_student_in_recurring_plan
+    is idempotent)."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    plan = get_object_or_404(RecurringBillingPlan.objects.filter(tenant=user.tenant), id=plan_id)
+    student_ids = request.data.get("student_ids") or []
+    if not student_ids:
+        return Response({"success": False, "message": "student_ids is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    students = list(StudentProfile.objects.filter(id__in=student_ids, user__tenant=user.tenant))
+    if not students:
+        return Response({"success": False, "message": "No matching students found."}, status=status.HTTP_400_BAD_REQUEST)
+
+    subscriptions = [enroll_student_in_recurring_plan(student, plan, actor=user) for student in students]
+    record_finance_activity(
+        user.tenant, user, "recurring_plan_enrolled",
+        f"Enrolled {len(subscriptions)} student(s) into '{plan.title}'.",
+        reference=str(plan.id),
+    )
+    return Response({
+        "success": True,
+        "message": f"Enrolled {len(subscriptions)} student(s).",
+        "subscriptions": StudentBillingSubscriptionSerializer(subscriptions, many=True).data,
+    })
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def admin_student_subscription_detail(request, subscription_id):
+    """Pause, resume, or cancel one student's own subscription, without
+    touching the plan template or any other student on it."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    subscription = get_object_or_404(
+        StudentBillingSubscription.objects.filter(plan__tenant=user.tenant).select_related("plan", "student__user"),
+        id=subscription_id,
+    )
+    new_status = str(request.data.get("status") or "").strip()
+    if new_status not in dict(StudentBillingSubscription.STATUS_CHOICES):
+        return Response({"success": False, "message": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+
+    subscription.status = new_status
+    update_fields = ["status", "updated_at"]
+    if new_status == StudentBillingSubscription.STATUS_CANCELLED:
+        subscription.cancelled_at = timezone.now()
+        update_fields.append("cancelled_at")
+    subscription.save(update_fields=update_fields)
+    record_finance_activity(
+        user.tenant, user, "subscription_status_changed",
+        f"Set {subscription.student.user.get_full_name() or subscription.student.user.email}'s "
+        f"'{subscription.plan.title}' subscription to {new_status}.",
+        reference=str(subscription.id),
+    )
+    return Response({"success": True, "subscription": StudentBillingSubscriptionSerializer(subscription).data})
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def admin_one_time_charges(request):
+    """List this tenant's one-time billing charges, or create a new one."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == "POST":
+        title = str(request.data.get("title", "")).strip()
+        if not title:
+            return Response({"success": False, "message": "title is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            amount = _parse_amount(request.data.get("amount"))
+        except ValueError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        effective_start_date = parse_date(str(request.data.get("effective_start_date") or "").strip())
+        if not effective_start_date:
+            return Response({"success": False, "message": "effective_start_date must be YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        expiry_date = None
+        expiry_raw = str(request.data.get("expiry_date") or "").strip()
+        if expiry_raw:
+            expiry_date = parse_date(expiry_raw)
+            if not expiry_date:
+                return Response({"success": False, "message": "expiry_date must be YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            due_in_days = int(request.data.get("due_in_days") or 0)
+        except (TypeError, ValueError):
+            return Response({"success": False, "message": "due_in_days must be a whole number."}, status=status.HTTP_400_BAD_REQUEST)
+        if due_in_days < 0:
+            return Response({"success": False, "message": "due_in_days cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
+
+        applies_to_all_classes, classes, error = _billing_template_classes_or_error(user, request)
+        if error:
+            return error
+
+        charge = OneTimeBillingCharge.objects.create(
+            tenant=user.tenant,
+            title=title,
+            description=str(request.data.get("description") or "").strip(),
+            amount=amount,
+            currency="NGN",
+            applies_to_all_classes=applies_to_all_classes,
+            effective_start_date=effective_start_date,
+            expiry_date=expiry_date,
+            due_in_days=due_in_days,
+            auto_apply_to_new_students=_parse_bool(request.data.get("auto_apply_to_new_students"), default=True),
+            created_by=user,
+        )
+        if classes:
+            charge.classes.set(classes)
+        record_finance_activity(
+            user.tenant, user, "one_time_charge_created", f"Created one-time charge '{charge.title}'.",
+            amount=charge.amount, currency=charge.currency, reference=str(charge.id),
+        )
+        return Response({"success": True, "charge": OneTimeBillingChargeSerializer(charge).data}, status=status.HTTP_201_CREATED)
+
+    charges = OneTimeBillingCharge.objects.filter(tenant=user.tenant).prefetch_related("classes").order_by("-created_at")
+    return Response({"success": True, "charges": OneTimeBillingChargeSerializer(charges, many=True).data})
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def admin_one_time_charge_detail(request, charge_id):
+    """Edit or archive a one-time billing charge. Archiving never touches
+    an application/invoice already created."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    charge = get_object_or_404(OneTimeBillingCharge.objects.filter(tenant=user.tenant), id=charge_id)
+
+    if request.method == "DELETE":
+        charge.status = OneTimeBillingCharge.STATUS_ARCHIVED
+        charge.auto_apply_to_new_students = False
+        charge.save(update_fields=["status", "auto_apply_to_new_students", "updated_at"])
+        record_finance_activity(
+            user.tenant, user, "one_time_charge_archived", f"Archived one-time charge '{charge.title}'.",
+            reference=str(charge.id),
+        )
+        return Response({"success": True, "message": "Charge archived."})
+
+    update_fields = []
+    if "title" in request.data:
+        title = str(request.data.get("title") or "").strip()
+        if not title:
+            return Response({"success": False, "message": "title cannot be blank."}, status=status.HTTP_400_BAD_REQUEST)
+        charge.title = title
+        update_fields.append("title")
+    if "description" in request.data:
+        charge.description = str(request.data.get("description") or "").strip()
+        update_fields.append("description")
+    if "amount" in request.data:
+        try:
+            charge.amount = _parse_amount(request.data.get("amount"))
+        except ValueError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        update_fields.append("amount")
+    if "expiry_date" in request.data:
+        expiry_raw = str(request.data.get("expiry_date") or "").strip()
+        charge.expiry_date = parse_date(expiry_raw) if expiry_raw else None
+        update_fields.append("expiry_date")
+    if "due_in_days" in request.data:
+        try:
+            due_in_days = int(request.data.get("due_in_days") or 0)
+        except (TypeError, ValueError):
+            return Response({"success": False, "message": "due_in_days must be a whole number."}, status=status.HTTP_400_BAD_REQUEST)
+        if due_in_days < 0:
+            return Response({"success": False, "message": "due_in_days cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
+        charge.due_in_days = due_in_days
+        update_fields.append("due_in_days")
+    if "auto_apply_to_new_students" in request.data:
+        charge.auto_apply_to_new_students = _parse_bool(request.data.get("auto_apply_to_new_students"), default=True)
+        update_fields.append("auto_apply_to_new_students")
+    if "status" in request.data:
+        new_status = str(request.data.get("status") or "").strip()
+        if new_status not in dict(OneTimeBillingCharge.STATUS_CHOICES):
+            return Response({"success": False, "message": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+        charge.status = new_status
+        update_fields.append("status")
+    if "applies_to_all_classes" in request.data or "class_ids" in request.data or "classes" in request.data:
+        applies_to_all_classes, classes, error = _billing_template_classes_or_error(user, request)
+        if error:
+            return error
+        charge.applies_to_all_classes = applies_to_all_classes
+        update_fields.append("applies_to_all_classes")
+        charge.classes.set(classes)
+
+    if update_fields:
+        update_fields.append("updated_at")
+        charge.save(update_fields=sorted(set(update_fields)))
+        record_finance_activity(
+            user.tenant, user, "one_time_charge_updated", f"Updated one-time charge '{charge.title}'.",
+            amount=charge.amount, currency=charge.currency, reference=str(charge.id),
+        )
+    return Response({"success": True, "charge": OneTimeBillingChargeSerializer(charge).data})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_one_time_charge_apply(request, charge_id):
+    """Manually bulk-apply a one-time charge - bypasses expiry_date (that
+    field only ever gates the automatic apply-on-enrollment path). Applying
+    to a student who already has this charge is a no-op
+    (apply_one_time_charge_to_student is idempotent). Without student_ids,
+    applies to every student currently in the charge's covered classes."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    charge = get_object_or_404(OneTimeBillingCharge.objects.filter(tenant=user.tenant), id=charge_id)
+    student_ids = request.data.get("student_ids") or []
+    if student_ids:
+        students = list(StudentProfile.objects.filter(id__in=student_ids, user__tenant=user.tenant))
+    elif charge.applies_to_all_classes:
+        students = list(StudentProfile.objects.filter(user__tenant=user.tenant, user__is_active=True))
+    else:
+        class_ids = list(charge.classes.values_list("id", flat=True))
+        students = list(StudentProfile.objects.filter(current_class_id__in=class_ids, user__tenant=user.tenant))
+
+    if not students:
+        return Response({"success": False, "message": "No matching students found."}, status=status.HTTP_400_BAD_REQUEST)
+
+    newly_applied = 0
+    for student in students:
+        _application, fee = apply_one_time_charge_to_student(charge, student, actor=user)
+        if fee is not None:
+            newly_applied += 1
+
+    record_finance_activity(
+        user.tenant, user, "one_time_charge_applied",
+        f"Applied '{charge.title}' to {newly_applied} student(s) ({len(students) - newly_applied} already had it).",
+        reference=str(charge.id),
+    )
+    return Response({
+        "success": True,
+        "message": f"Applied to {newly_applied} student(s) ({len(students) - newly_applied} already had it).",
     })
 
 

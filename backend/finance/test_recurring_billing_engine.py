@@ -1,0 +1,328 @@
+"""Tests for the non-K12 anniversary billing engine: each student bills on
+their OWN enrollment anniversary (RecurringBillingPlan /
+StudentBillingSubscription), one-time charges apply exactly once
+(OneTimeBillingCharge / StudentOneTimeChargeApplication), and both stay
+fully isolated from the K12/annual term-close machinery and the existing
+FIFO payment allocation reuses them with zero new code. Mirrors
+CloseTermFinanceTests' setUp conventions (finance/tests.py)."""
+from datetime import date, timedelta
+from decimal import Decimal
+
+from django.db import IntegrityError
+from django.test import TestCase
+from django.utils import timezone
+
+from academic.models import Class, Term
+from core.models import SchoolTenant
+from finance.models import (
+    BankPayment,
+    OneTimeBillingCharge,
+    RecurringBillingPlan,
+    SchoolFee,
+    StudentBillingSubscription,
+    StudentOneTimeChargeApplication,
+)
+from finance.services import (
+    apply_bank_payment_to_student,
+    apply_eligible_one_time_charges_for_new_student,
+    apply_eligible_recurring_plans_for_new_student,
+    apply_one_time_charge_to_student,
+    close_term_finance,
+    enroll_student_in_recurring_plan,
+    generate_due_subscription_invoices,
+    get_or_create_student_payment_reference,
+)
+from tenants.models import Tenant
+from users.models import StudentProfile, User
+
+
+class RecurringBillingEngineTestCase(TestCase):
+    """Shared setUp for a single tenant/class/plan - individual tests add
+    whatever students/charges they need on top."""
+
+    school_name = "Engine School"
+    schema_name = "engine_school"
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name=self.school_name, schema_name=self.schema_name, is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Primary 1", section="A")
+
+    def _make_student(self, email, student_id, admission_date, is_active=True):
+        user = User.objects.create_user(
+            email=email, password="StudentPass123", first_name="S", last_name="Tu",
+            role="student", tenant=self.school, is_active=is_active, is_verified=True,
+        )
+        return StudentProfile.objects.create(
+            user=user, student_id=student_id, admission_number=f"ADM-{student_id}",
+            admission_date=admission_date, guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+
+
+class IndependentAnniversaryTests(RecurringBillingEngineTestCase):
+    schema_name = "anniversary_school"
+
+    def setUp(self):
+        super().setUp()
+        self.plan = RecurringBillingPlan.objects.create(
+            tenant=self.school, title="Monthly Feeding Fee", amount=Decimal("15000.00"),
+            applies_to_all_classes=True, effective_start_date=date(2020, 1, 1),
+        )
+
+    def test_independent_anniversaries_never_align(self):
+        student_a = self._make_student("a@anniversary.edu", "ANN001", date(2026, 11, 5))
+        student_b = self._make_student("b@anniversary.edu", "ANN002", date(2026, 11, 8))
+        student_c = self._make_student("c@anniversary.edu", "ANN003", date(2026, 11, 15))
+
+        sub_a = enroll_student_in_recurring_plan(student_a, self.plan)
+        sub_b = enroll_student_in_recurring_plan(student_b, self.plan)
+        sub_c = enroll_student_in_recurring_plan(student_c, self.plan)
+
+        self.assertEqual(sub_a.next_billing_date, date(2026, 12, 5))
+        self.assertEqual(sub_b.next_billing_date, date(2026, 12, 8))
+        self.assertEqual(sub_c.next_billing_date, date(2026, 12, 15))
+        self.assertEqual(
+            len({sub_a.next_billing_date, sub_b.next_billing_date, sub_c.next_billing_date}), 3,
+        )
+
+    def test_first_invoice_is_full_and_never_prorated(self):
+        student = self._make_student("full@anniversary.edu", "ANN010", date(2026, 11, 20))
+        subscription = enroll_student_in_recurring_plan(student, self.plan)
+
+        fee = SchoolFee.objects.get(subscription=subscription)
+        self.assertEqual(fee.amount, Decimal("15000.00"))
+        self.assertEqual(fee.due_date, date(2026, 11, 20))
+        self.assertIsNone(fee.term)
+        self.assertEqual(subscription.cycles_billed, 1)
+
+
+class MonthEndAnchorTests(RecurringBillingEngineTestCase):
+    schema_name = "month_end_school"
+
+    def test_anchor_returns_to_original_day_without_drift(self):
+        plan = RecurringBillingPlan.objects.create(
+            tenant=self.school, title="Monthly Tuition", amount=Decimal("10000.00"),
+            applies_to_all_classes=True, effective_start_date=date(2020, 1, 1),
+        )
+        student = self._make_student("eom@montheend.edu", "EOM001", date(2026, 1, 31))
+        subscription = enroll_student_in_recurring_plan(student, plan, commencement_date=date(2026, 1, 31))
+
+        # Cycle 1 (Jan 31) was generated by enroll_student_in_recurring_plan.
+        for next_due in [date(2026, 2, 28), date(2026, 3, 31), date(2026, 4, 30), date(2026, 5, 31)]:
+            result = generate_due_subscription_invoices(today=next_due)
+            self.assertIn(subscription.id, result["generated"])
+
+        due_dates = sorted(SchoolFee.objects.filter(subscription=subscription).values_list("due_date", flat=True))
+        self.assertEqual(
+            due_dates,
+            [date(2026, 1, 31), date(2026, 2, 28), date(2026, 3, 31), date(2026, 4, 30), date(2026, 5, 31)],
+        )
+        # The exact regression chaining off a previously-clamped date would
+        # cause: Jan 31 -> Feb 28 -> Mar 28 (wrong) instead of Mar 31.
+        self.assertNotIn(date(2026, 3, 28), due_dates)
+
+
+class BackbillingGuardTests(RecurringBillingEngineTestCase):
+    schema_name = "guard_school"
+
+    def test_plan_created_after_admission_does_not_backbill_existing_student(self):
+        existing_student = self._make_student("existing@guard.edu", "GRD001", date(2025, 1, 10))
+
+        plan = RecurringBillingPlan.objects.create(
+            tenant=self.school, title="New Transport Fee", amount=Decimal("8000.00"),
+            applies_to_all_classes=True, effective_start_date=date(2026, 11, 1),
+        )
+
+        enrolled = apply_eligible_recurring_plans_for_new_student(existing_student)
+
+        self.assertEqual(enrolled, [])
+        self.assertFalse(StudentBillingSubscription.objects.filter(plan=plan, student=existing_student).exists())
+
+    def test_plan_effective_before_admission_enrolls_a_new_student(self):
+        plan = RecurringBillingPlan.objects.create(
+            tenant=self.school, title="Standing Tuition Plan", amount=Decimal("12000.00"),
+            applies_to_all_classes=True, effective_start_date=date(2020, 1, 1),
+        )
+        new_student = self._make_student("new@guard.edu", "GRD002", date(2026, 11, 1))
+
+        enrolled = apply_eligible_recurring_plans_for_new_student(new_student)
+
+        self.assertEqual(len(enrolled), 1)
+        self.assertTrue(StudentBillingSubscription.objects.filter(plan=plan, student=new_student).exists())
+
+    def test_charge_created_after_admission_does_not_backbill_existing_student(self):
+        existing_student = self._make_student("existing@guardcharge.edu", "GRD003", date(2026, 11, 1))
+        late_charge = OneTimeBillingCharge.objects.create(
+            tenant=self.school, title="New Exam Fee", amount=Decimal("3000.00"),
+            applies_to_all_classes=True, effective_start_date=date(2026, 11, 5), due_in_days=0,
+        )
+
+        applied = apply_eligible_one_time_charges_for_new_student(existing_student)
+
+        self.assertEqual(applied, [])
+        self.assertFalse(
+            StudentOneTimeChargeApplication.objects.filter(charge=late_charge, student=existing_student).exists()
+        )
+
+
+class WithdrawnStudentTests(RecurringBillingEngineTestCase):
+    schema_name = "withdraw_school"
+
+    def test_withdrawn_student_gets_no_further_invoice_and_subscription_cancelled(self):
+        plan = RecurringBillingPlan.objects.create(
+            tenant=self.school, title="Monthly Tuition", amount=Decimal("20000.00"),
+            applies_to_all_classes=True, effective_start_date=date(2020, 1, 1),
+        )
+        student = self._make_student("withdrawn@withdraw.edu", "WD001", date(2026, 9, 10))
+        subscription = enroll_student_in_recurring_plan(student, plan)
+
+        student.user.is_active = False
+        student.user.save(update_fields=["is_active"])
+
+        result = generate_due_subscription_invoices(today=date(2026, 10, 10))
+
+        self.assertIn(subscription.id, result["cancelled"])
+        subscription.refresh_from_db()
+        self.assertEqual(subscription.status, StudentBillingSubscription.STATUS_CANCELLED)
+        self.assertIsNotNone(subscription.cancelled_at)
+        self.assertEqual(SchoolFee.objects.filter(subscription=subscription).count(), 1)
+
+
+class PlanAmountChangeTests(RecurringBillingEngineTestCase):
+    schema_name = "amount_school"
+
+    def test_amount_change_only_affects_future_cycles(self):
+        plan = RecurringBillingPlan.objects.create(
+            tenant=self.school, title="Monthly Tuition", amount=Decimal("10000.00"),
+            applies_to_all_classes=True, effective_start_date=date(2020, 1, 1),
+        )
+        student = self._make_student("amt@amount.edu", "AMT001", date(2026, 9, 15))
+        subscription = enroll_student_in_recurring_plan(student, plan)
+
+        plan.amount = Decimal("13000.00")
+        plan.save(update_fields=["amount"])
+        generate_due_subscription_invoices(today=date(2026, 10, 15))
+
+        first_invoice = SchoolFee.objects.get(subscription=subscription, due_date=date(2026, 9, 15))
+        second_invoice = SchoolFee.objects.get(subscription=subscription, due_date=date(2026, 10, 15))
+        self.assertEqual(first_invoice.amount, Decimal("10000.00"))
+        self.assertEqual(second_invoice.amount, Decimal("13000.00"))
+
+
+class SubscriptionIdempotencyTests(RecurringBillingEngineTestCase):
+    schema_name = "idem_school"
+
+    def setUp(self):
+        super().setUp()
+        self.plan = RecurringBillingPlan.objects.create(
+            tenant=self.school, title="Monthly Tuition", amount=Decimal("10000.00"),
+            applies_to_all_classes=True, effective_start_date=date(2020, 1, 1),
+        )
+        self.student = self._make_student("idem@idem.edu", "IDM001", date(2026, 9, 15))
+        self.subscription = enroll_student_in_recurring_plan(self.student, self.plan)
+
+    def test_running_the_job_twice_for_the_same_day_bills_once(self):
+        generate_due_subscription_invoices(today=date(2026, 10, 15))
+        generate_due_subscription_invoices(today=date(2026, 10, 15))
+
+        self.assertEqual(SchoolFee.objects.filter(subscription=self.subscription).count(), 2)
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.cycles_billed, 2)
+
+    def test_database_constraint_rejects_a_duplicate_cycle_directly(self):
+        with self.assertRaises(IntegrityError):
+            SchoolFee.objects.create(
+                student=self.student, subscription=self.subscription, title="Duplicate",
+                amount=Decimal("10000.00"), due_date=date(2026, 9, 15),
+            )
+
+
+class OneTimeChargeTests(RecurringBillingEngineTestCase):
+    schema_name = "otc_school"
+
+    def setUp(self):
+        super().setUp()
+        self.charge = OneTimeBillingCharge.objects.create(
+            tenant=self.school, title="Registration Fee", amount=Decimal("5000.00"),
+            applies_to_all_classes=True, effective_start_date=date(2020, 1, 1), due_in_days=7,
+        )
+        self.student = self._make_student("otc@otc.edu", "OTC001", date(2026, 11, 1))
+
+    def test_charge_applies_exactly_once_even_under_retries(self):
+        _app1, fee1 = apply_one_time_charge_to_student(self.charge, self.student)
+        _app2, fee2 = apply_one_time_charge_to_student(self.charge, self.student)
+
+        self.assertIsNotNone(fee1)
+        self.assertIsNone(fee2)
+        self.assertEqual(
+            StudentOneTimeChargeApplication.objects.filter(charge=self.charge, student=self.student).count(), 1,
+        )
+        self.assertEqual(SchoolFee.objects.filter(one_time_charge=self.charge, student=self.student).count(), 1)
+        self.assertEqual(fee1.due_date, timezone.localdate() + timedelta(days=7))
+        self.assertIsNone(fee1.term)
+
+
+class SubscriptionFIFOAllocationTests(RecurringBillingEngineTestCase):
+    """apply_bank_payment_to_student's existing FIFO sweep
+    (exclude(status=PAID), order_by due_date) is fully generic over any
+    SchoolFee - a subscription invoice needs zero new code to be picked up
+    correctly, exactly like a Bill-sourced invoice already is."""
+
+    schema_name = "fifo_school"
+
+    def test_payment_clears_oldest_subscription_invoice_first(self):
+        plan = RecurringBillingPlan.objects.create(
+            tenant=self.school, title="Monthly Tuition", amount=Decimal("10000.00"),
+            applies_to_all_classes=True, effective_start_date=date(2020, 1, 1),
+        )
+        student = self._make_student("fifo@fifo.edu", "FIFO001", date(2026, 9, 1))
+        subscription = enroll_student_in_recurring_plan(student, plan)  # invoice due 2026-09-01
+        generate_due_subscription_invoices(today=date(2026, 10, 1))  # invoice due 2026-10-01
+
+        reference = get_or_create_student_payment_reference(student)
+        payment = BankPayment.objects.create(
+            tenant=self.school, student=student, payment_reference=reference,
+            amount=Decimal("10000.00"), currency="NGN", narration="Test transfer",
+            bank_reference="BANKREF-FIFO-001", status=BankPayment.STATUS_PENDING,
+            unapplied_amount=Decimal("10000.00"),
+        )
+        apply_bank_payment_to_student(payment, student)
+
+        first_invoice = SchoolFee.objects.get(subscription=subscription, due_date=date(2026, 9, 1))
+        second_invoice = SchoolFee.objects.get(subscription=subscription, due_date=date(2026, 10, 1))
+        self.assertEqual(first_invoice.status, SchoolFee.STATUS_PAID)
+        self.assertNotEqual(second_invoice.status, SchoolFee.STATUS_PAID)
+
+
+class SubscriptionIsolationFromTermCloseTests(RecurringBillingEngineTestCase):
+    """term=None on a subscription invoice is what keeps it permanently
+    outside close_term_finance's `term=closing_term` sweep - isolated from
+    the K12/annual term-close machinery by construction."""
+
+    schema_name = "isolation_school"
+
+    def test_unpaid_subscription_invoice_is_never_swept_into_arrears(self):
+        term1 = Term.objects.create(
+            tenant=self.legacy_tenant, name="Year 1", start_date=date(2026, 9, 1),
+            end_date=date(2027, 7, 1), is_active=True,
+        )
+        term2 = Term.objects.create(
+            tenant=self.legacy_tenant, name="Year 2", start_date=date(2027, 9, 1),
+            end_date=date(2028, 7, 1), is_active=False,
+        )
+        plan = RecurringBillingPlan.objects.create(
+            tenant=self.school, title="Monthly Tuition", amount=Decimal("20000.00"),
+            applies_to_all_classes=True, effective_start_date=date(2020, 1, 1),
+        )
+        student = self._make_student("iso@isolation.edu", "ISO001", date(2026, 9, 10))
+        subscription = enroll_student_in_recurring_plan(student, plan)
+        fee = SchoolFee.objects.get(subscription=subscription)
+        self.assertIsNone(fee.term)
+
+        result = close_term_finance(term1, term2)
+
+        self.assertEqual(result["students_with_arrears"], 0)
+        fee.refresh_from_db()
+        self.assertIsNone(fee.closed_at)
+        self.assertEqual(fee.status, SchoolFee.STATUS_PENDING)

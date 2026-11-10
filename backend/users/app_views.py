@@ -1374,15 +1374,41 @@ def _sync_student_finance_for_class(student_profile, actor=None):
     if not student_profile or not student_profile.current_class_id:
         return
     from finance.models import Bill
-    from finance.services import drop_stale_fees_for_class_change, sync_bill_invoices, sync_student_class_fees
+    from finance.services import (
+        apply_eligible_one_time_charges_for_new_student,
+        apply_eligible_recurring_plans_for_new_student,
+        drop_stale_fees_for_class_change,
+        sync_bill_invoices,
+        sync_student_class_fees,
+    )
 
     sync_student_class_fees(student_profile, actor=actor)
+    # Excludes a bill due before this student's own admission_date - they
+    # cannot owe a bill for a period before they joined the school. Without
+    # this, a non-K12 school's months-old published Bills (Bill has no
+    # per-term close the way ClassFee gets from close_term_finance, and no
+    # is_active flag at all - once published it stays published forever)
+    # all land on a brand-new student the moment they're assigned to the
+    # class, backbilling them for months they were never enrolled. A bill
+    # with no due_date carries no period to judge, so it still applies.
     published_bills = Bill.objects.filter(
         classes=student_profile.current_class_id, status=Bill.STATUS_PUBLISHED
+    ).filter(
+        Q(due_date__isnull=True) | Q(due_date__gte=student_profile.admission_date)
     ).distinct()
     for bill in published_bills:
         sync_bill_invoices(bill, actor=actor)
     drop_stale_fees_for_class_change(student_profile, actor=actor)
+    # Same admission_date guard as sync_student_class_fees above: a plan/
+    # charge only ever applies to a student whose own admission_date is on
+    # or after its effective_start_date, so a brand-new plan can never
+    # backbill a student who was already enrolled when it was created,
+    # merely because their profile got saved again for an unrelated reason.
+    # Both calls are idempotent (get_or_create under the hood), so running
+    # them on every sync - not just on creation - never double-enrolls or
+    # double-charges an already-handled student.
+    apply_eligible_recurring_plans_for_new_student(student_profile, actor=actor)
+    apply_eligible_one_time_charges_for_new_student(student_profile, actor=actor)
 
 
 def _sync_student_guardians_to_parent_directory(student_profile):

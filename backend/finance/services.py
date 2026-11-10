@@ -10,6 +10,7 @@ from urllib.parse import quote
 logger = logging.getLogger(__name__)
 
 import requests
+from dateutil.relativedelta import relativedelta
 from django.conf import settings
 from django.db import OperationalError, ProgrammingError
 from django.db import transaction
@@ -31,14 +32,18 @@ from finance.models import (
     ExpenseRecord,
     FeeAllocation,
     FinanceLedgerLog,
+    OneTimeBillingCharge,
     ParentVirtualAccount,
     PaymentReceiptLink,
+    RecurringBillingPlan,
     SchoolFee,
     SmsBundle,
     SmsMessageLog,
     SmsWallet,
     SmsWalletTransaction,
     StudentActivationCredit,
+    StudentBillingSubscription,
+    StudentOneTimeChargeApplication,
     StudentPaymentReference,
     Transaction,
     Wallet,
@@ -4178,13 +4183,24 @@ def sync_class_fee_assignments(class_fee, actor=None, notify_students=False):
 
 
 def sync_student_class_fees(student_profile, actor=None):
-    """Ensure a student's generated class fees match their current class."""
+    """Ensure a student's generated class fees match their current class.
+
+    Excludes any class fee due before this student's own admission_date -
+    they cannot owe a fee for a period before they joined the school. Without
+    this, a non-K12 school's months-old ClassFee rows (K-12 schools get
+    these retired automatically when their term closes - see
+    close_term_finance - but a non-K12 school has no mid-session term
+    boundary to do that, so an admin re-creating the same fee by hand every
+    month leaves every past month's row sitting is_active=True forever) all
+    land on a brand-new student the moment they're assigned to the class,
+    backbilling them for months they were never enrolled."""
     if not student_profile or not student_profile.current_class_id:
         return 0
 
     class_fees = ClassFee.objects.filter(
         school_class=student_profile.current_class,
         is_active=True,
+        due_date__gte=student_profile.admission_date,
     )
     count = 0
     for class_fee in class_fees:
@@ -4920,6 +4936,270 @@ def fee_totals_by_student(students, class_ids):
         "manual_fees": manual_fees,
         "paid_amounts": paid_amounts,
     }
+
+
+def _billing_template_applies_to_class(template, class_id):
+    """Shared by RecurringBillingPlan and OneTimeBillingCharge: whether a
+    template covers a given class. An empty `classes` M2M never silently
+    means "every class" - applies_to_all_classes is the explicit opt-in for
+    that, closing the exact ambiguity Bill.classes already has."""
+    if not class_id:
+        return False
+    if template.applies_to_all_classes:
+        return True
+    return template.classes.filter(id=class_id).exists()
+
+
+def _subscription_invoice_number(subscription, cycle_number):
+    return f"SUB-{subscription.id.hex[:6].upper()}-{cycle_number:03d}"
+
+
+def _one_time_charge_invoice_number(charge, student):
+    student_code = student.student_id or student.admission_number or str(student.id)[:8]
+    return f"OTC-{charge.id.hex[:6].upper()}-{student_code}"
+
+
+def _generate_subscription_invoice(subscription, cycle_number, due_date, actor=None):
+    """Create (or return the already-existing) SchoolFee for one billing
+    cycle of a subscription. get_or_create on (subscription, due_date) is
+    the real "exactly once per cycle" guarantee - backed at the database
+    level by SchoolFee's unique_subscription_invoice_per_cycle constraint,
+    so a duplicate/concurrent job run can't double-bill a cycle even if the
+    Python-level check were somehow bypassed.
+
+    `term` is deliberately left None - that's what keeps this invoice
+    permanently outside close_term_finance's `term=closing_term` sweep,
+    isolating it from the K12/annual term-close machinery by construction.
+    The amount is captured from the plan's CURRENT amount at generation
+    time and never rewritten later, so a template amount change only ever
+    affects cycles not yet generated."""
+    return SchoolFee.objects.get_or_create(
+        subscription=subscription,
+        due_date=due_date,
+        defaults={
+            "student": subscription.student,
+            "title": subscription.plan.title,
+            "amount": subscription.plan.amount,
+            "currency": subscription.plan.currency,
+            "auto_deduct": True,
+            "term": None,
+            "invoice_number": _subscription_invoice_number(subscription, cycle_number),
+            "created_by": actor,
+        },
+    )
+
+
+def enroll_student_in_recurring_plan(student_profile, plan, commencement_date=None, actor=None):
+    """Start a student's own anniversary billing schedule for `plan`.
+    `billing_anchor_date` is immutable from here on - every future due date
+    is computed directly from it (see generate_due_subscription_invoices),
+    never by chaining off a previous cycle's date, so a student anchored on
+    the 31st returns to the 31st every time a long month allows it instead
+    of drifting down to the 28th within a few cycles.
+
+    The first invoice is generated immediately, in full, for the anchor
+    date itself - never prorated. Idempotent: enrolling an already-enrolled
+    student just returns their existing subscription untouched."""
+    if plan.frequency != RecurringBillingPlan.FREQUENCY_MONTHLY:
+        raise NotImplementedError(f"Unsupported billing frequency: {plan.frequency}")
+
+    anchor = commencement_date or student_profile.admission_date
+    subscription, created = StudentBillingSubscription.objects.get_or_create(
+        plan=plan,
+        student=student_profile,
+        defaults={
+            "billing_anchor_date": anchor,
+            "next_billing_date": anchor,
+            "cycles_billed": 0,
+        },
+    )
+    if not created:
+        return subscription
+
+    _generate_subscription_invoice(subscription, cycle_number=1, due_date=anchor, actor=actor)
+    subscription.cycles_billed = 1
+    subscription.next_billing_date = subscription.billing_anchor_date + relativedelta(months=1)
+    subscription.save(update_fields=["cycles_billed", "next_billing_date", "updated_at"])
+    return subscription
+
+
+def generate_due_subscription_invoices(today=None, dry_run=False, actor=None, tenant=None):
+    """The daily scheduled job (see the generate_due_subscription_invoices
+    management command - run via real OS cron, no Celery worker is
+    confirmed in production), also called opportunistically (scoped to the
+    viewing admin's own tenant via `tenant`) from the finance dashboard's
+    hot path, the same dual-trigger pattern
+    academic.models.check_and_advance_term_transition already uses for the
+    same reason. Tolerates duplicate/concurrent runs: locks each
+    subscription row individually with select_for_update(of=("self",)) -
+    never a bare select_for_update() when select_related crosses a
+    nullable FK like student.user.tenant, or Postgres raises "FOR UPDATE
+    cannot be applied to the nullable side of an outer join" while SQLite
+    silently no-ops it - and re-checks the subscription is still due AFTER
+    acquiring the lock, so two overlapping runs can never both generate the
+    same cycle (also enforced at the DB level by
+    unique_subscription_invoice_per_cycle).
+
+    A student withdrawn since their last cycle (student.user.is_active is
+    False - the same flag graduate_student_to_alumni sets) gets no further
+    invoice; their subscription is cancelled outright rather than silently
+    piling up invoices nobody will ever pay.
+
+    Returns {"generated": [...ids], "cancelled": [...ids]} (dry_run reports
+    what would be generated without writing anything).
+    """
+    today = today or timezone.localdate()
+    candidates = StudentBillingSubscription.objects.filter(
+        status=StudentBillingSubscription.STATUS_ACTIVE,
+        next_billing_date__lte=today,
+    )
+    if tenant is not None:
+        candidates = candidates.filter(student__user__tenant=tenant)
+    candidate_ids = list(candidates.values_list("id", flat=True))
+
+    generated = []
+    cancelled = []
+    touched_tenants = {}
+
+    for subscription_id in candidate_ids:
+        if dry_run:
+            generated.append(subscription_id)
+            continue
+        with transaction.atomic():
+            try:
+                subscription = (
+                    StudentBillingSubscription.objects.select_for_update(of=("self",))
+                    .select_related("plan", "student", "student__user", "student__user__tenant")
+                    .get(id=subscription_id)
+                )
+            except StudentBillingSubscription.DoesNotExist:
+                continue
+            if subscription.status != StudentBillingSubscription.STATUS_ACTIVE:
+                continue
+            if subscription.next_billing_date > today:
+                continue
+
+            if not subscription.student.user.is_active:
+                subscription.status = StudentBillingSubscription.STATUS_CANCELLED
+                subscription.cancelled_at = timezone.now()
+                subscription.save(update_fields=["status", "cancelled_at", "updated_at"])
+                cancelled.append(subscription.id)
+                continue
+
+            cycle_number = subscription.cycles_billed + 1
+            due_date = subscription.billing_anchor_date + relativedelta(months=subscription.cycles_billed)
+            _fee, fee_created = _generate_subscription_invoice(
+                subscription, cycle_number=cycle_number, due_date=due_date, actor=actor,
+            )
+            subscription.cycles_billed = cycle_number
+            subscription.next_billing_date = subscription.billing_anchor_date + relativedelta(months=cycle_number)
+            subscription.save(update_fields=["cycles_billed", "next_billing_date", "updated_at"])
+            if fee_created:
+                generated.append(subscription.id)
+                tenant = getattr(subscription.student.user, "tenant", None)
+                if tenant is not None:
+                    touched_tenants[tenant.id] = tenant
+
+    if not dry_run:
+        for tenant in touched_tenants.values():
+            record_finance_activity(
+                tenant=tenant,
+                actor=actor,
+                action="recurring_invoices_generated",
+                description="Daily recurring subscription invoices generated.",
+                metadata={"count": len(generated)},
+            )
+
+    return {"generated": generated, "cancelled": cancelled}
+
+
+def apply_one_time_charge_to_student(charge, student_profile, actor=None):
+    """Apply `charge` to `student_profile`, exactly once, no matter how many
+    times this is called (a duplicate scheduled-job run, a retried API
+    request, two concurrent requests) -
+    StudentOneTimeChargeApplication.unique_together=[["charge", "student"]]
+    is the actual guarantee; this is just the get_or_create that relies on
+    it. Returns (application, created_invoice_or_None) - None means the
+    charge was already applied and nothing new was created."""
+    application, created = StudentOneTimeChargeApplication.objects.get_or_create(
+        charge=charge,
+        student=student_profile,
+        defaults={"applied_by": actor},
+    )
+    if not created:
+        return application, None
+
+    due_date = timezone.localdate() + timedelta(days=charge.due_in_days)
+    fee = SchoolFee.objects.create(
+        student=student_profile,
+        one_time_charge=charge,
+        title=charge.title,
+        amount=charge.amount,
+        currency=charge.currency,
+        due_date=due_date,
+        auto_deduct=True,
+        term=None,
+        invoice_number=_one_time_charge_invoice_number(charge, student_profile),
+        created_by=actor,
+    )
+    application.school_fee = fee
+    application.save(update_fields=["school_fee"])
+    return application, fee
+
+
+def apply_eligible_recurring_plans_for_new_student(student_profile, actor=None):
+    """Auto-enroll a brand-new student into every active, auto-apply
+    recurring plan that covers their class - called only from
+    _sync_student_finance_for_class's new-student branch, never on an
+    ordinary save of an existing student (see
+    apply_eligible_one_time_charges_for_new_student for why that
+    distinction is a hard requirement, not a nice-to-have: without it,
+    creating a new plan today would silently bill every existing student
+    the next time anyone edited their profile for an unrelated reason).
+
+    effective_start_date <= admission_date is the backbilling guard: a plan
+    created today must never retroactively bill a student who enrolled
+    before the plan existed."""
+    if not student_profile or not student_profile.current_class_id:
+        return []
+    plans = RecurringBillingPlan.objects.filter(
+        status=RecurringBillingPlan.STATUS_ACTIVE,
+        auto_apply_to_new_students=True,
+        effective_start_date__lte=student_profile.admission_date,
+    ).prefetch_related("classes")
+    enrolled = []
+    for plan in plans:
+        if not _billing_template_applies_to_class(plan, student_profile.current_class_id):
+            continue
+        enrolled.append(enroll_student_in_recurring_plan(student_profile, plan, actor=actor))
+    return enrolled
+
+
+def apply_eligible_one_time_charges_for_new_student(student_profile, actor=None):
+    """Auto-apply every active, auto-apply one-time charge that covers a
+    brand-new student's class - same admission_date/class-eligibility guard
+    and new-student-only calling convention as
+    apply_eligible_recurring_plans_for_new_student."""
+    if not student_profile or not student_profile.current_class_id:
+        return []
+    today = timezone.localdate()
+    charges = (
+        OneTimeBillingCharge.objects.filter(
+            status=OneTimeBillingCharge.STATUS_ACTIVE,
+            auto_apply_to_new_students=True,
+            effective_start_date__lte=student_profile.admission_date,
+        )
+        .filter(Q(expiry_date__isnull=True) | Q(expiry_date__gte=today))
+        .prefetch_related("classes")
+    )
+    applied = []
+    for charge in charges:
+        if not _billing_template_applies_to_class(charge, student_profile.current_class_id):
+            continue
+        _application, fee = apply_one_time_charge_to_student(charge, student_profile, actor=actor)
+        if fee is not None:
+            applied.append(fee)
+    return applied
 
 
 def close_term_finance(closing_term, new_term, school=None, actor=None, dry_run=False):
