@@ -29181,7 +29181,20 @@ body[data-theme="dark"] .bill-send-parent-list { border-color: rgba(255,255,255,
 .bill-send-parent-row:last-child { border-bottom: none; }
 .bill-send-parent-row.disabled { opacity: .5; }
 .bill-send-parent-row small { display: block; color: #64748b; font-size: .75rem; }
-.panel-field-row { display: flex; gap: 1.25rem; align-items: center; margin: .5rem 0; font-size: .9rem; }
+.panel-field-row { display: flex; gap: 1.25rem; align-items: center; margin: .5rem 0; font-size: .9rem; flex-wrap: wrap; }
+.panel-field-row label { display: flex; align-items: center; gap: .45rem; font-weight: 600; color: #334155; cursor: pointer; }
+body[data-theme="dark"] .panel-field-row label { color: #e2e8f0; }
+.panel-field-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #4f46e5; flex: 0 0 auto; }
+
+.class-checkbox-list { display: flex; flex-direction: column; gap: .4rem; max-height: 220px; overflow-y: auto; border: 1px solid #cbd5e1; border-radius: 10px; padding: .6rem .75rem; margin-top: .3rem; }
+body[data-theme="dark"] .class-checkbox-list { border-color: rgba(255,255,255,.15); }
+.class-checkbox-row { display: flex; align-items: center; gap: .5rem; font-size: .88rem; font-weight: 600; color: #334155; cursor: pointer; }
+body[data-theme="dark"] .class-checkbox-row { color: #e2e8f0; }
+.class-checkbox-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #4f46e5; flex: 0 0 auto; }
+.class-checkbox-row input[type="checkbox"]:disabled { opacity: .4; cursor: not-allowed; }
+.class-checkbox-row:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+.class-checkbox-all { padding-bottom: .5rem; border-bottom: 1px solid #e2e8f0; margin-bottom: .1rem; }
+body[data-theme="dark"] .class-checkbox-all { border-bottom-color: rgba(255,255,255,.12); }
 .bill-history-filters { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem; }
 .bill-history-filters input, .bill-history-filters select { padding: .45rem .6rem; border-radius: 8px; border: 1px solid #cbd5e1; font-size: .85rem; }
 body[data-theme="dark"] .bill-history-filters input, body[data-theme="dark"] .bill-history-filters select { background: #111827; border-color: rgba(255,255,255,.15); color: #e2e8f0; }

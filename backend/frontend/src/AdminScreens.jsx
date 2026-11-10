@@ -1558,8 +1558,8 @@ const FINANCE_RECORD_TABS = [
 const FINANCE_ACTION_LABELS = {
   "cash-payment": "Record Payment",
   "generate-bill": "Generate Bill",
-  "recurring-plan": "Create Recurring Plan",
-  "one-time-charge": "Create One-Time Charge",
+  "recurring-plan": "Create Recurring Bill",
+  "one-time-charge": "Create One-Time Bill",
   "assign-tokens": "Assign Tokens",
   "buy-tokens": "Buy Tokens",
   "virtual-accounts": "Provision Virtual Accounts",
@@ -3810,7 +3810,7 @@ function AdminFinanceScreen({
 
             <FinanceActionCard
               id="recurring-plan"
-              title="Create Recurring Plan"
+              title="Create Recurring Bill"
               description="A monthly charge billed on each student's own enrollment anniversary - never a shared, school-wide due date. Changing the amount later only affects cycles not yet billed."
               icon="money"
               open={openActionCard === "recurring-plan"}
@@ -3822,37 +3822,57 @@ function AdminFinanceScreen({
                   <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={recurringPlanForm.amount} onChange={(event) => handleRecurringPlanFormChange("amount", event.target.value)} required /></label>
                   <label className="panel-field">Effective from<input type="date" value={recurringPlanForm.effective_start_date} onChange={(event) => handleRecurringPlanFormChange("effective_start_date", event.target.value)} required /></label>
                   <label className="panel-field">Ends on (optional)<input type="date" value={recurringPlanForm.effective_end_date} onChange={(event) => handleRecurringPlanFormChange("effective_end_date", event.target.value)} /></label>
-                  {!recurringPlanForm.applies_to_all_classes ? (
-                    <label className="panel-field">
-                      Classes
-                      <select
-                        multiple
-                        value={recurringPlanForm.class_ids}
-                        onChange={(event) => handleRecurringPlanFormChange("class_ids", Array.from(event.target.selectedOptions, (option) => option.value))}
-                      >
-                        {classOptions.map((item) => (
-                          <option key={item.id || item.value} value={item.id || item.value}>{item.label || item.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
+                  <label className="panel-field full">
+                    Classes
+                    <div className="class-checkbox-list">
+                      <label className="class-checkbox-row class-checkbox-all">
+                        <input
+                          type="checkbox"
+                          checked={recurringPlanForm.applies_to_all_classes}
+                          onChange={(event) => handleRecurringPlanFormChange("applies_to_all_classes", event.target.checked)}
+                        />
+                        All Classes
+                      </label>
+                      {classOptions.map((item) => {
+                        const classId = item.id || item.value;
+                        return (
+                          <label className="class-checkbox-row" key={classId}>
+                            <input
+                              type="checkbox"
+                              disabled={recurringPlanForm.applies_to_all_classes}
+                              checked={recurringPlanForm.class_ids.includes(classId)}
+                              onChange={(event) => {
+                                const checked = event.target.checked;
+                                handleRecurringPlanFormChange(
+                                  "class_ids",
+                                  checked
+                                    ? [...recurringPlanForm.class_ids, classId]
+                                    : recurringPlanForm.class_ids.filter((id) => id !== classId)
+                                );
+                              }}
+                            />
+                            {item.label || item.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </label>
                   <label className="panel-field">Description (optional)<textarea value={recurringPlanForm.description} onChange={(event) => handleRecurringPlanFormChange("description", event.target.value)} /></label>
                 </div>
                 <div className="panel-field-row">
-                  <label><input type="checkbox" checked={recurringPlanForm.applies_to_all_classes} onChange={(event) => handleRecurringPlanFormChange("applies_to_all_classes", event.target.checked)} /> Applies to all classes</label>
                   <label><input type="checkbox" checked={recurringPlanForm.auto_apply_to_new_students} onChange={(event) => handleRecurringPlanFormChange("auto_apply_to_new_students", event.target.checked)} /> Auto-enroll new students</label>
                 </div>
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onRecurringPlanSave}>Create plan</button>
-                  <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("recurring-billing")}>View recurring plans</button>
+                  <button type="submit" disabled={!onRecurringPlanSave}>Create bill</button>
+                  <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("recurring-billing")}>View recurring bills</button>
                 </div>
               </form>
             </FinanceActionCard>
 
             <FinanceActionCard
               id="one-time-charge"
-              title="Create One-Time Charge"
-              description="A single charge (registration, exam fee) applied once per eligible student, never recurring."
+              title="Create One-Time Bill"
+              description="A single bill (registration, exam fee) applied once per eligible student, never recurring."
               icon="money"
               open={openActionCard === "one-time-charge"}
               onToggle={setOpenActionCard}
@@ -3864,29 +3884,49 @@ function AdminFinanceScreen({
                   <label className="panel-field">Effective from<input type="date" value={oneTimeChargeForm.effective_start_date} onChange={(event) => handleOneTimeChargeFormChange("effective_start_date", event.target.value)} required /></label>
                   <label className="panel-field">Expires on (optional)<input type="date" value={oneTimeChargeForm.expiry_date} onChange={(event) => handleOneTimeChargeFormChange("expiry_date", event.target.value)} /></label>
                   <label className="panel-field">Due in (days)<input type="number" min="0" step="1" value={oneTimeChargeForm.due_in_days} onChange={(event) => handleOneTimeChargeFormChange("due_in_days", event.target.value)} /></label>
-                  {!oneTimeChargeForm.applies_to_all_classes ? (
-                    <label className="panel-field">
-                      Classes
-                      <select
-                        multiple
-                        value={oneTimeChargeForm.class_ids}
-                        onChange={(event) => handleOneTimeChargeFormChange("class_ids", Array.from(event.target.selectedOptions, (option) => option.value))}
-                      >
-                        {classOptions.map((item) => (
-                          <option key={item.id || item.value} value={item.id || item.value}>{item.label || item.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
+                  <label className="panel-field full">
+                    Classes
+                    <div className="class-checkbox-list">
+                      <label className="class-checkbox-row class-checkbox-all">
+                        <input
+                          type="checkbox"
+                          checked={oneTimeChargeForm.applies_to_all_classes}
+                          onChange={(event) => handleOneTimeChargeFormChange("applies_to_all_classes", event.target.checked)}
+                        />
+                        All Classes
+                      </label>
+                      {classOptions.map((item) => {
+                        const classId = item.id || item.value;
+                        return (
+                          <label className="class-checkbox-row" key={classId}>
+                            <input
+                              type="checkbox"
+                              disabled={oneTimeChargeForm.applies_to_all_classes}
+                              checked={oneTimeChargeForm.class_ids.includes(classId)}
+                              onChange={(event) => {
+                                const checked = event.target.checked;
+                                handleOneTimeChargeFormChange(
+                                  "class_ids",
+                                  checked
+                                    ? [...oneTimeChargeForm.class_ids, classId]
+                                    : oneTimeChargeForm.class_ids.filter((id) => id !== classId)
+                                );
+                              }}
+                            />
+                            {item.label || item.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </label>
                   <label className="panel-field">Description (optional)<textarea value={oneTimeChargeForm.description} onChange={(event) => handleOneTimeChargeFormChange("description", event.target.value)} /></label>
                 </div>
                 <div className="panel-field-row">
-                  <label><input type="checkbox" checked={oneTimeChargeForm.applies_to_all_classes} onChange={(event) => handleOneTimeChargeFormChange("applies_to_all_classes", event.target.checked)} /> Applies to all classes</label>
                   <label><input type="checkbox" checked={oneTimeChargeForm.auto_apply_to_new_students} onChange={(event) => handleOneTimeChargeFormChange("auto_apply_to_new_students", event.target.checked)} /> Auto-apply to new students</label>
                 </div>
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onOneTimeChargeSave}>Create charge</button>
-                  <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("recurring-billing")}>View one-time charges</button>
+                  <button type="submit" disabled={!onOneTimeChargeSave}>Create bill</button>
+                  <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("recurring-billing")}>View one-time bills</button>
                 </div>
               </form>
             </FinanceActionCard>
@@ -4352,8 +4392,8 @@ function AdminFinanceScreen({
             {recordSection === "recurring-billing" ? (
               <article className="app-panel finance-record-panel">
                 <div className="mobile-section-head">
-                  <h3>Recurring Plans</h3>
-                  <small>{recurringPlans.length} plan{recurringPlans.length === 1 ? "" : "s"}</small>
+                  <h3>Recurring Bills</h3>
+                  <small>{recurringPlans.length} bill{recurringPlans.length === 1 ? "" : "s"}</small>
                 </div>
                 {recurringPlansError ? <p className="form-feedback error">{recurringPlansError}</p> : null}
                 <div className="table-scroll">
@@ -4375,7 +4415,7 @@ function AdminFinanceScreen({
                             ) : null}
                           </td>
                         </tr>
-                      )) : <tr><td colSpan="8">{recurringPlansLoading ? "Loading..." : "No recurring plans yet."}</td></tr>}
+                      )) : <tr><td colSpan="8">{recurringPlansLoading ? "Loading..." : "No recurring bills yet."}</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -4385,8 +4425,8 @@ function AdminFinanceScreen({
             {recordSection === "recurring-billing" ? (
               <article className="app-panel finance-record-panel">
                 <div className="mobile-section-head">
-                  <h3>One-Time Charges</h3>
-                  <small>{oneTimeCharges.length} charge{oneTimeCharges.length === 1 ? "" : "s"}</small>
+                  <h3>One-Time Bills</h3>
+                  <small>{oneTimeCharges.length} bill{oneTimeCharges.length === 1 ? "" : "s"}</small>
                 </div>
                 {oneTimeChargesError ? <p className="form-feedback error">{oneTimeChargesError}</p> : null}
                 <div className="table-scroll">
@@ -4411,7 +4451,7 @@ function AdminFinanceScreen({
                             </div>
                           </td>
                         </tr>
-                      )) : <tr><td colSpan="8">{oneTimeChargesLoading ? "Loading..." : "No one-time charges yet."}</td></tr>}
+                      )) : <tr><td colSpan="8">{oneTimeChargesLoading ? "Loading..." : "No one-time bills yet."}</td></tr>}
                     </tbody>
                   </table>
                 </div>
