@@ -109,64 +109,36 @@ object ApiClient {
         }
     }
 
-    private fun tryRefresh(context: Context, session: JSONObject, timeoutMs: Int): JSONObject {
-        val refresh = session.optString("refresh", "")
-        if (refresh.isEmpty()) {
-            SessionStore.clearSession(context)
-            throw SessionExpiredException()
-        }
-        // A connectivity failure here (e.g. the backend being down) is not
-        // the server telling us this refresh token is invalid - it's the
-        // same "couldn't reach the server" case apiRequest's own send()
-        // calls already handle, by queueing or surfacing a network error
-        // without touching the session. Letting it propagate (instead of
-        // swallowing it into a forced logout here) means a terminal that
-        // rode out an outage resumes scanning on its own once the server is
-        // back, rather than being stuck needing a manual re-provision for a
-        // session that was never actually revoked - see the 2026-10-28
-        // incident, where exactly this wiped a still-valid device session.
-        val (status, body) = send(
-            "POST", "${Config.API_BASE_URL}/api/auth/refresh/",
-            mapOf("Content-Type" to "application/json"),
-            JSONObject().put("refresh", refresh).toString(),
-            timeoutMs,
-        )
-        val data = if (body.isNotEmpty()) JSONObject(body) else null
-        if (status != 200 || data?.optString("access", "")?.isEmpty() != false) {
-            SessionStore.clearSession(context)
-            throw SessionExpiredException()
-        }
-        val next = JSONObject(session.toString()).apply {
-            put("access", data.getString("access"))
-            if (data.has("refresh")) put("refresh", data.getString("refresh"))
-            put("signedInAt", isoNow())
-        }
-        SessionStore.saveSession(context, next)
-        return next
-    }
-
     /**
-     * @param timeoutMs One overall budget for the whole call (first attempt,
-     * any token refresh, and the retry) - running out is treated like having
-     * no network when [queueWhenOffline] is set.
+     * @param timeoutMs One overall budget for the whole call - running out is
+     * treated like having no network when [queueWhenOffline] is set.
+     *
+     * Authenticates with the device's own permanent token (the same one
+     * heartbeat/provisioning use - device_fleet.views._device_from_token),
+     * not a JWT session. A human-style JWT refresh token (SIMPLE_JWT's 7-day
+     * REFRESH_TOKEN_LIFETIME) was never a fit for an unattended terminal: a
+     * missed renewal (an offline stretch, a flaky connection) silently
+     * expired it while Device.authorized/status in the Control Panel stayed
+     * untouched, forcing a needless "re-enter license key". The device
+     * token has no timer - it's only ever invalidated by an admin actually
+     * suspending/revoking the terminal (see DeviceTokenAuthentication on the
+     * backend), so a 401 here now means exactly what the Control Panel shows.
      */
     fun apiRequest(
         context: Context,
         method: String,
         endpoint: String,
         payload: JSONObject? = null,
-        retry: Boolean = true,
         queueWhenOffline: Boolean = false,
         timeoutMs: Long? = null,
     ): JSONObject {
-        var session = SessionStore.getSession(context)
-        if (session == null || session.optString("access", "").isEmpty()) {
-            SessionStore.clearSession(context)
+        val deviceToken = KioskStore.deviceAuthToken(context)
+        if (deviceToken.isNullOrEmpty()) {
             throw SessionExpiredException()
         }
 
         val url = "${Config.API_BASE_URL}$endpoint"
-        val headers = mutableMapOf("Authorization" to "Bearer ${session.getString("access")}")
+        val headers = mutableMapOf("X-Device-Token" to deviceToken)
         val body = payload?.let {
             headers["Content-Type"] = "application/json"
             it.toString()
@@ -202,27 +174,11 @@ object ApiClient {
             throw ApiException("Network error. Check your connection.")
         }
 
-        if (statusCode == 401 && retry) {
-            try {
-                session = tryRefresh(context, session, budgetMs())
-                headers["Authorization"] = "Bearer ${session.getString("access")}"
-                val (s, b) = send(method, url, headers, body, budgetMs())
-                statusCode = s; responseBody = b
-            } catch (e: SocketTimeoutException) {
-                if (queueWhenOffline && method != "GET") return saveForLater(timedOut = true)
-                throw ApiException("The server took too long to respond.")
-            } catch (e: IOException) {
-                if (queueWhenOffline && method != "GET") return saveForLater(timedOut = false)
-                throw ApiException("Network error. Check your connection.")
-            }
-        }
-
         val data = if (responseBody.isNotEmpty()) JSONObject(responseBody) else JSONObject()
 
         if (statusCode in 200..299) return data
 
         if (statusCode == 401) {
-            SessionStore.clearSession(context)
             throw SessionExpiredException()
         }
 
