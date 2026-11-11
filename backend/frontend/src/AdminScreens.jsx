@@ -1923,6 +1923,13 @@ function AdminFinanceScreen({
   const schoolBrand = resolveSchoolBrand(finance?.school, data?.school, school, finance?.tenant, data?.tenant);
   const documentTheme = resolveDocumentTheme(finance?.school, data?.school, school);
   const groupLabels = academicGroupLabels(schoolBrand);
+  // Generate Bill (a shared school-wide due date) is the K-12 billing model;
+  // Non-K12 bills each student off their own enrollment anniversary instead
+  // (Recurring Bill), so Generate Bill is K-12-only and Recurring Bill is
+  // Non-K12-only. One-Time Bill fits both and stays available to everyone.
+  // Existing records of either kind stay visible in Finance Records either
+  // way - this only hides the action to create a new one.
+  const isNonK12School = schoolBrand.school_type === "non_k12";
   const adminWallet = finance?.admin_wallet || {};
   const classFees = finance?.class_fee_rows || [];
   const studentFeeRows = finance?.student_fee_rows || [];
@@ -3793,6 +3800,7 @@ function AdminFinanceScreen({
               ) : null}
             </FinanceActionCard>
 
+            {!isNonK12School ? (
             <FinanceActionCard
               id="generate-bill"
               title="Generate Bill"
@@ -3807,7 +3815,9 @@ function AdminFinanceScreen({
                 <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("class-fees")}>View generated bills</button>
               </div>
             </FinanceActionCard>
+            ) : null}
 
+            {isNonK12School ? (
             <FinanceActionCard
               id="recurring-plan"
               title="Create Recurring Bill"
@@ -3868,6 +3878,7 @@ function AdminFinanceScreen({
                 </div>
               </form>
             </FinanceActionCard>
+            ) : null}
 
             <FinanceActionCard
               id="one-time-charge"
@@ -4228,7 +4239,9 @@ function AdminFinanceScreen({
               ))}
             </nav>
 
-            {activeRecordTab?.action ? (
+            {activeRecordTab?.action
+              && (activeRecordTab.action !== "generate-bill" || !isNonK12School)
+              && (activeRecordTab.action !== "recurring-plan" || isNonK12School) ? (
               <p className="finance-record-crosslink">
                 Need to add one?{" "}
                 <button type="button" className="link-button" onClick={() => openFinanceAction(activeRecordTab.action)}>
