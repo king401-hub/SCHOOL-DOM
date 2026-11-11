@@ -4667,6 +4667,63 @@ class AttendanceAndPromptTests(TestCase):
         # fallback above correctly skip), not that neither path ran at all.
         mock_kudisms.assert_called_once()
 
+    def test_premium_schoolgate_school_attendance_sms_is_never_wallet_charged(self):
+        """A premium SchoolGate school's termly fee already funds this text
+        (see _bundle_kids_monitor_for_schoolgate_premium) - but a parent added
+        after that bundling run has no Kids Monitor subscription yet either,
+        so without this exemption the wallet fallback would wrongly bill a
+        plan that's supposed to be free. The text must still go out - just
+        never debited."""
+        self.school.product = SchoolTenant.PRODUCT_SCHOOLGATE
+        self.school.subscription_tier = "premium"
+        self.school.save(update_fields=["product", "subscription_tier"])
+
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 10
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        token = self._id_card_token()
+        self.client.force_authenticate(user=self.teacher_user)
+
+        with patch("finance.services._dispatch_wallet_sms") as mock_send, \
+                patch("users.app_views.threading.Thread", self._ImmediateThread):
+            mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+            response = self._scan(token)
+
+        self.assertEqual(response.status_code, 200)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 10)
+        log = SmsMessageLog.objects.get(category=SmsMessageLog.ATTENDANCE)
+        self.assertEqual(log.credits_charged, 0)
+        self.assertEqual(log.delivery_status, SmsMessageLog.SENT)
+
+    def test_teacher_manual_mark_bills_school_wallet_for_parent_sms_when_no_kids_monitor(self):
+        """teacher-mark with no clock action (a plain present/absent/late
+        status set) used to never pass `school=` to _notify_parents_on_attendance
+        at all, so this student's guardian - no Kids Monitor subscription -
+        never got the wallet-billed fallback every other attendance-marking
+        path already gets. Covers the fix wiring that through."""
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 10
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        self.client.force_authenticate(user=self.teacher_user)
+
+        with patch("finance.services._dispatch_wallet_sms") as mock_send, \
+                patch("users.app_views.threading.Thread", self._ImmediateThread):
+            mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+            response = self.client.post(
+                "/api/app/attendance/teacher-mark/",
+                data={"student_id": "STU-ATT-1", "status": "present"},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 9)
+        log = SmsMessageLog.objects.get(category=SmsMessageLog.ATTENDANCE)
+        self.assertEqual(log.recipient_phone, "+15550009999")
+
     def test_performance_heatmap_loads_with_attendance_records_present(self):
         """The heatmap selects AttendanceRecord, so it breaks the moment that
         table's columns and the model disagree - which is what an unapplied

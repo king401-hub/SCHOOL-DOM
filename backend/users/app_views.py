@@ -13255,7 +13255,9 @@ def teacher_mark_student_attendance(request):
         if status_value in {"present", "late"} and attendance.clock_in_at is None:
             attendance.clock_in_at = timezone.now()
             attendance.save(update_fields=["clock_in_at", "updated_at"])
-        _notify_parents_on_attendance(student_profile.user, status_value, attendance_date, school_name)
+        _notify_parents_on_attendance(
+            student_profile.user, status_value, attendance_date, school_name, school=user.tenant,
+        )
         action = ATTENDANCE_EVENT_STATUS
         message = f"{student_profile.user.get_full_name()} marked {status_value}."
 
@@ -15700,7 +15702,14 @@ def _send_wallet_billed_attendance_sms(school, student_profile, message):
     cover the text for free. Threaded and swallows a failed/locked/empty wallet
     for the same reason every other wallet-billed send in this codebase does:
     attendance must stay instant, and a school with no SMS credit left should
-    just not get this one text, not have attendance itself fail."""
+    just not get this one text, not have attendance itself fail.
+
+    A premium SchoolGate school's termly fee already funds this text the same
+    way it funds the gate terminal's own attendance SMS (see
+    rfid_attendance.views._send_gate_sms) - send_wallet_sms's charge_wallet=False
+    still sends and logs the message, just never debits the wallet for it, so a
+    parent new since the last premium bundling run (_bundle_kids_monitor_for_
+    schoolgate_premium) isn't billed just for having missed that sweep."""
     from finance.models import SmsMessageLog
     from finance.services import (
         InsufficientSmsCreditsError,
@@ -15712,12 +15721,15 @@ def _send_wallet_billed_attendance_sms(school, student_profile, message):
     if not phone:
         return
 
+    charge_wallet = not (school.is_schoolgate and school.subscription_tier == "premium")
+
     def _send():
         try:
             send_wallet_sms(
                 school, phone, message,
                 category=SmsMessageLog.ATTENDANCE,
                 narration="Attendance (web tap/scan)",
+                charge_wallet=charge_wallet,
             )
         except (InsufficientSmsCreditsError, SmsWalletLockedError):
             pass
