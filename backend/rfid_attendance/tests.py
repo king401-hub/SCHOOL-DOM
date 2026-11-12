@@ -211,20 +211,33 @@ class BranchAwareCardRecognitionTestCase(TestCase):
 
 @override_settings(SCHOOLGATE_SMS_PROVIDER="kudisms")
 class SchoolGateSmsProviderTests(TestCase):
-    """SchoolGate's own SMS (gate clock-in/out, on-demand fee reminder) must
-    go out via KudiSMS - every other SMS in the platform (payment receipts,
-    fee reminders, bulk messages) stays on eBulkSMS. Verified by inspecting
-    what's handed to threading.Thread rather than letting a real background
-    thread run, so the assertion isn't racing the SMS send.
+    """Gate clock-in/out SMS: free, funded by SchoolDom and sent via
+    KudiSMS only for a premium SchoolGate school - every other school
+    scanning at the gate (SchoolGate Basic, and every full-product school)
+    bills its own SMS wallet instead (see _record_student_scan's dispatch
+    choice). The on-demand "Send Fee Reminder" button is a separate,
+    always-free-via-KudiSMS feature untouched by that split.
 
-    The setting is pinned so an environment override (SCHOOLGATE_SMS_PROVIDER=
-    ebulksms, the emergency fallback) can't change what these tests check."""
+    The provider setting is pinned so an environment override
+    (SCHOOLGATE_SMS_PROVIDER=ebulksms, the emergency fallback) can't change
+    what the free-path test below checks."""
+
+    class _ImmediateThread:
+        """Stands in for threading.Thread so a wallet-billed SMS send
+        (fired on a background thread so the scan response stays instant)
+        runs synchronously within the test instead of racing the
+        assertions."""
+
+        def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+            self._target, self._args, self._kwargs = target, args, kwargs or {}
+
+        def start(self):
+            self._target(*self._args, **self._kwargs)
 
     def setUp(self):
-        # _send_gate_sms fires for any tenant scanning at the gate (it's
-        # only skipped for SchoolGate-Basic - see _record_student_scan) -
-        # a plain full-product tenant exercises the same KudiSMS dispatch
-        # without also needing SchoolGate's device/term payment fixtures.
+        # A plain full-product tenant - no SchoolGate device/term payment
+        # fixtures needed, since require_full_product only gates SchoolGate
+        # tenants and this one isn't.
         self.school = SchoolTenant.objects.create(
             name="Gate SMS School", schema_name="gate_sms_school", is_active=True,
         )
@@ -248,17 +261,83 @@ class SchoolGateSmsProviderTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.scanner_user)
 
-    def test_gate_clock_in_scan_dispatches_via_kudisms(self):
-        with patch("rfid_attendance.views.threading.Thread") as mock_thread:
+    def test_gate_scan_on_a_full_product_school_bills_the_wallet(self):
+        from finance.models import SmsMessageLog
+        from finance.services import get_or_create_sms_wallet
+
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 10
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        with patch("finance.services._dispatch_wallet_sms") as mock_send, \
+                patch("rfid_attendance.views.threading.Thread", self._ImmediateThread):
+            mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
             resp = self.client.post(
                 "/api/rfid/attendance/scan/",
-                {"card_uid": "9999", "idempotency_key": "gate-kudisms-1"},
+                {"card_uid": "9999", "idempotency_key": "gate-wallet-1"},
                 format="json",
             )
+
+        self.assertEqual(resp.status_code, 201)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 9)
+        log = SmsMessageLog.objects.get(category=SmsMessageLog.ATTENDANCE)
+        self.assertEqual(log.recipient_phone, "08010000099")
+
+    def test_gate_scan_on_a_schoolgate_basic_school_bills_the_wallet(self):
+        from finance.models import SmsMessageLog
+        from finance.services import get_or_create_sms_wallet
+
+        self.school.product = SchoolTenant.PRODUCT_SCHOOLGATE
+        self.school.subscription_tier = "basic"
+        self.school.save(update_fields=["product", "subscription_tier"])
+
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 10
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        with patch("rfid_attendance.views.require_full_product", return_value=None), \
+                patch("finance.services._dispatch_wallet_sms") as mock_send, \
+                patch("rfid_attendance.views.threading.Thread", self._ImmediateThread):
+            mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+            resp = self.client.post(
+                "/api/rfid/attendance/scan/",
+                {"card_uid": "9999", "idempotency_key": "gate-wallet-basic-1"},
+                format="json",
+            )
+
+        self.assertEqual(resp.status_code, 201)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 9)
+        self.assertTrue(SmsMessageLog.objects.filter(category=SmsMessageLog.ATTENDANCE).exists())
+
+    def test_gate_scan_on_a_premium_schoolgate_school_is_free_via_kudisms(self):
+        from finance.models import SmsMessageLog
+        from finance.services import get_or_create_sms_wallet
+
+        self.school.product = SchoolTenant.PRODUCT_SCHOOLGATE
+        self.school.subscription_tier = "premium"
+        self.school.save(update_fields=["product", "subscription_tier"])
+
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 10
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        with patch("rfid_attendance.views.require_full_product", return_value=None), \
+                patch("rfid_attendance.views.threading.Thread") as mock_thread:
+            resp = self.client.post(
+                "/api/rfid/attendance/scan/",
+                {"card_uid": "9999", "idempotency_key": "gate-kudisms-premium-1"},
+                format="json",
+            )
+
         self.assertEqual(resp.status_code, 201)
         mock_thread.assert_called_once()
         _call_args, call_kwargs = mock_thread.call_args
         self.assertEqual(call_kwargs["args"][1], "kudisms")
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 10)
+        self.assertFalse(SmsMessageLog.objects.filter(category=SmsMessageLog.ATTENDANCE).exists())
 
     def test_fee_reminder_button_dispatches_via_kudisms(self):
         admin = User.objects.create_user(

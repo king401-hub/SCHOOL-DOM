@@ -142,11 +142,14 @@ def _student_dva_payload(student_profile):
 def _gate_sms_text(school, student, action, event, occurred_at=None):
     """Deliberately separate from users.app_views._attendance_sms_text -
     that one is gated behind a parent's paid Kids Monitor subscription
-    (see _notify_parents_on_attendance); SchoolGate's parent SMS is
-    unconditional and funded outside the school's SMS wallet (per product
-    decision), and goes out via KudiSMS rather than the eBulkSMS that
-    gated call site (and every other SMS in the platform) uses - see
-    finance.services.send_kudisms.
+    (see _notify_parents_on_attendance); this one is unconditional on every
+    scan/tap regardless of Kids Monitor. Only a premium SchoolGate school
+    gets it funded outside the school's SMS wallet (per product decision);
+    every other school (SchoolGate Basic and every full-product school)
+    gets it billed to its own wallet instead - see _send_gate_sms vs.
+    _send_gate_sms_from_wallet. The free, SchoolDom-funded one goes out via
+    KudiSMS rather than the eBulkSMS that the wallet-billed one (and every
+    other SMS in the platform) uses - see finance.services.send_kudisms.
 
     `occurred_at`: the real moment of the tap, for a scan replayed from a
     kiosk's offline queue - without this the text always said "now", so a
@@ -181,12 +184,13 @@ def _send_gate_sms(school, student_user, student_profile, action, event, occurre
 
 
 def _send_gate_sms_from_wallet(school, student_user, student_profile, action, event, occurred_at=None):
-    """SchoolGate Basic's version of _send_gate_sms: same message, same
-    unconditional trigger (every scan, both directions), but billed to the
-    school's own SMS wallet instead of funded free by SchoolDom - Basic's
-    plan doesn't include the free daily clock-in/out SMS Premium gets, but
-    the school can still send it themselves, the same way any other
-    wallet-metered message in the platform works.
+    """Every non-premium school's version of _send_gate_sms: same message,
+    same unconditional trigger (every scan, both directions), but billed to
+    the school's own SMS wallet instead of funded free by SchoolDom - only
+    a premium SchoolGate school gets the free daily clock-in/out SMS; every
+    other school (SchoolGate Basic, and every full-product school scanning
+    attendance via an RFID/kiosk terminal) sends it themselves instead, the
+    same way any other wallet-metered message in the platform works.
 
     Threaded like _send_gate_sms and for the same reason: this must never
     make the terminal wait on an SMS/wallet round-trip before it can show
@@ -208,7 +212,7 @@ def _send_gate_sms_from_wallet(school, student_user, student_profile, action, ev
             send_wallet_sms(
                 school, phone, message,
                 category=SmsMessageLog.ATTENDANCE,
-                narration='SchoolGate attendance (Basic plan)',
+                narration='Attendance (gate/kiosk scan)',
             )
         except (InsufficientSmsCreditsError, SmsWalletLockedError):
             # An empty/locked wallet must never block attendance itself -
@@ -726,23 +730,23 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
 
     # Unconditional parent SMS on every scan (both directions) - a product
     # decision to send regardless of the paid Kids Monitor subscription
-    # gate the phone/QR clock flow uses. Premium gets it free, funded by
-    # SchoolDom and never charged to the school's SMS wallet (see
-    # _send_gate_sms / _gate_sms_text docstrings). Basic doesn't include
-    # that free send, but still gets the same text billed to its own SMS
-    # wallet instead (see _send_gate_sms_from_wallet) - an empty/locked
-    # wallet just means that one text doesn't go out, not that attendance
-    # fails. Full-product schools are unaffected either way.
+    # gate the phone/QR clock flow uses. Only a premium SchoolGate school
+    # gets it free, funded by SchoolDom and never charged to the school's
+    # SMS wallet (see _send_gate_sms / _gate_sms_text docstrings) - every
+    # other school (SchoolGate Basic, and every full-product school) gets
+    # the same text billed to its own SMS wallet instead (see
+    # _send_gate_sms_from_wallet) - an empty/locked wallet just means that
+    # one text doesn't go out, not that attendance fails.
     # sms_sent_locally: the kiosk sends this text itself via the terminal's
     # own SIM when it couldn't reach us live, then replays the queued scan
     # once back online purely to persist the attendance record - skip
     # re-sending here or the parent gets the same SMS twice.
     sms_sent_locally = str(request.data.get('sms_sent_locally') or '').strip().lower() in ('1', 'true', 'yes')
     if not sms_sent_locally:
-        if school.is_schoolgate and school.subscription_tier == "basic":
-            _send_gate_sms_from_wallet(school, student, student_profile, action, event, occurred_at=scanned_at)
-        else:
+        if school.is_schoolgate and school.subscription_tier == "premium":
             _send_gate_sms(school, student, student_profile, action, event, occurred_at=scanned_at)
+        else:
+            _send_gate_sms_from_wallet(school, student, student_profile, action, event, occurred_at=scanned_at)
 
     return Response({
         'success': True,
