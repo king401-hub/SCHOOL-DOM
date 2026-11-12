@@ -69,6 +69,9 @@ urlpatterns = [
     # Admin: list all virtual account assignments for this school
     path("admin/virtual-accounts/", views.admin_list_virtual_accounts, name="admin_list_virtual_accounts"),
 
+    # Admin: provision virtual accounts for several selected students at once
+    path("admin/virtual-accounts/bulk-provision/", views.admin_bulk_provision_virtual_accounts, name="admin_bulk_provision_virtual_accounts"),
+
     # Admin: assign/update/deactivate virtual account per parent
     path("admin/virtual-accounts/<uuid:parent_id>/", views.admin_manage_virtual_account, name="admin_manage_virtual_account"),
 

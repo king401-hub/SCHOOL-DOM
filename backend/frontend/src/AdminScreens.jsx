@@ -2058,10 +2058,14 @@ function AdminFinanceScreen({
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
   const [vaAccounts, setVaAccounts] = useState([]);
-  const [vaParentsWithoutAccount, setVaParentsWithoutAccount] = useState([]);
+  const [vaStudentsWithoutAccount, setVaStudentsWithoutAccount] = useState([]);
   const [vaListLoading, setVaListLoading] = useState(false);
   const [vaListError, setVaListError] = useState("");
   const [vaSearch, setVaSearch] = useState("");
+  const [vaProvisionSearch, setVaProvisionSearch] = useState("");
+  const [vaSelectedStudentIds, setVaSelectedStudentIds] = useState(() => new Set());
+  const [vaBulkProvisioning, setVaBulkProvisioning] = useState(false);
+  const [vaBulkResult, setVaBulkResult] = useState(null);
   const [vaBusyParentId, setVaBusyParentId] = useState("");
   const [vaActionMessage, setVaActionMessage] = useState("");
   const [vaActionError, setVaActionError] = useState("");
@@ -2094,7 +2098,7 @@ function AdminFinanceScreen({
   // always starts hidden on entering the Finance page; the admin can reveal
   // it for this visit via the toggle, but the next visit hides it again.
   const [hideOverviewAmounts, setHideOverviewAmounts] = useState(true);
-  const anyBusy = Boolean(busyAction) || Boolean(resendBusyId) || vaListLoading || Boolean(vaBusyParentId);
+  const anyBusy = Boolean(busyAction) || Boolean(resendBusyId) || vaListLoading || Boolean(vaBusyParentId) || vaBulkProvisioning;
   const [resolveLoading, setResolveLoading] = useState(false);
   const [resolveError, setResolveError] = useState("");
   const tokenPurchaseRef = useRef(null);
@@ -2106,7 +2110,7 @@ function AdminFinanceScreen({
     try {
       const result = await requestJson(session, "GET", "/api/finance/admin/virtual-accounts/");
       setVaAccounts(result?.virtual_accounts || []);
-      setVaParentsWithoutAccount(result?.parents_without_account || []);
+      setVaStudentsWithoutAccount(result?.students_without_account || []);
     } catch (err) {
       setVaListError(err.message || "Could not load virtual accounts.");
     } finally {
@@ -2131,6 +2135,61 @@ function AdminFinanceScreen({
       setVaActionError(err.message || "Could not provision virtual account.");
     } finally {
       setVaBusyParentId("");
+    }
+  };
+
+  const normalizedVaProvisionSearch = vaProvisionSearch.trim().toLowerCase();
+  const filteredVaStudentsWithoutAccount = vaStudentsWithoutAccount.filter((row) => {
+    if (!normalizedVaProvisionSearch) return true;
+    return [row.student_name, row.admission_number, row.class_name, row.parent_name, row.parent_email]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedVaProvisionSearch);
+  });
+  const allVaStudentsSelected =
+    filteredVaStudentsWithoutAccount.length > 0 &&
+    filteredVaStudentsWithoutAccount.every((row) => vaSelectedStudentIds.has(row.student_id));
+
+  const toggleVaStudentSelected = (studentId) => {
+    setVaSelectedStudentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVaStudents = () => {
+    setVaSelectedStudentIds((prev) => {
+      const next = new Set(prev);
+      if (allVaStudentsSelected) {
+        filteredVaStudentsWithoutAccount.forEach((row) => next.delete(row.student_id));
+      } else {
+        filteredVaStudentsWithoutAccount.forEach((row) => next.add(row.student_id));
+      }
+      return next;
+    });
+  };
+
+  const handleBulkProvisionVirtualAccounts = async () => {
+    if (vaSelectedStudentIds.size === 0) return;
+    setVaBulkProvisioning(true);
+    setVaBulkResult(null);
+    setVaActionMessage("");
+    setVaActionError("");
+    try {
+      const result = await requestJson(session, "POST", "/api/finance/admin/virtual-accounts/bulk-provision/", {
+        student_ids: Array.from(vaSelectedStudentIds),
+      });
+      setVaBulkResult(result);
+      setVaActionMessage(result?.message || "Virtual accounts provisioned.");
+      setVaSelectedStudentIds(new Set());
+      await loadVirtualAccountsList();
+    } catch (err) {
+      setVaActionError(err.message || "Could not provision virtual accounts.");
+    } finally {
+      setVaBulkProvisioning(false);
     }
   };
 
@@ -4081,31 +4140,90 @@ function AdminFinanceScreen({
               {vaActionMessage ? <p className="form-feedback success">{vaActionMessage}</p> : null}
               {vaActionError ? <p className="form-feedback error">{vaActionError}</p> : null}
               {vaListError ? <p className="form-feedback error">{vaListError}</p> : null}
-              {vaParentsWithoutAccount.length ? (
-                <div className="table-scroll">
-                  <table className="data-table">
-                    <thead><tr><th>Parent (no account yet)</th><th>Email</th><th>Action</th></tr></thead>
-                    <tbody>
-                      {vaParentsWithoutAccount.map((row) => (
-                        <tr key={row.parent_id}>
-                          <td>{row.parent_name}</td>
-                          <td>{row.parent_email}</td>
-                          <td>
-                            <button
-                              type="button"
-                              className="table-action active"
-                              onClick={() => handleProvisionVirtualAccount(row.parent_id)}
-                              disabled={anyBusy}
-                            >
-                              {vaBusyParentId === row.parent_id ? <><Spinner size={12} /> Provisioning...</> : "Provision Account"}
-                            </button>
-                          </td>
+              {vaStudentsWithoutAccount.length ? (
+                <>
+                  <div className="panel-form-actions" style={{ margin: "0 0 0.75rem" }}>
+                    <input
+                      type="text"
+                      placeholder="Search for a student, class, or guardian"
+                      value={vaProvisionSearch}
+                      onChange={(event) => setVaProvisionSearch(event.target.value)}
+                      style={{ maxWidth: "320px" }}
+                    />
+                  </div>
+                  <div className="bulk-controls-row">
+                    <label className="bulk-select-label">
+                      <input type="checkbox" checked={allVaStudentsSelected} onChange={toggleSelectAllVaStudents} />
+                      Select all ({filteredVaStudentsWithoutAccount.length})
+                    </label>
+                    <span className="bulk-selected-count">{vaSelectedStudentIds.size} selected</span>
+                    <button
+                      type="button"
+                      className="table-action active"
+                      disabled={anyBusy || vaSelectedStudentIds.size === 0}
+                      onClick={handleBulkProvisionVirtualAccounts}
+                    >
+                      {vaBulkProvisioning ? <><Spinner size={12} /> Provisioning...</> : `Provision selected (${vaSelectedStudentIds.size})`}
+                    </button>
+                  </div>
+                  <div className="table-scroll">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: "2.5rem", textAlign: "center" }}>
+                            <input type="checkbox" title="Select all visible" checked={allVaStudentsSelected} onChange={toggleSelectAllVaStudents} />
+                          </th>
+                          <th>Student (no account yet)</th>
+                          <th>Class</th>
+                          <th>Guardian</th>
+                          <th>Email</th>
+                          <th>Action</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
+                      </thead>
+                      <tbody>
+                        {filteredVaStudentsWithoutAccount.map((row) => (
+                          <tr key={row.student_id} className={vaSelectedStudentIds.has(row.student_id) ? "bulk-row-selected" : undefined}>
+                            <td style={{ textAlign: "center" }}>
+                              <input
+                                type="checkbox"
+                                checked={vaSelectedStudentIds.has(row.student_id)}
+                                onChange={() => toggleVaStudentSelected(row.student_id)}
+                              />
+                            </td>
+                            <td>{row.student_name}</td>
+                            <td>{row.class_name}</td>
+                            <td>{row.parent_name}</td>
+                            <td>{row.parent_email}</td>
+                            <td>
+                              <button
+                                type="button"
+                                className="table-action active"
+                                onClick={() => handleProvisionVirtualAccount(row.parent_id)}
+                                disabled={anyBusy}
+                              >
+                                {vaBusyParentId === row.parent_id ? <><Spinner size={12} /> Provisioning...</> : "Provision Account"}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {vaBulkResult?.results?.some((item) => item.status !== "ok") ? (
+                    <div className="bulk-result error">
+                      <ul>
+                        {vaBulkResult.results
+                          .filter((item) => item.status !== "ok")
+                          .map((item, index) => (
+                            <li key={index}>{item.student_name}: {item.message}</li>
+                          ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <p className="panel-empty">Every guardian on file already has a virtual account.</p>
+              )}
               <div className="panel-form-actions">
                 <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("virtual-accounts")}>View assigned accounts</button>
               </div>

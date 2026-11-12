@@ -119,6 +119,7 @@ from finance.services import (
     apply_bank_payment_to_student,
     record_cash_payment,
     provision_kuda_admin_virtual_account,
+    provision_parent_dva,
     record_finance_activity,
     build_payment_receipt_preview,
     deliver_payment_receipt,
@@ -4857,22 +4858,36 @@ def admin_list_virtual_accounts(request):
         for v in vacs
     ]
 
+    # Listed by student rather than by parent, so an admin can search for the
+    # child they actually have in front of them and multi-select from there -
+    # provisioning still happens per guardian underneath (see parent_id).
     parents_with_account = {v.parent_id for v in vacs}
-    parents_without_account = [
-        {
-            "parent_id": str(p.id),
-            "parent_name": p.get_full_name() or p.email,
-            "parent_email": p.email,
-        }
-        for p in User.objects.filter(tenant=user.tenant, role="parent").order_by("first_name", "last_name")
-        if p.id not in parents_with_account
-    ]
+    students = (
+        StudentProfile.objects.filter(user__tenant=user.tenant, user__is_active=True)
+        .select_related("user", "current_class")
+        .prefetch_related("parents__user")
+        .order_by("user__first_name", "user__last_name")
+    )
+    students_without_account = []
+    for student in students:
+        guardian = student.parents.first()
+        if not guardian or guardian.user_id in parents_with_account:
+            continue
+        students_without_account.append({
+            "student_id": str(student.id),
+            "student_name": student.user.get_full_name() or student.user.email,
+            "admission_number": student.admission_number,
+            "class_name": _class_label(student.current_class) if student.current_class else "Unassigned",
+            "parent_id": str(guardian.user_id),
+            "parent_name": guardian.user.get_full_name() or guardian.user.email,
+            "parent_email": guardian.user.email,
+        })
 
     return Response({
         "success": True,
         "virtual_accounts": data,
         "count": len(data),
-        "parents_without_account": parents_without_account,
+        "students_without_account": students_without_account,
     })
 
 
@@ -5035,6 +5050,87 @@ def admin_provision_paystack_virtual_account(request, parent_id):
             "is_active": vac.is_active,
             "notes": vac.notes,
         },
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_bulk_provision_virtual_accounts(request):
+    """
+    Provision Paystack virtual accounts for the guardians of several selected
+    students in one request - the search-and-multi-select counterpart to
+    admin_provision_paystack_virtual_account above. Finance roles only.
+    """
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+
+    student_ids = request.data.get("student_ids") or []
+    if not student_ids:
+        return Response({"success": False, "message": "student_ids is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    students = (
+        StudentProfile.objects.filter(id__in=student_ids, user__tenant=user.tenant)
+        .select_related("user")
+        .prefetch_related("parents__user")
+    )
+    if not students:
+        return Response({"success": False, "message": "No matching students found."}, status=status.HTTP_400_BAD_REQUEST)
+
+    provisioned = skipped = failed = 0
+    results = []
+    seen_parent_ids = set()
+    for student in students:
+        student_name = student.user.get_full_name() or student.user.email
+        guardian = student.parents.first()
+        if not guardian:
+            skipped += 1
+            results.append({"student_name": student_name, "status": "skipped", "message": "No guardian on file."})
+            continue
+
+        parent_id = str(guardian.user_id)
+        if parent_id in seen_parent_ids:
+            # A sibling already selected in this same request already provisioned this parent.
+            continue
+        seen_parent_ids.add(parent_id)
+
+        try:
+            outcome = provision_parent_dva(parent_id)
+        except Exception as exc:
+            failed += 1
+            results.append({"student_name": student_name, "status": "failed", "message": str(exc)})
+            continue
+
+        if outcome.get("status") == "ok":
+            provisioned += 1
+            results.append({
+                "student_name": student_name,
+                "status": "ok",
+                "message": f"Account {outcome.get('account_number')} provisioned.",
+            })
+        else:
+            skipped += 1
+            results.append({
+                "student_name": student_name,
+                "status": "skipped",
+                "message": outcome.get("reason", outcome.get("status", "skipped")),
+            })
+
+    record_finance_activity(
+        user.tenant,
+        user,
+        "virtual_account_bulk_provisioned",
+        f"Bulk-provisioned virtual accounts for {provisioned} guardian(s) from {len(students)} selected "
+        f"student(s) ({skipped} already had one or were skipped, {failed} failed).",
+    )
+
+    return Response({
+        "success": True,
+        "message": f"Provisioned {provisioned}, skipped {skipped}, failed {failed}.",
+        "provisioned": provisioned,
+        "skipped": skipped,
+        "failed": failed,
+        "results": results,
     })
 
 

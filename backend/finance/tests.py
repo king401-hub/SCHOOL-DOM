@@ -53,9 +53,7 @@ from finance.services import (
     credit_sms_wallet_from_purchase,
     mark_sms_wallet_purchase_failed,
     normalize_phone_number,
-    PARENT_DVA_RETRY_DELAYS,
     provision_parent_dva,
-    provision_parent_dva_with_retries,
     send_ebulksms,
     send_kudisms,
     credit_wallet,
@@ -6493,13 +6491,10 @@ class ReceiptPageTermTests(TestCase):
 
 
 class ParentVirtualAccountProvisioningTests(TestCase):
-    """A new parent gets their virtual account without Celery.
-
-    Creating a parent used to call provision_parent_dva_task.delay(). With no
-    broker that blocked ~110 seconds (creating a parent - or importing a class
-    of them - hung); with a broker but no worker the task queued forever and
-    no account was ever made.
-    """
+    """Virtual accounts are never provisioned automatically any more - an
+    admin has to ask for one, per parent or in bulk from a student search,
+    from the Finance page (or back-fill via the provision_parent_dva
+    management command)."""
 
     def setUp(self):
         self.school = SchoolTenant.objects.create(name="DVA School", schema_name="dva_school", is_active=True)
@@ -6510,57 +6505,18 @@ class ParentVirtualAccountProvisioningTests(TestCase):
             tenant=self.school, is_active=True, is_verified=True,
         )
 
-    @patch("finance.tasks.provision_parent_dva_task.apply_async")
-    @patch("finance.tasks.provision_parent_dva_task.delay")
+    @patch("finance.services.provision_parent_virtual_account")
     @patch("core.background.run_in_background")
-    def test_creating_a_parent_provisions_in_the_background_not_through_celery(self, mock_background, mock_delay, mock_apply_async):
+    def test_creating_a_parent_or_student_never_auto_provisions(self, mock_background, mock_provision):
         with self.captureOnCommitCallbacks(execute=True):
-            parent = self._parent()
-
-        mock_delay.assert_not_called()
-        mock_apply_async.assert_not_called()
-        mock_background.assert_called_once()
-        self.assertEqual(mock_background.call_args.kwargs["pool"], "provisioning")
-        self.assertEqual(mock_background.call_args.kwargs["workers"], 2)
-        self.assertIn(str(parent.id), mock_background.call_args.kwargs["name"])
-
-    @patch("core.background.run_in_background")
-    def test_only_parents_get_a_virtual_account(self, mock_background):
-        with self.captureOnCommitCallbacks(execute=True):
+            self._parent()
             User.objects.create_user(
                 email="pupil@dva.edu", password="StudentPass123", role="student",
                 tenant=self.school, is_active=True, is_verified=True,
             )
 
         mock_background.assert_not_called()
-
-    @patch("finance.services.provision_parent_dva")
-    @patch("core.background.run_in_background", side_effect=lambda work, **kwargs: work())
-    def test_the_background_job_provisions_the_new_parent(self, _mock_background, mock_provision):
-        mock_provision.return_value = {"status": "ok"}
-
-        with self.captureOnCommitCallbacks(execute=True):
-            parent = self._parent()
-
-        mock_provision.assert_called_once_with(str(parent.id))
-
-    @patch("finance.services._run_in_background_later")
-    @patch("finance.services.provision_parent_dva", side_effect=RuntimeError("paystack down"))
-    def test_a_failed_attempt_is_retried_later_then_given_up_quietly(self, _mock_provision, mock_later):
-        result = provision_parent_dva_with_retries("parent-id")
-
-        self.assertEqual(result["status"], "retrying")
-        for expected_delay in PARENT_DVA_RETRY_DELAYS:
-            self.assertEqual(mock_later.call_args.args[0], expected_delay)
-            self.assertEqual(mock_later.call_args.kwargs["pool"], "provisioning")
-            retry = mock_later.call_args.args[1]
-            mock_later.reset_mock()
-            result = retry()
-
-        # The last attempt fails too: it reports failure instead of raising or
-        # scheduling forever, leaving an admin to provision it by hand.
-        self.assertEqual(result["status"], "failed")
-        mock_later.assert_not_called()
+        mock_provision.assert_not_called()
 
     @patch("finance.services.provision_parent_virtual_account")
     def test_a_school_without_a_paystack_subaccount_is_skipped_not_retried(self, mock_provision):
@@ -6670,6 +6626,127 @@ class ParentVirtualAccountProvisioningTests(TestCase):
         self.assertEqual(mock_provision.call_count, 2)
         self.assertIn("paystack down", err.getvalue())
         self.assertIn("Provisioned 1, skipped 0, failed 1.", out.getvalue())
+
+
+class BulkProvisionVirtualAccountsTests(TestCase):
+    """The admin Finance page provisions by searching for and selecting
+    students, not parents directly - this exercises that whole path: the
+    list endpoint surfacing students without one, and the bulk endpoint
+    provisioning their guardians."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Bulk DVA School", schema_name="bulk_dva_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin = User.objects.create_user(
+            email="admin@bulkdva.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="1")
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def _student_with_parent(self, label, parent_user=None):
+        student_user = User.objects.create_user(
+            email=f"{label}@bulkdva.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        student = StudentProfile.objects.create(
+            user=student_user, student_id=f"BDV-{label}", admission_number=f"ADM-{label}",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        if parent_user is None:
+            parent_user = User.objects.create_user(
+                email=f"parent-{label}@bulkdva.edu", password="ParentPass123", role="parent",
+                tenant=self.school, is_active=True, is_verified=True,
+            )
+        parent_profile, _ = ParentProfile.objects.get_or_create(user=parent_user)
+        parent_profile.children.add(student)
+        return student, parent_user
+
+    def test_list_surfaces_students_whose_guardian_has_no_account_yet(self):
+        provisioned_student, provisioned_parent = self._student_with_parent("has")
+        ParentVirtualAccount.objects.create(
+            parent=provisioned_parent, tenant=self.school, account_number="0123456789",
+            bank_name="Wema Bank", account_name="Parent", is_active=True,
+        )
+        pending_student, pending_parent = self._student_with_parent("pending")
+
+        response = self.client.get("/api/finance/admin/virtual-accounts/")
+
+        self.assertEqual(response.status_code, 200)
+        rows = {row["student_id"]: row for row in response.data["students_without_account"]}
+        self.assertNotIn(str(provisioned_student.id), rows)
+        self.assertIn(str(pending_student.id), rows)
+        self.assertEqual(rows[str(pending_student.id)]["parent_id"], str(pending_parent.id))
+
+    @patch("finance.services.create_paystack_dedicated_account")
+    @patch("finance.services.get_or_create_paystack_dva_split_code", return_value="SPL_test")
+    @patch("finance.services.create_paystack_customer", return_value={"customer_code": "CUS_test"})
+    def test_bulk_provision_two_students_with_different_guardians(self, _mock_customer, _mock_split, mock_dedicated):
+        mock_dedicated.side_effect = [
+            {"account_number": "1111111111", "bank": {"name": "Wema Bank"}, "account_name": "Parent One"},
+            {"account_number": "2222222222", "bank": {"name": "Wema Bank"}, "account_name": "Parent Two"},
+        ]
+        first_student, _ = self._student_with_parent("first")
+        second_student, _ = self._student_with_parent("second")
+
+        response = self.client.post(
+            "/api/finance/admin/virtual-accounts/bulk-provision/",
+            {"student_ids": [str(first_student.id), str(second_student.id)]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["provisioned"], 2)
+        self.assertEqual(response.data["failed"], 0)
+        self.assertEqual(ParentVirtualAccount.objects.filter(tenant=self.school).count(), 2)
+
+    @patch("finance.services.create_paystack_dedicated_account")
+    @patch("finance.services.get_or_create_paystack_dva_split_code", return_value="SPL_test")
+    @patch("finance.services.create_paystack_customer", return_value={"customer_code": "CUS_test"})
+    def test_siblings_sharing_a_guardian_only_provision_once(self, _mock_customer, _mock_split, mock_dedicated):
+        mock_dedicated.return_value = {"account_number": "3333333333", "bank": {"name": "Wema Bank"}, "account_name": "Parent"}
+        shared_parent = User.objects.create_user(
+            email="shared-parent@bulkdva.edu", password="ParentPass123", role="parent",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        older, _ = self._student_with_parent("older", parent_user=shared_parent)
+        younger, _ = self._student_with_parent("younger", parent_user=shared_parent)
+
+        response = self.client.post(
+            "/api/finance/admin/virtual-accounts/bulk-provision/",
+            {"student_ids": [str(older.id), str(younger.id)]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["provisioned"], 1)
+        self.assertEqual(mock_dedicated.call_count, 1)
+        self.assertEqual(ParentVirtualAccount.objects.filter(parent=shared_parent).count(), 1)
+
+    def test_a_students_ids_from_another_school_are_not_provisioned(self):
+        other_school = SchoolTenant.objects.create(name="Other Bulk School", schema_name="other_bulk_dva", is_active=True)
+        other_legacy = Tenant.objects.create(name=other_school.name, slug=other_school.schema_name)
+        other_class = Class.objects.create(tenant=other_legacy, name="JSS", section="1")
+        other_student_user = User.objects.create_user(
+            email="other-pupil@bulkdva.edu", password="StudentPass123", role="student",
+            tenant=other_school, is_active=True, is_verified=True,
+        )
+        other_student = StudentProfile.objects.create(
+            user=other_student_user, student_id="OTHER-1", admission_number="ADM-OTHER-1",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=other_class,
+        )
+
+        response = self.client.post(
+            "/api/finance/admin/virtual-accounts/bulk-provision/",
+            {"student_ids": [str(other_student.id)]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(ParentVirtualAccount.objects.filter(tenant=other_school).exists())
 
 
 class ClassFeeEditPreservesPartiallyPaidInvoicesTests(TestCase):

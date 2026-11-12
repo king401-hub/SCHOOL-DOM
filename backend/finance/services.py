@@ -576,12 +576,10 @@ def provision_parent_virtual_account(parent_user, actor=None):
 def virtual_account_sms_text(school_name, vac, student_names=None):
     """The text sent to a parent once their dedicated virtual account is
     ready. Named students turn it into a welcome ("X has been enrolled...") -
-    in production that is every first-time provisioning, since a parent User
-    only ever gets created by _sync_guardian_parent while onboarding one of
-    their children (see provision_parent_dva's call site in
-    users/signals.py); omitted it reads as a plain account-ready notice, used
-    when no child is known yet (an admin backfilling old parents via the
-    provision_parent_dva management command, say)."""
+    provision_parent_dva passes every child already linked to this parent;
+    omitted it reads as a plain account-ready notice, used when no child is
+    known yet (an admin backfilling old parents via the provision_parent_dva
+    management command, say)."""
     account_line = f"{vac.account_number} ({vac.bank_name}), {vac.account_name}"
     school_name = school_name or "Your school"
     if student_names:
@@ -627,21 +625,16 @@ def send_parent_virtual_account_sms(vac, student_names=None, actor=None):
     return {"sent": sent, "phone": phone, "reason": "" if sent else sms_failure_reason(log)}
 
 
-# Seconds between automatic attempts to give a new parent a virtual account when
-# Paystack is unavailable - the same cadence as the Celery task this replaces
-# (every couple of minutes, backing off), three more tries.
-PARENT_DVA_RETRY_DELAYS = (120, 240, 480)
-
-
 def provision_parent_dva(parent_user_id):
-    """Give a newly created parent a Paystack dedicated virtual account.
+    """Give a parent a Paystack dedicated virtual account - called one at a
+    time by an admin (the Finance page's single/bulk "Provision Account"
+    actions) or by the provision_parent_dva management command, never
+    automatically on parent/student creation any more.
 
     Returns a status dict when there is nothing to do (the parent is gone, has
     an account already, has no school, or the school is not set up for Paystack
-    yet - an admin has to do that first, so retrying would be pointless).
-    Raises for anything worth trying again, such as Paystack being unavailable;
-    callers decide how: provision_parent_dva_with_retries in-process,
-    provision_parent_dva_task through Celery.
+    yet - an admin has to do that first). Raises for anything worth surfacing
+    to whoever clicked the button, such as Paystack being unavailable.
     """
     from users.models import User
 
@@ -689,38 +682,6 @@ def provision_parent_dva(parent_user_id):
             logger.exception("Virtual account SMS failed to send for parent %s", parent_user.email)
 
     return {"status": "ok", "created": created, "account_number": vac.account_number}
-
-
-def provision_parent_dva_with_retries(parent_user_id, attempt=0):
-    """provision_parent_dva, trying again later in this process if it fails.
-
-    Runs on a background thread (see users/signals.py), so a slow or failing
-    Paystack never holds up creating the parent. After the last attempt it
-    gives up quietly: the parent still has no virtual account, which an admin
-    can fix from the Finance page. Never raises.
-    """
-    try:
-        return provision_parent_dva(parent_user_id)
-    except Exception as exc:
-        if attempt < len(PARENT_DVA_RETRY_DELAYS):
-            delay = PARENT_DVA_RETRY_DELAYS[attempt]
-            logger.warning(
-                "Parent virtual account for %s failed (%s); retrying in %ss (attempt %s of %s)",
-                parent_user_id, exc, delay, attempt + 2, len(PARENT_DVA_RETRY_DELAYS) + 1,
-            )
-            _run_in_background_later(
-                delay,
-                lambda: provision_parent_dva_with_retries(parent_user_id, attempt + 1),
-                name=f"parent-dva-retry-{parent_user_id}",
-                pool="provisioning",
-                workers=2,
-            )
-            return {"status": "retrying", "reason": str(exc)}
-        logger.error(
-            "Parent virtual account for %s failed after %s attempts: %s. An admin can provision it from the Finance page.",
-            parent_user_id, len(PARENT_DVA_RETRY_DELAYS) + 1, exc,
-        )
-        return {"status": "failed", "reason": str(exc)}
 
 
 SCHOOLDOM_RATE = Decimal("0.003")          # 0.3% of each fee's tuition amount

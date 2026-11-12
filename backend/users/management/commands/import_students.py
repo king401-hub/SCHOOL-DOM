@@ -174,7 +174,8 @@ class Command(BaseCommand):
                 "Copy it off the server and delete it."
             ))
             self.stdout.write(
-                "Parent virtual accounts are being created in the background. If any were missed, run:\n"
+                "Parent virtual accounts are not auto-created. Provision them from the admin "
+                "Finance page, or run:\n"
                 f"  python manage.py provision_parent_dva --school {school.schema_name}"
             )
 

@@ -12,11 +12,12 @@ def provision_parent_dva_task(self, parent_user_id):
     Retries up to 5 times (every 2 min) if Paystack is temporarily unavailable.
     Silently skips if the parent already has a DVA or the school has no subaccount yet.
 
-    Not used by users/signals.py any more: creating a parent now provisions the
-    account on a background thread (finance.services.provision_parent_dva_with_retries),
-    because queueing here hangs without a broker and silently stalls without a
-    worker. The work itself lives in finance.services.provision_parent_dva; this
-    is the same job for anyone who does run a Celery worker.
+    Not used anywhere in this codebase: virtual accounts are provisioned only
+    when an admin asks for them (the Finance page's single/bulk "Provision
+    Account" actions, or the provision_parent_dva management command), all of
+    which call finance.services.provision_parent_dva directly and synchronously.
+    The work itself lives there; this is the same job for anyone who does run
+    a Celery worker and wants it queued instead.
     """
     from finance.services import provision_parent_dva
 
