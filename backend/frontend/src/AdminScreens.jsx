@@ -12213,6 +12213,18 @@ function AdminSettingsScreen({
   const [deleteAccountPromptOpen, setDeleteAccountPromptOpen] = useState(false);
   const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
   const [deleteAccountFeedback, setDeleteAccountFeedback] = useState("");
+  // Login email change: password + emailed-OTP step-up, same shape as the
+  // Finance settlement-account flow - the code is sent to the CURRENT
+  // address so this can't be used to hijack the account via a new inbox.
+  const [newLoginEmail, setNewLoginEmail] = useState("");
+  const [loginEmailPassword, setLoginEmailPassword] = useState("");
+  const [loginEmailOtpCode, setLoginEmailOtpCode] = useState("");
+  const [loginEmailOtpChallenge, setLoginEmailOtpChallenge] = useState("");
+  const [loginEmailOtpSending, setLoginEmailOtpSending] = useState(false);
+  const [loginEmailOtpMessage, setLoginEmailOtpMessage] = useState("");
+  const [loginEmailSaving, setLoginEmailSaving] = useState(false);
+  const [loginEmailMessage, setLoginEmailMessage] = useState("");
+  const [loginEmailError, setLoginEmailError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
@@ -12523,6 +12535,46 @@ function AdminSettingsScreen({
       setFormError(actionError.message || "Could not cancel account deletion request.");
     } finally {
       setDeleteAccountBusy(false);
+    }
+  };
+
+  const handleRequestLoginEmailOtp = async () => {
+    setLoginEmailOtpMessage("");
+    setLoginEmailError("");
+    setLoginEmailOtpSending(true);
+    try {
+      const result = await requestJson(session, "POST", "/api/auth/account/email/request-otp/");
+      setLoginEmailOtpChallenge(result?.otp_challenge || "");
+      setLoginEmailOtpMessage(result?.message || "Verification code sent to your current email.");
+    } catch (actionError) {
+      setLoginEmailError(actionError.message || "Could not send verification code.");
+    } finally {
+      setLoginEmailOtpSending(false);
+    }
+  };
+
+  const handleChangeLoginEmailSubmit = async (event) => {
+    event.preventDefault();
+    setLoginEmailMessage("");
+    setLoginEmailError("");
+    setLoginEmailSaving(true);
+    try {
+      const result = await requestJson(session, "POST", "/api/auth/account/email/", {
+        new_email: newLoginEmail.trim(),
+        current_password: loginEmailPassword,
+        otp_code: loginEmailOtpCode,
+        otp_challenge: loginEmailOtpChallenge,
+      });
+      setLoginEmailMessage(result?.message || "Your login email has been updated.");
+      setNewLoginEmail("");
+      setLoginEmailPassword("");
+      setLoginEmailOtpCode("");
+      setLoginEmailOtpChallenge("");
+      setLoginEmailOtpMessage("");
+    } catch (actionError) {
+      setLoginEmailError(actionError.message || "Could not update your login email.");
+    } finally {
+      setLoginEmailSaving(false);
     }
   };
 
@@ -12892,6 +12944,75 @@ onClick={() => handleThemeSelect("light")}
               </button>
                   </div>
                 </form>
+          </article>
+          <article className="app-panel">
+            <div className="panel-head">
+              <h3>Login Email</h3>
+              <small>The email you sign in with - separate from the School Email above, which is just contact info.</small>
+            </div>
+            <p className="field-note">Currently signed in as {user?.email}.</p>
+            {loginEmailMessage ? <p className="form-feedback success">{loginEmailMessage}</p> : null}
+            {loginEmailError ? <p className="form-feedback error">{loginEmailError}</p> : null}
+            <form className="panel-form" onSubmit={handleChangeLoginEmailSubmit}>
+              <div className="panel-form-grid">
+                <label className="panel-field full">
+                  New login email
+                  <input
+                    type="email"
+                    value={newLoginEmail}
+                    onChange={(event) => setNewLoginEmail(event.target.value)}
+                    placeholder="you@yourschool.edu"
+                    autoComplete="off"
+                    required
+                  />
+                </label>
+              </div>
+              {newLoginEmail.trim() ? (
+                <div className="panel-form-grid subaccount-step-up">
+                  <p className="panel-form-note">
+                    Changing your login email needs your password and a one-time code sent to your current email.
+                  </p>
+                  <label className="panel-field">
+                    Your password
+                    <input
+                      type="password"
+                      value={loginEmailPassword}
+                      onChange={(event) => setLoginEmailPassword(event.target.value)}
+                      placeholder="Current password"
+                      autoComplete="current-password"
+                      required
+                    />
+                  </label>
+                  <label className="panel-field">
+                    Verification code
+                    <div className="panel-field-inline">
+                      <input
+                        value={loginEmailOtpCode}
+                        onChange={(event) => setLoginEmailOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                        placeholder="6-digit code"
+                        inputMode="numeric"
+                        maxLength={6}
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={handleRequestLoginEmailOtp}
+                        disabled={loginEmailOtpSending || isSaving}
+                      >
+                        {loginEmailOtpSending ? <Spinner size={12} /> : loginEmailOtpChallenge ? "Resend code" : "Send code"}
+                      </button>
+                    </div>
+                    {loginEmailOtpMessage ? <small className="field-note">{loginEmailOtpMessage}</small> : null}
+                  </label>
+                </div>
+              ) : null}
+              <div className="panel-form-actions">
+                <button type="submit" disabled={!newLoginEmail.trim() || !loginEmailOtpChallenge || loginEmailSaving}>
+                  {loginEmailSaving ? <><Spinner size={12} /> Updating...</> : "Update login email"}
+                </button>
+              </div>
+            </form>
           </article>
           <article className="app-panel danger-zone-panel">
             <div className="panel-head">

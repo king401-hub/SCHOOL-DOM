@@ -1,8 +1,10 @@
+import re
 from datetime import date, time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
 from django.core import mail, signing
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
@@ -387,6 +389,159 @@ class SchoolWelcomeEmailTests(TestCase):
         self.assertEqual(len(mail.outbox), 0)
         self.school.refresh_from_db()
         self.assertIsNone(self.school.welcome_email_sent_at)
+
+
+@patch("users.views.ADMIN_OTP_ENABLED", False)
+class ChangeLoginEmailTests(TestCase):
+    """Changing the email a user signs in with is unconditional password +
+    emailed-OTP, same shape as finance's subaccount-change and
+    branch_views' delete-branch step-ups - never gated by ADMIN_OTP_ENABLED,
+    since this protects account access itself, not just login. The class
+    patch is only so test_can_sign_in_with_the_new_email_afterwards's plain
+    login isn't itself blocked by the unrelated login-OTP gate."""
+
+    def setUp(self):
+        # IdempotencyMiddleware caches by (requester, method, path, body) for
+        # 10s - every test here hits request-otp/ with the exact same empty
+        # body, so without clearing it a later test would silently replay an
+        # earlier test's cached response (see test_branches.py's same note).
+        cache.clear()
+        self.school = SchoolTenant.objects.create(
+            name="Email Change School", schema_name="email_change_school", is_active=True,
+        )
+        self.user = User.objects.create_user(
+            email="original@emailchange.edu", password="OriginalPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def _latest_otp_code(self):
+        match = re.search(r"\b(\d{6})\b", mail.outbox[-1].body)
+        self.assertIsNotNone(match, "no 6-digit code found in the latest email")
+        return match.group(1)
+
+    def _request_otp(self):
+        response = self.client.post("/api/auth/account/email/request-otp/")
+        self.assertEqual(response.status_code, 200, response.data)
+        return response.data["otp_challenge"], self._latest_otp_code()
+
+    def test_otp_is_sent_to_the_current_address_not_the_new_one(self):
+        self._request_otp()
+
+        self.assertEqual(mail.outbox[-1].to, ["original@emailchange.edu"])
+
+    def test_change_requires_password_and_otp(self):
+        challenge, code = self._request_otp()
+
+        response = self.client.post("/api/auth/account/email/", {"new_email": "new@emailchange.edu"}, format="json")
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "original@emailchange.edu")
+
+    def test_change_succeeds_with_correct_password_and_otp(self):
+        challenge, code = self._request_otp()
+
+        response = self.client.post(
+            "/api/auth/account/email/",
+            {"new_email": "New@EmailChange.edu", "current_password": "OriginalPass123", "otp_code": code, "otp_challenge": challenge},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "new@emailchange.edu")  # stored lowercased
+        # The OTP is consumed on success - replaying it must fail.
+        self.assertIsNone(self.user.admin_otp_hash)
+
+    def test_change_rejects_wrong_password(self):
+        challenge, code = self._request_otp()
+
+        response = self.client.post(
+            "/api/auth/account/email/",
+            {"new_email": "new@emailchange.edu", "current_password": "WrongPassword", "otp_code": code, "otp_challenge": challenge},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "original@emailchange.edu")
+
+    def test_change_rejects_wrong_otp_code(self):
+        challenge, code = self._request_otp()
+        wrong = "111111" if code != "111111" else "222222"
+
+        response = self.client.post(
+            "/api/auth/account/email/",
+            {"new_email": "new@emailchange.edu", "current_password": "OriginalPass123", "otp_code": wrong, "otp_challenge": challenge},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "original@emailchange.edu")
+
+    def test_otp_cannot_be_replayed(self):
+        challenge, code = self._request_otp()
+        first = self.client.post(
+            "/api/auth/account/email/",
+            {"new_email": "new@emailchange.edu", "current_password": "OriginalPass123", "otp_code": code, "otp_challenge": challenge},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 200, first.data)
+
+        second = self.client.post(
+            "/api/auth/account/email/",
+            {"new_email": "another@emailchange.edu", "current_password": "OriginalPass123", "otp_code": code, "otp_challenge": challenge},
+            format="json",
+        )
+
+        self.assertEqual(second.status_code, 400, second.data)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "new@emailchange.edu")
+
+    def test_cannot_change_to_an_email_already_in_use(self):
+        User.objects.create_user(
+            email="taken@emailchange.edu", password="OtherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        challenge, code = self._request_otp()
+
+        response = self.client.post(
+            "/api/auth/account/email/",
+            {"new_email": "Taken@EmailChange.edu", "current_password": "OriginalPass123", "otp_code": code, "otp_challenge": challenge},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "original@emailchange.edu")
+
+    def test_rejects_an_invalid_email_format(self):
+        challenge, code = self._request_otp()
+
+        response = self.client.post(
+            "/api/auth/account/email/",
+            {"new_email": "not-an-email", "current_password": "OriginalPass123", "otp_code": code, "otp_challenge": challenge},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+
+    def test_can_sign_in_with_the_new_email_afterwards(self):
+        challenge, code = self._request_otp()
+        self.client.post(
+            "/api/auth/account/email/",
+            {"new_email": "new@emailchange.edu", "current_password": "OriginalPass123", "otp_code": code, "otp_challenge": challenge},
+            format="json",
+        )
+
+        response = APIClient().post(
+            "/api/auth/login/", {"email": "new@emailchange.edu", "password": "OriginalPass123"}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
 
 
 class StudentEnrollmentTests(TestCase):

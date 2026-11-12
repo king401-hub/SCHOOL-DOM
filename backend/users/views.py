@@ -1639,6 +1639,104 @@ def change_password(request):
         'errors': serializer.errors
     }, status=status.HTTP_400_BAD_REQUEST)
 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def request_email_change_otp(request):
+    """Emails the signed-in user a one-time code at their CURRENT address
+    before they're allowed to change the email they sign in with -
+    unconditional, same as the finance subaccount settlement-change gate and
+    branch_views.branch_request_delete_otp, because this protects account
+    access itself, not just login."""
+    user = request.user
+    challenge = send_admin_otp(user, purpose="change_login_email")
+    return Response({
+        'success': True,
+        'message': 'A verification code was sent to your current email address.',
+        'otp_challenge': challenge,
+        'otp_expires_in': ADMIN_OTP_EXPIRY_MINUTES * 60,
+    })
+
+
+def _verify_email_change_step_up(request, user):
+    """Password + emailed-OTP gate for changing the email a user signs in
+    with. Returns an error Response to short-circuit the caller, or None
+    once both checks pass (the OTP code is consumed on success so it can't
+    be replayed) - same shape as finance._verify_subaccount_change_step_up
+    and branch_views._verify_delete_branch_step_up."""
+    current_password = str(request.data.get('current_password') or '')
+    otp_code = str(request.data.get('otp_code') or '').strip()
+    otp_challenge = str(request.data.get('otp_challenge') or '').strip()
+
+    if not (current_password and otp_code and otp_challenge):
+        return Response(
+            {'success': False, 'message': 'Changing your login email needs your password and the emailed verification code.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not user.check_password(current_password):
+        return Response({'success': False, 'message': 'Incorrect password.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    otp_user = get_admin_email_device(user, challenge=otp_challenge)
+    if not otp_user:
+        return Response(
+            {'success': False, 'message': 'Verification code expired or invalid - request a new one.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if user.admin_otp_attempts >= ADMIN_OTP_MAX_ATTEMPTS:
+        return Response(
+            {'success': False, 'message': 'Too many incorrect codes - request a new one.'},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+    if not user.admin_otp_hash or not check_password(otp_code, user.admin_otp_hash):
+        user.admin_otp_attempts += 1
+        user.save(update_fields=['admin_otp_attempts'])
+        remaining = max(ADMIN_OTP_MAX_ATTEMPTS - user.admin_otp_attempts, 0)
+        return Response(
+            {'success': False, 'message': f'Invalid verification code. {remaining} attempt(s) remaining.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    clear_admin_otp(user)
+    return None
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_login_email(request):
+    """Change the email the signed-in user signs in with - password +
+    emailed OTP required (see request_email_change_otp /
+    _verify_email_change_step_up above). The code is sent to the CURRENT
+    address, not the new one, so this can't be used to hijack an account by
+    pointing it at an attacker-controlled inbox."""
+    from django.core.exceptions import ValidationError as DjangoValidationError
+    from django.core.validators import validate_email as django_validate_email
+
+    user = request.user
+    new_email = str(request.data.get('new_email') or '').strip().lower()
+
+    if not new_email:
+        return Response({'success': False, 'message': 'A new email address is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        django_validate_email(new_email)
+    except DjangoValidationError:
+        return Response({'success': False, 'message': 'Enter a valid email address.'}, status=status.HTTP_400_BAD_REQUEST)
+    if new_email == user.email.strip().lower():
+        return Response({'success': False, 'message': 'That is already your email address.'}, status=status.HTTP_400_BAD_REQUEST)
+    if User.objects.filter(email__iexact=new_email).exclude(pk=user.pk).exists():
+        return Response({'success': False, 'message': 'That email is already in use by another account.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    error = _verify_email_change_step_up(request, user)
+    if error:
+        return error
+
+    old_email = user.email
+    user.email = new_email
+    user.save(update_fields=['email'])
+    logger.info("User %s changed their login email from %s to %s", user.pk, old_email, new_email)
+
+    return Response({'success': True, 'message': 'Your login email has been updated.', 'email': new_email})
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def check_email(request):

@@ -24,6 +24,8 @@ urlpatterns = [
     path("password-reset/confirm/", views.password_reset_confirm, name="password_reset_confirm"),
     path("contact/", app_views.public_contact_email, name="public_contact_email"),
     path("change-password/", views.change_password, name="api_change_password"),
+    path("account/email/request-otp/", views.request_email_change_otp, name="api_request_email_change_otp"),
+    path("account/email/", views.change_login_email, name="api_change_login_email"),
     path("google/login/", GoogleLoginView.as_view(), name="google_login"),
     path("microsoft/login/", MicrosoftLoginView.as_view(), name="microsoft_login"),
 ]
