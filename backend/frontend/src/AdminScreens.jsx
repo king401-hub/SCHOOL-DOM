@@ -1544,6 +1544,7 @@ const FINANCE_SECTIONS = [
    findable from each other without being interleaved on screen. */
 const FINANCE_RECORD_TABS = [
   { key: "cash-payments", label: "Payments", action: "cash-payment" },
+  { key: "dva-payments", label: "DVA" },
   { key: "student-payments", label: "Student Payments" },
   { key: "student-fees", label: "Student Fees" },
   { key: "class-fees", label: "Fee Schedule", action: "generate-bill" },
@@ -1950,6 +1951,14 @@ function AdminFinanceScreen({
   // same "bank_transfer" payment_method label.
   const cashPaymentRows = bankPaymentRows.filter((payment) => payment.recorded_by);
   const transactionHistory = finance?.transaction_history || [];
+  // A parent's own dedicated virtual account (Paystack DVA) settles straight
+  // into their children's fees as a Transaction, not a BankPayment - it never
+  // appears in cashPaymentRows above. finance.services.process_virtual_account_payment
+  // tags every one of these with reference=generate_reference("DVA") (a "DVA"
+  // prefix is never produced by any other payment path, e.g. "SPL" for a
+  // regular checkout split payment), so that prefix is what tells them apart
+  // here from everything else already mixed into transaction_history.
+  const dvaPaymentRows = transactionHistory.filter((item) => String(item.reference || "").startsWith("DVA"));
   const [ledgerTermId, setLedgerTermId] = useState("");
   const [ledgerTermRows, setLedgerTermRows] = useState(null);
   const [ledgerTermOptions, setLedgerTermOptions] = useState([]);
@@ -2256,6 +2265,20 @@ function AdminFinanceScreen({
                       </td>
                     </tr>
                   );
+  const renderDvaPaymentRow = (item) => (
+                    <tr key={item.id || item.reference}>
+                      <td>{formatFinanceHistoryDate(item.received_on, item.created_at)}</td>
+                      <td>{item.narration || "Virtual account payment"}</td>
+                      <td>{item.reference || "-"}</td>
+                      <td>{formatFinanceAmount(item.amount)}</td>
+                      <td><span className={`finance-status status-${item.status || "pending"}`}>{item.status || "pending"}</span></td>
+                      <td>
+                        <button type="button" className="table-action" onClick={() => handlePrintTransactionReceipt(item)}>
+                          Receipt
+                        </button>
+                      </td>
+                    </tr>
+                  );
   const renderStudentPersonCell = (profilePicture, name) => (
     <span className="table-row-avatar">
       {profilePicture ? <img src={profilePicture} alt="" /> : <span>{userInitials({ full_name: name })}</span>}
@@ -2335,6 +2358,7 @@ function AdminFinanceScreen({
   }).slice(0, 8);
   const visibleCreditRows = creditRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCashPaymentRows = cashPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visibleDvaPaymentRows = dvaPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCreditPurchaseHistory = creditPurchaseHistory.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleFinanceLedgerRows = financeLedgerRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   /* What each "View More" popup shows. Columns and renderRow are the same ones
@@ -2351,6 +2375,16 @@ function AdminFinanceScreen({
       dateOf: (row) => row.received_on || row.matched_at || row.created_at,
       statusOf: (row) => row.status,
       methodOf: (row) => row.payment_method,
+    },
+    dvaPaymentHistory: {
+      title: "DVA",
+      description: "Payments parents sent straight to their own dedicated virtual account (DVA), newest first.",
+      columns: ["Date", "Parent", "Reference", "Amount", "Status", "Receipt"],
+      rows: dvaPaymentRows,
+      renderRow: renderDvaPaymentRow,
+      searchText: (row) => [row.narration, row.reference],
+      dateOf: (row) => row.received_on || row.created_at,
+      statusOf: (row) => row.status,
     },
     studentPayments: {
       title: "Student Payment Records",
@@ -4380,6 +4414,22 @@ function AdminFinanceScreen({
                   <tbody>{cashPaymentRows.length ? visibleCashPaymentRows.map(renderCashPaymentRow) : <tr><td colSpan="10">No payments recorded yet.</td></tr>}</tbody>
                 </table>
                 {renderFinanceMoreButton("cashPaymentHistory", cashPaymentRows.length)}
+              </div>
+              </article>
+            ) : null}
+
+            {recordSection === "dva-payments" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>DVA</h3>
+                  <small>{dvaPaymentRows.length} payment record{dvaPaymentRows.length === 1 ? "" : "s"}</small>
+                </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Date</th><th>Parent</th><th>Reference</th><th>Amount</th><th>Status</th><th>Receipt</th></tr></thead>
+                  <tbody>{dvaPaymentRows.length ? visibleDvaPaymentRows.map(renderDvaPaymentRow) : <tr><td colSpan="6">No DVA payments recorded yet.</td></tr>}</tbody>
+                </table>
+                {renderFinanceMoreButton("dvaPaymentHistory", dvaPaymentRows.length)}
               </div>
               </article>
             ) : null}
