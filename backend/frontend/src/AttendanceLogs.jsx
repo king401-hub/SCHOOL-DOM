@@ -165,7 +165,7 @@ export function AttendanceLogsPanel({ session }) {
 
   useEffect(() => {
     setPage(1);
-  }, [activePersonId, startDate, endDate, statusFilter, termFilter, sort]);
+  }, [activePersonId, classId, startDate, endDate, statusFilter, termFilter, sort]);
 
   // Term only applies to students - AttendanceRecord (student attendance) has
   // a term FK, but staff attendance has no term concept at all.
@@ -179,7 +179,8 @@ export function AttendanceLogsPanel({ session }) {
       if (isStaffMode) {
         params.set("staff_id", activePersonId);
       } else {
-        params.set("student_id", activePersonId);
+        if (activePersonId) params.set("student_id", activePersonId);
+        else if (classId) params.set("class_id", classId);
         if (termFilter) params.set("term_id", termFilter);
       }
       if (startDate) params.set("start_date", startDate);
@@ -193,11 +194,15 @@ export function AttendanceLogsPanel({ session }) {
       }
       return params;
     },
-    [isStaffMode, activePersonId, startDate, endDate, statusFilter, termFilter, search, sort, page]
+    [isStaffMode, activePersonId, classId, startDate, endDate, statusFilter, termFilter, search, sort, page]
   );
 
+  // Staff mode still needs one staff member picked; student mode works with
+  // no student selected at all (defaults to today, across every student).
+  const canShowResults = isStaffMode ? Boolean(activePersonId) : true;
+
   const fetchLogs = useCallback(async () => {
-    if (!activePersonId || !session) {
+    if (!session || (isStaffMode && !activePersonId)) {
       setResult(null);
       return;
     }
@@ -230,7 +235,9 @@ export function AttendanceLogsPanel({ session }) {
   const termOptions = !isStaffMode ? result?.term_options || [] : [];
   const totalPages = result ? Math.max(1, Math.ceil((result.count || 0) / limit)) : 1;
 
-  const personLabel = isStaffMode ? selectedStaff?.name : selectedStudent?.name;
+  const personLabel = isStaffMode
+    ? selectedStaff?.name
+    : selectedStudent?.name || (selectedClass ? `${selectedClass.label} - All Students` : "All Students");
 
   const handleSort = (columnKey) => {
     if (columnKey !== "date" && columnKey !== "status") return;
@@ -238,7 +245,7 @@ export function AttendanceLogsPanel({ session }) {
   };
 
   const handleExport = async () => {
-    if (!activePersonId) return;
+    if (isStaffMode && !activePersonId) return;
     setExportBusy(true);
     setError("");
     try {
@@ -256,7 +263,7 @@ export function AttendanceLogsPanel({ session }) {
   };
 
   const handlePrint = async () => {
-    if (!activePersonId) return;
+    if (isStaffMode && !activePersonId) return;
     setError("");
     setPrintBusy(true);
     try {
@@ -327,7 +334,11 @@ export function AttendanceLogsPanel({ session }) {
       <article className="app-panel">
         <div className="panel-head">
           <h3>Attendance Logs</h3>
-          <small>Complete historical attendance from the date each person first started, unless a date range narrows it.</small>
+          <small>
+            {personType === "student"
+              ? "Shows today's attendance for every student by default. Pick a class to narrow it, or a student to see their full history."
+              : "Complete historical attendance from the date each person first started, unless a date range narrows it."}
+          </small>
         </div>
 
         <div className="segmented-control" style={{ justifyContent: "flex-start", marginBottom: "0.75rem" }}>
@@ -342,9 +353,9 @@ export function AttendanceLogsPanel({ session }) {
           {personType === "student" ? (
             <>
               <label className="panel-field">
-                Class
+                Class (optional)
                 <select value={classId} onChange={(event) => setClassId(event.target.value)}>
-                  <option value="">Select class</option>
+                  <option value="">All classes</option>
                   {classes.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.label}
@@ -353,9 +364,9 @@ export function AttendanceLogsPanel({ session }) {
                 </select>
               </label>
               <label className="panel-field">
-                Student
+                Student (optional)
                 <select value={studentId} onChange={(event) => setStudentId(event.target.value)} disabled={!classId}>
-                  <option value="">Select student</option>
+                  <option value="">All students{classId ? " in this class" : ""}</option>
                   {students.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name} ({item.student_id})
@@ -387,7 +398,7 @@ export function AttendanceLogsPanel({ session }) {
           </label>
         </div>
 
-        {activePersonId ? (
+        {canShowResults ? (
           <>
             <div className="panel-form-grid" style={{ marginTop: "0.75rem" }}>
               <label className="panel-field">
@@ -428,7 +439,7 @@ export function AttendanceLogsPanel({ session }) {
             {summary ? (
               <div className="heat-metric-grid" style={{ marginTop: "1rem" }}>
                 <div className="heat-metric-card">
-                  <span>Total School Days</span>
+                  <span>{activePersonId ? "Total School Days" : "Total Records"}</span>
                   <strong>{summary.total_school_days}</strong>
                 </div>
                 <div className="heat-metric-card">
@@ -519,13 +530,7 @@ export function AttendanceLogsPanel({ session }) {
             ) : null}
           </>
         ) : (
-          <p className="panel-empty">
-            {personType === "student"
-              ? classId
-                ? "Select a student to view their attendance history."
-                : "Select a class, then a student, to view their attendance history."
-              : "Select a staff member to view their attendance history."}
-          </p>
+          <p className="panel-empty">Select a staff member to view their attendance history.</p>
         )}
       </article>
     </section>

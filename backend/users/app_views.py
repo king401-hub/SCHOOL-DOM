@@ -5395,15 +5395,24 @@ def _student_attendance_log_row(record):
 
 
 def _student_attendance_logs_queryset(request, user):
+    """student_id is optional: with none given, this returns every student's
+    attendance instead of one person's (optionally narrowed to one class via
+    class_id). With no date range either, that all-students view defaults to
+    today only - the single-student view still defaults to full history."""
     student_id = str(request.query_params.get("student_id") or "").strip()
-    if not student_id:
-        raise ValueError("student_id is required.")
+    class_id = str(request.query_params.get("class_id") or "").strip()
     qs = _scope_to_user_tenant(
-        AttendanceRecord.objects.filter(student_id=student_id).select_related("class_group", "noted_by", "student__student_profile"),
+        AttendanceRecord.objects.select_related("class_group", "noted_by", "student__student_profile"),
         user,
     )
+    if student_id:
+        qs = qs.filter(student_id=student_id)
+    elif class_id:
+        qs = qs.filter(class_group_id=class_id)
     start_date = parse_date(str(request.query_params.get("start_date") or "").strip())
     end_date = parse_date(str(request.query_params.get("end_date") or "").strip())
+    if not student_id and not start_date and not end_date:
+        start_date = end_date = timezone.localdate()
     if start_date:
         qs = qs.filter(date__gte=start_date)
     if end_date:
@@ -5416,11 +5425,14 @@ def _student_attendance_logs_queryset(request, user):
         qs = qs.filter(term_id=term_id)
     search = str(request.query_params.get("search") or "").strip()
     if search:
-        qs = qs.filter(
+        search_q = (
             Q(noted_by__first_name__icontains=search)
             | Q(noted_by__last_name__icontains=search)
             | Q(remarks__icontains=search)
         )
+        if not student_id:
+            search_q |= Q(student__first_name__icontains=search) | Q(student__last_name__icontains=search)
+        qs = qs.filter(search_q)
     return qs
 
 
@@ -5436,14 +5448,13 @@ _ATTENDANCE_LOG_SORT_FIELDS = {
 @permission_classes([IsAuthenticated])
 def student_attendance_logs(request):
     """Full historical attendance for one student, across every term/session
-    ever recorded unless start_date/end_date/term_id narrow it."""
+    ever recorded unless start_date/end_date/term_id narrow it. With no
+    student_id, returns every student's attendance for today instead (or a
+    date range/class, if given) - see _student_attendance_logs_queryset."""
     user = request.user
     if not _can_manage_school_settings(user):
         return Response({"success": False, "message": "Only school administrators can view attendance logs."}, status=status.HTTP_403_FORBIDDEN)
-    try:
-        qs = _student_attendance_logs_queryset(request, user)
-    except ValueError as exc:
-        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    qs = _student_attendance_logs_queryset(request, user)
 
     totals = qs.aggregate(
         present=Count("id", filter=Q(status="present")),
@@ -5490,10 +5501,7 @@ def student_attendance_logs_export(request):
     user = request.user
     if not _can_manage_school_settings(user):
         return Response({"success": False, "message": "Only school administrators can export attendance logs."}, status=status.HTTP_403_FORBIDDEN)
-    try:
-        qs = _student_attendance_logs_queryset(request, user)
-    except ValueError as exc:
-        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    qs = _student_attendance_logs_queryset(request, user)
 
     sort_field = _ATTENDANCE_LOG_SORT_FIELDS.get(str(request.query_params.get("sort") or "-date"), "-date")
     output = io.StringIO()

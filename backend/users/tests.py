@@ -5104,6 +5104,129 @@ class AttendanceAndPromptTests(TestCase):
         )
 
 
+class AttendanceLogsAllStudentsTests(TestCase):
+    """The Attendance Logs page used to require picking one student before it
+    would show anything at all. student_id is now optional: with none given,
+    student_attendance_logs returns every student's attendance instead,
+    defaulting to today only unless a date range or class narrows it - see
+    _student_attendance_logs_queryset. Picking one student still works
+    exactly as before (full history unless narrowed)."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="All Students Log School",
+            schema_name="all_students_log_school",
+            is_active=True,
+        )
+        self.legacy_tenant = Tenant.objects.create(
+            name="All Students Log School Legacy",
+            slug="all_students_log_school",
+        )
+        self.classroom = Class.objects.create(name="Grade 5", section="A", tenant=self.legacy_tenant)
+        self.other_classroom = Class.objects.create(name="Grade 6", section="B", tenant=self.legacy_tenant)
+
+        self.admin_user = User.objects.create_user(
+            email="admin@allstudentslog.edu",
+            password="AdminPass123",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+
+        def _make_student(email, first_name, last_name, student_id, class_group):
+            user = User.objects.create_user(
+                email=email, password="StudentPass123", first_name=first_name, last_name=last_name,
+                role="student", tenant=self.school, is_active=True, is_verified=True,
+            )
+            StudentProfile.objects.create(
+                user=user, student_id=student_id, admission_number=f"ADM-{student_id}",
+                admission_date=timezone.now().date(), guardian_name="Guardian", guardian_phone="+15550001111",
+                guardian_relation="Parent", current_class=class_group,
+            )
+            return user
+
+        self.alice = _make_student("alice@allstudentslog.edu", "Alice", "Able", "STU-ALL-1", self.classroom)
+        self.bob = _make_student("bob@allstudentslog.edu", "Bob", "Baker", "STU-ALL-2", self.other_classroom)
+
+        self.today = timezone.localdate()
+        self.yesterday = self.today - timedelta(days=1)
+        AttendanceRecord.objects.create(
+            student=self.alice, class_group=self.classroom, date=self.today, status="present", tenant=self.legacy_tenant,
+        )
+        AttendanceRecord.objects.create(
+            student=self.bob, class_group=self.other_classroom, date=self.today, status="absent", tenant=self.legacy_tenant,
+        )
+        AttendanceRecord.objects.create(
+            student=self.alice, class_group=self.classroom, date=self.yesterday, status="late", tenant=self.legacy_tenant,
+        )
+
+        other_school = SchoolTenant.objects.create(name="Other Log School", schema_name="other_log_school", is_active=True)
+        other_legacy = Tenant.objects.create(name="Other Log School Legacy", slug="other_log_school")
+        other_class = Class.objects.create(name="Grade 7", section="C", tenant=other_legacy)
+        other_student = User.objects.create_user(
+            email="carol@otherlogschool.edu", password="StudentPass123", role="student",
+            tenant=other_school, is_active=True, is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=other_student, student_id="STU-OTHER-1", admission_number="ADM-OTHER-1",
+            admission_date=timezone.now().date(), guardian_name="Guardian", guardian_phone="+15550002222",
+            guardian_relation="Parent", current_class=other_class,
+        )
+        AttendanceRecord.objects.create(
+            student=other_student, class_group=other_class, date=self.today, status="present", tenant=other_legacy,
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+
+    def test_no_student_id_defaults_to_todays_records_for_every_student(self):
+        response = self.client.get("/api/app/attendance/logs/students/")
+        self.assertEqual(response.status_code, 200, getattr(response, "data", response))
+        names = {row["student_name"] for row in response.data["results"]}
+        self.assertEqual(names, {"Able Alice", "Baker Bob"})
+        self.assertEqual(response.data["count"], 2)
+
+    def test_no_student_id_never_leaks_another_tenants_records(self):
+        response = self.client.get("/api/app/attendance/logs/students/")
+        self.assertEqual(response.status_code, 200)
+        names = {row["student_name"] for row in response.data["results"]}
+        self.assertNotIn("Carol", " ".join(names))
+
+    def test_class_id_without_student_id_narrows_to_that_class(self):
+        response = self.client.get(f"/api/app/attendance/logs/students/?class_id={self.classroom.id}")
+        self.assertEqual(response.status_code, 200)
+        names = {row["student_name"] for row in response.data["results"]}
+        self.assertEqual(names, {"Able Alice"})
+
+    def test_search_by_student_name_works_without_a_student_id(self):
+        response = self.client.get("/api/app/attendance/logs/students/?search=Baker")
+        self.assertEqual(response.status_code, 200)
+        names = {row["student_name"] for row in response.data["results"]}
+        self.assertEqual(names, {"Baker Bob"})
+
+    def test_date_range_overrides_the_today_default_for_all_students(self):
+        response = self.client.get(f"/api/app/attendance/logs/students/?start_date={self.yesterday}&end_date={self.yesterday}")
+        self.assertEqual(response.status_code, 200)
+        names = {row["student_name"] for row in response.data["results"]}
+        self.assertEqual(names, {"Able Alice"})
+        self.assertEqual(response.data["results"][0]["status"], "late")
+
+    def test_picking_one_student_still_returns_full_history_not_just_today(self):
+        response = self.client.get(f"/api/app/attendance/logs/students/?student_id={self.alice.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 2)
+
+    def test_a_teacher_cannot_view_the_all_students_log(self):
+        teacher = User.objects.create_user(
+            email="teacher@allstudentslog.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client.force_authenticate(user=teacher)
+        response = self.client.get("/api/app/attendance/logs/students/")
+        self.assertEqual(response.status_code, 403)
+
+
 class TeacherClassSubjectEligibilityTests(TestCase):
     """Lesson planning and grading must agree on which (class, subject)
     pairs a teacher can actually touch - assigned to the class AND teaching
