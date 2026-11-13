@@ -4780,11 +4780,12 @@ class AttendanceAndPromptTests(TestCase):
         self.assertEqual(log.recipient_phone, "+15550009999")
         self.assertEqual(log.tenant_id, self.school.id)
 
-    def test_id_card_scan_skips_wallet_charge_when_kids_monitor_already_covers_it(self):
-        """A parent with an active Kids Monitor subscription already gets
-        this text for free, funded by their own subscription - the wallet
-        fallback must not also fire and double-bill the school (or
-        double-text the parent) for a message that's already covered."""
+    def test_id_card_scan_bills_wallet_even_when_kids_monitor_is_active(self):
+        """A parent's Kids Monitor subscription used to make this text free
+        instead of wallet-billed - it no longer does (see
+        _notify_parents_on_attendance). The school's wallet is billed for
+        this attendance SMS regardless of Kids Monitor coverage, same as for
+        a family with no subscription at all."""
         parent_user = User.objects.create_user(
             email="parent@attendance.edu",
             password="ParentPass123",
@@ -4808,19 +4809,15 @@ class AttendanceAndPromptTests(TestCase):
         self.client.force_authenticate(user=self.teacher_user)
 
         with patch("finance.services._dispatch_wallet_sms") as mock_send, \
-                patch("users.app_views.threading.Thread", self._ImmediateThread), \
-                patch("finance.services.send_kudisms") as mock_kudisms:
+                patch("users.app_views.threading.Thread", self._ImmediateThread):
             mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
             response = self._scan(token)
 
         self.assertEqual(response.status_code, 200)
         wallet.refresh_from_db()
-        self.assertEqual(wallet.balance, 10)
-        self.assertFalse(SmsMessageLog.objects.filter(category=SmsMessageLog.ATTENDANCE).exists())
-        # settings.SMS_PROVIDER defaults to "kudisms" - confirms the free
-        # Kids Monitor path actually fired (and is what made the wallet
-        # fallback above correctly skip), not that neither path ran at all.
-        mock_kudisms.assert_called_once()
+        self.assertEqual(wallet.balance, 9)
+        log = SmsMessageLog.objects.get(category=SmsMessageLog.ATTENDANCE)
+        self.assertEqual(log.recipient_phone, "+15550009999")
 
     def test_premium_schoolgate_school_attendance_sms_is_never_wallet_charged(self):
         """A premium SchoolGate school's termly fee already funds this text

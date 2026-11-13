@@ -15658,56 +15658,40 @@ def _notify_parents_on_attendance(
     school=None,
 ):
     """
-    Queue SMS to parents who have Child Monitor active when attendance is marked.
-    Only parents with an active KidsMonitorSubscription receive anything for free —
-    that's the paid opt-in gate, checked per parent below.
-    Sends happen on a background thread so marking attendance stays instant for the teacher.
+    One SMS per attendance event, billed to the school's own SMS wallet and
+    sent to the student's best guardian contact - see
+    _send_wallet_billed_attendance_sms. Free only for a premium SchoolGate
+    school, exactly like that plan's own gate terminal SMS (see
+    rfid_attendance.views._send_gate_sms/_send_gate_sms_from_wallet).
 
-    When `school` is given and no linked parent actually received that free text
-    (no active subscription, or active but no phone on file), one SMS is instead
-    billed to the school's own SMS wallet and sent to the student's best guardian
-    contact - see _send_wallet_billed_attendance_sms. This is how every web
-    tap/scan attendance endpoint (QR self-scan, ID-card scan, teacher clock-in/out)
-    guarantees the parent hears about it even without a Kids Monitor subscription,
-    without double-texting/double-charging a parent who's already covered for free.
+    A parent's Kids Monitor subscription does not change this anymore: it
+    used to make this same text free instead of wallet-billed, which left
+    every web tap/scan endpoint (QR self-scan, ID-card scan, teacher
+    clock-in/out and manual mark) not actually charging the wallet whenever
+    the family happened to have Kids Monitor active - not what "attendance
+    should charge a wallet SMS per student" was asking for. Kids Monitor
+    still gates its own separate features; it just no longer decides whether
+    this particular text is free.
     """
     try:
         student_profile = student_user.student_profile
     except Exception:
         return
 
-    parents = ParentProfile.objects.filter(children=student_profile).select_related("user", "kids_monitor")
     student_name = student_user.get_full_name() or student_user.email
     message = _attendance_sms_text(
         student_name, school_name, attendance_status, attendance_date, event, event_time
     )
 
-    to_send = []
-    for parent_profile in parents:
-        try:
-            if not parent_profile.kids_monitor.is_currently_active:
-                continue
-        except KidsMonitorSubscription.DoesNotExist:
-            continue
-
-        phone = parent_profile.user.phone
-        if not phone:
-            continue
-        to_send.append((phone, message))
-
-    if to_send:
-        threading.Thread(
-            target=_send_attendance_sms_batch, args=(to_send, settings.SMS_PROVIDER), daemon=True
-        ).start()
-    elif school is not None:
+    if school is not None:
         _send_wallet_billed_attendance_sms(school, student_profile, message)
 
 
 def _send_wallet_billed_attendance_sms(school, student_profile, message):
     """Bills `school`'s own SMS wallet for one attendance notification to the
-    student's best guardian contact - the fallback _notify_parents_on_attendance
-    reaches for when no linked parent has an active Kids Monitor subscription to
-    cover the text for free. Threaded and swallows a failed/locked/empty wallet
+    student's best guardian contact - _notify_parents_on_attendance's only
+    send path, called unconditionally (Kids Monitor coverage no longer
+    matters here). Threaded and swallows a failed/locked/empty wallet
     for the same reason every other wallet-billed send in this codebase does:
     attendance must stay instant, and a school with no SMS credit left should
     just not get this one text, not have attendance itself fail.
@@ -15715,9 +15699,7 @@ def _send_wallet_billed_attendance_sms(school, student_profile, message):
     A premium SchoolGate school's termly fee already funds this text the same
     way it funds the gate terminal's own attendance SMS (see
     rfid_attendance.views._send_gate_sms) - send_wallet_sms's charge_wallet=False
-    still sends and logs the message, just never debits the wallet for it, so a
-    parent new since the last premium bundling run (_bundle_kids_monitor_for_
-    schoolgate_premium) isn't billed just for having missed that sweep."""
+    still sends and logs the message, just never debits the wallet for it."""
     from finance.models import SmsMessageLog
     from finance.services import (
         InsufficientSmsCreditsError,
