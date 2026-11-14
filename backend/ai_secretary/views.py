@@ -93,6 +93,10 @@ def secretary_chat(request):
         response["route"] = result["route"]
     if result.get("confirm_action"):
         response["confirm_action"] = result["confirm_action"]
+    if result.get("student_card"):
+        response["student_card"] = result["student_card"]
+    if result.get("student_choices"):
+        response["student_choices"] = result["student_choices"]
     return JsonResponse(response)
 
 

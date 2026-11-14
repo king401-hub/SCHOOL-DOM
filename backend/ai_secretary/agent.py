@@ -170,6 +170,44 @@ def parse_phase_one_command(text: str, history: list | None = None) -> dict:
         cache.set(cache_key, result, timeout=300)
         return result
 
+    # "Bring up all the students with the name chi" / "find the student
+    # named chi" / "show me the student chi" - a deterministic name-lookup
+    # fast path, same reasoning as the other Phase 1 branches: asking a
+    # clarifying question when a name matches several students must not
+    # depend on a small model's judgment, so this (and the shaping of
+    # find_students' result into student_card/student_choices in run_agent)
+    # happens in plain Python, not by hoping the model calls the tool
+    # correctly on its own.
+    student_lookup_keywords = [
+        "bring up", "pull up", "look up", "find the student", "find a student",
+        "search for", "show me the student", "show me student",
+    ]
+    looks_like_student_lookup = (
+        any(phrase in lowered for phrase in student_lookup_keywords)
+        or ("find" in lowered and "student" in lowered)
+        or ("student" in lowered and re.search(r"\b(named|called)\b", lowered))
+    )
+    if looks_like_student_lookup:
+        name_query = None
+        for pattern in (
+            r"\b(?:named|called)\s+([a-zA-Z][a-zA-Z'\-. ]*?)\s*[.?!]*$",
+            r"\bname\s+([a-zA-Z][a-zA-Z'\-. ]*?)\s*[.?!]*$",
+            r"\bstudents?\b\s+([a-zA-Z][a-zA-Z'\-. ]*?)\s*[.?!]*$",
+        ):
+            found = re.search(pattern, message, re.IGNORECASE)
+            if found:
+                candidate = found.group(1).strip()
+                # The looser fallback patterns can grab a filler word instead
+                # of a real name fragment - treat those as "no name found"
+                # rather than searching for "with" or "the" literally.
+                if candidate.lower() not in {"with", "the", "a", "an", "up", "for", "record", "profile", "details"}:
+                    name_query = candidate
+                    break
+        if name_query:
+            result = {"tool": "find_students", "params": {"query": name_query}, "confidence": 0.9}
+            cache.set(cache_key, result, timeout=300)
+            return result
+
     if "timetable" in lowered:
         result = {
             "tool": "generate_timetable",
@@ -227,6 +265,50 @@ def parse_phase_one_command(text: str, history: list | None = None) -> dict:
     result = {"tool": "general_chat", "params": {}, "confidence": 0.1}
     cache.set(cache_key, result, timeout=300)
     return result
+
+
+def _respond_with_student_matches(find_result: dict, tools: SecretaryTools) -> dict:
+    """Shapes a find_students result into the chat response's student_card/
+    student_choices fields. Zero matches gets a plain message, exactly one
+    resolves straight to a full profile card, two or more become a "which
+    one did you mean?" list instead of guessing - the actual gap this tool
+    exists to close, since get_student_details alone silently took the first
+    name match with no way to ask."""
+    if find_result.get("status") != "success":
+        return {
+            "reply": find_result.get("message") or "I couldn't search for that student right now.",
+            "tools_called": ["find_students"],
+            "error": find_result.get("message"),
+        }
+
+    students = find_result.get("students") or []
+    query = find_result.get("query", "")
+
+    if not students:
+        return {"reply": f"I couldn't find a student matching '{query}'.", "tools_called": ["find_students"], "error": None}
+
+    if len(students) == 1:
+        detail = tools.dispatch("get_student_details", {"student_id": students[0]["student_id"]})
+        if detail.get("status") != "success":
+            return {
+                "reply": detail.get("message") or "Could not load that student's record.",
+                "tools_called": ["find_students", "get_student_details"],
+                "error": detail.get("message"),
+            }
+        return {
+            "reply": f"Here's {detail.get('name')}'s record.",
+            "tools_called": ["find_students", "get_student_details"],
+            "error": None,
+            "student_card": detail,
+        }
+
+    truncated_note = " (showing the first 20)" if find_result.get("truncated") else ""
+    return {
+        "reply": f"I found {len(students)} students matching '{query}'{truncated_note}. Which one did you mean?",
+        "tools_called": ["find_students"],
+        "error": None,
+        "student_choices": students,
+    }
 
 
 def _extract_fake_tool_call(content: str):
@@ -407,6 +489,29 @@ def run_agent(user_message: str, history: list, tenant, requesting_user, images:
     if len(normalized_message) > MAX_MESSAGE_CHARS:
         return {"reply": f"Message exceeds the allowed length of {MAX_MESSAGE_CHARS} characters.", "tools_called": [], "error": "Message too long"}
 
+    # A tap on one row of a student_choices candidate list (see
+    # _respond_with_student_matches below) round-trips as exactly this
+    # phrase - matched here, before any other interpretation, so picking a
+    # candidate never depends on the model re-parsing free text or guessing
+    # which student was meant.
+    student_pick_match = re.match(
+        r"^show me .+?'s record \(([0-9a-fA-F-]{36})\)\.?$", normalized_message, re.IGNORECASE,
+    )
+    if student_pick_match:
+        detail = tools.dispatch("get_student_details", {"student_id": student_pick_match.group(1)})
+        if detail.get("status") != "success":
+            return {
+                "reply": detail.get("message") or "Could not load that student's record.",
+                "tools_called": ["get_student_details"],
+                "error": detail.get("message"),
+            }
+        return {
+            "reply": f"Here's {detail.get('name')}'s record.",
+            "tools_called": ["get_student_details"],
+            "error": None,
+            "student_card": detail,
+        }
+
     if any(token in lowered for token in ["delete all", "delete student", "drop database", "purge school", "remove all students"]):
         if "decline" in lowered:
             return {"reply": "Okay — nothing was deleted.", "tools_called": [], "error": None}
@@ -498,6 +603,8 @@ def run_agent(user_message: str, history: list, tenant, requesting_user, images:
     phase_one = parse_phase_one_command(user_message, history=history)
     if phase_one["tool"] != "general_chat":
         result = tools.dispatch(phase_one["tool"], phase_one["params"])
+        if phase_one["tool"] == "find_students":
+            return _respond_with_student_matches(result, tools)
         route = result.get("route")
         payload = {
             "reply": result.get("message") or result.get("summary") or "Done ✅",

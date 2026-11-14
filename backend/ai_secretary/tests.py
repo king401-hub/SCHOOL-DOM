@@ -852,6 +852,90 @@ class PhaseCRealToolsTests(TestCase):
         self.assertEqual(result["error_code"], "NO_QUESTIONS")
 
 
+class StudentLookupAndCardTests(TestCase):
+    """find_students must be able to say "several students match" instead of
+    silently taking the first one (what get_student_details alone did) - and
+    the agent loop must turn that into a student_card for exactly one match
+    or a student_choices list for several, per ai_secretary/agent.py's
+    _respond_with_student_matches."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Lookup School", schema_name="lookup_school", is_active=True)
+        self.admin = User.objects.create_user(
+            email="admin@lookup.test", password="AdminPass123", first_name="Lookup", last_name="Admin",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.tools = SecretaryTools(self.school, self.admin)
+
+        def make_student(first_name, last_name, email):
+            user = User.objects.create_user(
+                email=email, password="StudentPass123", first_name=first_name, last_name=last_name,
+                role="student", tenant=self.school, is_active=True, is_verified=True,
+            )
+            return StudentProfile.objects.create(
+                user=user, student_id=f"STU-{email}", admission_number=f"ADM-{email}",
+                admission_date="2026-01-01", guardian_name="Guardian", guardian_phone="08010000000",
+                guardian_relation="Parent",
+            )
+
+        self.chidinma = make_student("Chidinma", "Okafor", "chidinma@lookup.test")
+        self.chioma = make_student("Chioma", "Eze", "chioma@lookup.test")
+        make_student("Tunde", "Bello", "tunde@lookup.test")
+
+    def test_find_students_returns_every_match_not_just_the_first(self):
+        result = self.tools.dispatch("find_students", {"query": "chi"})
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["total"], 2)
+        names = {s["name"] for s in result["students"]}
+        self.assertEqual(names, {"Okafor Chidinma", "Eze Chioma"})
+
+    def test_find_students_no_match(self):
+        result = self.tools.dispatch("find_students", {"query": "Zzyzx"})
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["total"], 0)
+
+    def test_phase_one_routes_the_reported_phrase_to_find_students(self):
+        from ai_secretary.agent import parse_phase_one_command
+
+        parsed = parse_phase_one_command("Bring up all the students with the name chi")
+        self.assertEqual(parsed["tool"], "find_students")
+        self.assertEqual(parsed["params"]["query"], "chi")
+
+    def test_run_agent_asks_which_one_when_several_students_match(self):
+        from ai_secretary.agent import run_agent
+
+        result = run_agent("Bring up all the students with the name chi", [], self.school, self.admin)
+        self.assertNotIn("student_card", result)
+        self.assertIn("student_choices", result)
+        self.assertEqual(len(result["student_choices"]), 2)
+        self.assertIn("which one", result["reply"].lower())
+
+    def test_run_agent_returns_a_card_directly_for_a_single_match(self):
+        from ai_secretary.agent import run_agent
+
+        result = run_agent("Bring up the student named Tunde", [], self.school, self.admin)
+        self.assertNotIn("student_choices", result)
+        self.assertIn("student_card", result)
+        self.assertEqual(result["student_card"]["name"], "Bello Tunde")
+
+    def test_run_agent_reports_no_match_plainly(self):
+        from ai_secretary.agent import run_agent
+
+        result = run_agent("Bring up the student named Zzyzx", [], self.school, self.admin)
+        self.assertNotIn("student_card", result)
+        self.assertNotIn("student_choices", result)
+        self.assertIn("couldn't find", result["reply"].lower())
+
+    def test_run_agent_resolves_a_candidate_pick_to_that_students_card(self):
+        from ai_secretary.agent import run_agent
+
+        pick_message = f"Show me Chioma Eze's record ({self.chioma.user_id})."
+        result = run_agent(pick_message, [], self.school, self.admin)
+        self.assertIn("student_card", result)
+        self.assertEqual(result["student_card"]["student_id"], str(self.chioma.user_id))
+        self.assertEqual(result["student_card"]["name"], "Eze Chioma")
+
+
 class SecretaryUsageQuotaTests(TestCase):
     """The /api/secretary/chat/ view must enforce the same AI usage quota
     pool ai_chat uses, but only for turns that actually reach an AI

@@ -4236,6 +4236,113 @@ body[data-theme="dark"] .sec-confirm-decline:hover {
   background: #1e293b;
 }
 
+/* AI Secretary: student candidate list + card/mini-editor (AppShared.jsx
+   StudentCandidateList / StudentCardMessage) */
+.student-candidate-list {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  max-width: 320px;
+}
+.student-candidate-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  background: #f8fbff;
+  cursor: pointer;
+  text-align: left;
+}
+.student-candidate-row:hover {
+  background: #eef4ff;
+  border-color: #c7d6f5;
+}
+.student-candidate-avatar,
+.student-card-avatar {
+  flex: none;
+  height: 30px;
+  width: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #e6edfb;
+  color: #3350b0;
+  font-weight: 700;
+  font-size: 0.7rem;
+}
+.student-candidate-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.student-candidate-info small {
+  color: #64748b;
+}
+
+.student-card {
+  margin-top: 0.5rem;
+  max-width: 360px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: #f8fbff;
+}
+.student-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.student-card-identity {
+  display: flex;
+  flex-direction: column;
+}
+.student-card-identity small {
+  color: #64748b;
+}
+.student-card-details {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0 0 0.6rem;
+}
+.student-card-details div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+.student-card-details dt {
+  color: #64748b;
+}
+.student-card-details dd {
+  margin: 0;
+  text-align: right;
+}
+.student-card-saved-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  color: #059669;
+}
+.student-card-editor .panel-form-grid {
+  margin-bottom: 0.5rem;
+}
+
+body[data-theme="dark"] .student-candidate-row,
+body[data-theme="dark"] .student-card {
+  border-color: #334155;
+  background: #0f172a;
+}
+body[data-theme="dark"] .student-candidate-row:hover {
+  background: #1e293b;
+}
+body[data-theme="dark"] .student-candidate-info small,
+body[data-theme="dark"] .student-card-identity small,
+body[data-theme="dark"] .student-card-details dt {
+  color: #94a3b8;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 .inline-icon {

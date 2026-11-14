@@ -342,6 +342,21 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "find_students",
+            "description": "Search for students by name fragment (first, middle, or last name) - use this whenever the admin asks to find, bring up, show, or look up a student by name rather than an exact ID, since a name can match more than one student. Returns a list of matches with class and admission number so you can ask the admin which one they meant if there's more than one.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Name or name fragment to search for, e.g. 'chi' or 'okafor'"},
+                    "class_name": {"type": "string", "description": "Optional: narrow the search to one class, e.g. SS2A"},
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_class_roster",
             "description": "Get complete class roster with student names, IDs, and contact info.",
             "parameters": {
@@ -1124,6 +1139,7 @@ class SecretaryTools:
         "create_class": "create_class",
         "create_bill": "create_bill",
         "get_student_details": "get_student_details",
+        "find_students": "find_students",
         "get_class_roster": "get_class_roster",
         "get_student_fee_balance": "get_student_fee_balance",
     }
@@ -1431,7 +1447,7 @@ class SecretaryTools:
                 ).first()
             if not user:
                 return {"status": "error", "error_code": "NOT_FOUND", "message": f"Student '{student_id}' not found."}
-            profile = getattr(user, "student_profile", None)  # current_class lives here, not on User
+            profile = getattr(user, "student_profile", None)  # current_class/guardian/admission_number live here, not on User
             user_class = profile.current_class if profile and profile.current_class else None
             return {
                 "status": "success",
@@ -1440,12 +1456,92 @@ class SecretaryTools:
                 "email": user.email or "N/A",
                 "phone": user.phone or "N/A",
                 "class": str(user_class) if user_class else "Not assigned",
+                "class_id": str(user_class.id) if user_class else "",
+                "admission_number": profile.admission_number if profile else "",
+                "guardian_name": profile.guardian_name if profile else "",
+                "guardian_phone": profile.guardian_phone if profile else "",
                 "is_active": user.is_active,
-                "date_joined": user.date_joined.strftime("%Y-%m-%d") if user.date_joined else "N/A",
+                # This custom User model has no date_joined field at all
+                # (USERNAME_FIELD is email, and account creation time is
+                # created_at) - accessing user.date_joined raised
+                # AttributeError on every single call, a pre-existing bug
+                # that crashed this tool whenever it actually found a match.
+                "date_joined": user.created_at.strftime("%Y-%m-%d") if user.created_at else "N/A",
+                # Raw (not display-formatted) fields the chat mini-editor
+                # prefills its inputs from - the fields above stay as they
+                # are (narrated by the AI, and relied on by existing
+                # callers/tests) so nothing already reading this dict breaks.
+                "first_name": user.first_name or "",
+                "middle_name": user.middle_name or "",
+                "last_name": user.last_name or "",
+                "raw_email": user.email or "",
+                "raw_phone": user.phone or "",
+                "gender": user.gender or "",
+                "date_of_birth": user.date_of_birth.isoformat() if user.date_of_birth else "",
+                "home_address": profile.home_address if profile else "",
+                "guardian_relation": profile.guardian_relation if profile else "",
                 "message": f"Found student: {user.get_full_name()}",
             }
         except Exception as exc:
             logger.exception("get_student_details failed: %s", exc)
+            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
+
+    def find_students(self, query: str, class_name: str = None) -> dict:
+        """Name search that can return MORE than one match - unlike
+        get_student_details above (which silently takes the first match via
+        .first()), this is what lets the agent loop ask "which one did you
+        mean?" instead of guessing when a fragment like "chi" matches several
+        students (Chidinma, Chioma, Chinedu, ...). Returns lightweight
+        candidates only (no full profile) - callers resolve the one they want
+        via get_student_details."""
+        try:
+            from django.db.models import Q
+
+            search_term = (query or "").strip()
+            if not search_term:
+                return {"status": "error", "error_code": "BAD_ARGS", "message": "A name to search for is required."}
+
+            qs = self.User.objects.filter(tenant=self.tenant, role="student", is_active=True).filter(
+                Q(first_name__icontains=search_term)
+                | Q(last_name__icontains=search_term)
+                | Q(middle_name__icontains=search_term)
+            ).select_related("student_profile__current_class")
+
+            class_label = (class_name or "").strip()
+            if class_label:
+                class_obj = self._get_class(class_label)
+                if class_obj is None:
+                    return {"status": "error", "error_code": "NOT_FOUND", "message": f"Class '{class_label}' not found."}
+                qs = qs.filter(student_profile__current_class=class_obj)
+
+            matches = list(qs.order_by("last_name", "first_name")[:21])
+            truncated = len(matches) > 20
+            matches = matches[:20]
+
+            candidates = []
+            for user in matches:
+                profile = getattr(user, "student_profile", None)
+                student_class = profile.current_class if profile and profile.current_class else None
+                candidates.append({
+                    "student_id": str(user.id),
+                    "name": user.get_full_name() or user.email,
+                    "class_name": str(student_class) if student_class else "Not assigned",
+                    "admission_number": profile.admission_number if profile else "",
+                })
+
+            return {
+                "status": "success",
+                "query": search_term,
+                "total": len(candidates),
+                "truncated": truncated,
+                "students": candidates,
+                "message": (
+                    f"No students found matching '{search_term}'." if not candidates
+                    else f"Found {len(candidates)} student(s) matching '{search_term}'."
+                ),
+            }
+        except Exception as exc:
+            logger.exception("find_students failed: %s", exc)
             return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
 
     def get_class_roster(self, class_name: str) -> dict:

@@ -10,6 +10,8 @@ import {
   MetricCard,
   refreshAccessToken,
   renderAiMarkdownLite,
+  StudentCandidateList,
+  StudentCardMessage,
   TermCountdownWidget,
 } from "./AppShared";
 
@@ -255,6 +257,8 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
         content: data.reply || "Done ✅",
         route: data.route || null,
         confirmAction: data.confirm_action || null,
+        studentCard: data.student_card || null,
+        studentChoices: data.student_choices || null,
       };
 
       if (assistantMsg.route && typeof window !== "undefined") {
@@ -594,6 +598,15 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
                         Decline
                       </button>
                     </div>
+                  )}
+                  {msg.studentChoices && i === messages.length - 1 && !busy && (
+                    <StudentCandidateList
+                      candidates={msg.studentChoices}
+                      onPick={(candidate) => handleSend(`Show me ${candidate.name}'s record (${candidate.student_id}).`)}
+                    />
+                  )}
+                  {msg.studentCard && (
+                    <StudentCardMessage student={msg.studentCard} session={session} />
                   )}
                   {msg.thinking && (
                     <span className="sec-thinking-label">

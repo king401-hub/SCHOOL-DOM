@@ -4249,3 +4249,176 @@ export function PhoneCountryInput({
     </div>
   );
 }
+
+// ---- AI Secretary: student lookup card + inline mini-editor ---------------
+// Shared by AiAssistantScreen.jsx and AiChatWidget.jsx - both POST to the
+// same /api/secretary/chat/ endpoint and already duplicate their own
+// route/confirmAction rendering, so this is written once here rather than a
+// third time. See ai_secretary/agent.py's _respond_with_student_matches for
+// what shapes student_choices/student_card in the first place.
+
+export function StudentCandidateList({ candidates = [], onPick, disabled = false }) {
+  if (!candidates.length) return null;
+  return (
+    <div className="student-candidate-list">
+      {candidates.map((candidate) => (
+        <button
+          key={candidate.student_id}
+          type="button"
+          className="student-candidate-row"
+          onClick={() => onPick?.(candidate)}
+          disabled={disabled}
+        >
+          <span className="student-candidate-avatar">{userInitials({ full_name: candidate.name })}</span>
+          <span className="student-candidate-info">
+            <strong>{candidate.name}</strong>
+            <small>
+              {candidate.class_name || "Not assigned"}
+              {candidate.admission_number ? ` · ${candidate.admission_number}` : ""}
+            </small>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Deliberately limited to "basics + class" - name, contact, guardian, DOB,
+// address, and class reassignment. Password reset, active/inactive status,
+// admission date, and medical/elective fields stay on the full Students
+// page: either sensitive or carrying side effects (e.g. admission-date/class
+// changes can affect fee generation) that deserve the full admin form, not a
+// quick chat editor - an explicit scope decision, not an oversight.
+function buildStudentEditForm(student) {
+  return {
+    first_name: student.first_name || "",
+    middle_name: student.middle_name || "",
+    last_name: student.last_name || "",
+    email: student.raw_email || "",
+    phone: student.raw_phone || "",
+    gender: student.gender || "",
+    date_of_birth: student.date_of_birth || "",
+    home_address: student.home_address || "",
+    guardian_name: student.guardian_name || "",
+    guardian_phone: student.guardian_phone || "",
+    guardian_relation: student.guardian_relation || "",
+    class_id: student.class_id || "",
+  };
+}
+
+export function StudentCardMessage({ student, session, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState(() => buildStudentEditForm(student));
+  const [classOptions, setClassOptions] = useState(null); // null = not loaded yet
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [savedNote, setSavedNote] = useState("");
+
+  const set = (field) => (value) => setForm((prev) => ({ ...prev, [field]: value }));
+
+  async function openEditor() {
+    setEditing(true);
+    setError("");
+    if (classOptions !== null) return;
+    try {
+      const result = await requestJson(session, "GET", "/api/app/classes/");
+      setClassOptions(result?.classes || []);
+    } catch {
+      setClassOptions([]); // Class reassignment just won't offer options - everything else still works.
+    }
+  }
+
+  async function handleSave(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const original = buildStudentEditForm(student);
+      // Only send what actually changed - a blank class_id must never be
+      // sent as "unassign this student", since every field here starts
+      // prefilled rather than blank-by-default.
+      const changed = {};
+      for (const key of Object.keys(form)) {
+        if (form[key] !== original[key]) changed[key] = form[key];
+      }
+      if (Object.keys(changed).length === 0) {
+        setEditing(false);
+        setSaving(false);
+        return;
+      }
+      await requestJson(session, "PATCH", `/api/app/students/${student.student_id}/`, changed);
+      setSavedNote(`Updated ${Object.keys(changed).join(", ").replace(/_/g, " ")}.`);
+      setEditing(false);
+      onSaved?.();
+    } catch (err) {
+      setError(err.message || "Could not save those changes.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="student-card">
+      <div className="student-card-head">
+        <span className="student-card-avatar">{userInitials({ full_name: student.name })}</span>
+        <div className="student-card-identity">
+          <strong>{student.name}</strong>
+          <small>
+            {student.class || "Not assigned"}
+            {student.admission_number ? ` · ${student.admission_number}` : ""}
+          </small>
+        </div>
+      </div>
+      <dl className="student-card-details">
+        <div><dt>Guardian</dt><dd>{student.guardian_name || "-"}{student.guardian_phone ? ` (${student.guardian_phone})` : ""}</dd></div>
+        <div><dt>Email</dt><dd>{student.raw_email || "-"}</dd></div>
+        <div><dt>Phone</dt><dd>{student.raw_phone || "-"}</dd></div>
+      </dl>
+
+      {savedNote && !editing ? <p className="student-card-saved-note">{savedNote}</p> : null}
+
+      {!editing ? (
+        <button type="button" className="table-action" onClick={openEditor}>Edit</button>
+      ) : (
+        <form className="student-card-editor" onSubmit={handleSave}>
+          <div className="panel-form-grid">
+            <label className="panel-field">First Name<input value={form.first_name} onChange={(e) => set("first_name")(e.target.value)} required /></label>
+            <label className="panel-field">Middle Name<input value={form.middle_name} onChange={(e) => set("middle_name")(e.target.value)} /></label>
+            <label className="panel-field">Last Name<input value={form.last_name} onChange={(e) => set("last_name")(e.target.value)} required /></label>
+            <label className="panel-field">Email<input type="email" value={form.email} onChange={(e) => set("email")(e.target.value)} required /></label>
+            <label className="panel-field">Phone<input type="tel" value={form.phone} onChange={(e) => set("phone")(e.target.value)} /></label>
+            <label className="panel-field">
+              Gender
+              <select value={form.gender} onChange={(e) => set("gender")(e.target.value)}>
+                <option value="">Select gender</option>
+                <option value="M">Male</option>
+                <option value="F">Female</option>
+                <option value="O">Other</option>
+                <option value="N">Prefer not to say</option>
+              </select>
+            </label>
+            <label className="panel-field">Date of Birth<DateOfBirthInput value={form.date_of_birth} onChange={set("date_of_birth")} /></label>
+            <label className="panel-field full">Home Address<input value={form.home_address} onChange={(e) => set("home_address")(e.target.value)} /></label>
+            <label className="panel-field">Guardian Name<input value={form.guardian_name} onChange={(e) => set("guardian_name")(e.target.value)} /></label>
+            <label className="panel-field">Guardian Phone<input type="tel" value={form.guardian_phone} onChange={(e) => set("guardian_phone")(e.target.value)} /></label>
+            <label className="panel-field">Guardian Relation<input value={form.guardian_relation} onChange={(e) => set("guardian_relation")(e.target.value)} placeholder="e.g. Father, Mother" /></label>
+            <label className="panel-field">
+              Class
+              <select value={form.class_id} onChange={(e) => set("class_id")(e.target.value)} disabled={classOptions === null}>
+                <option value="">{classOptions === null ? "Loading..." : "Unassigned"}</option>
+                {(classOptions || []).map((item) => (
+                  <option key={item.id} value={item.id}>{item.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {error ? <p className="form-feedback error">{error}</p> : null}
+          <div className="panel-form-actions">
+            <button type="button" className="ts-btn ts-btn--ghost" onClick={() => { setEditing(false); setError(""); setForm(buildStudentEditForm(student)); }} disabled={saving}>Cancel</button>
+            <button type="submit" className="ts-btn ts-btn--primary" disabled={saving}>{saving ? <><Spinner size={12} /> Saving...</> : "Save"}</button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
