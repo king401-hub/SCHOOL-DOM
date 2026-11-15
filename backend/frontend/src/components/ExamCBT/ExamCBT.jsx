@@ -6,6 +6,7 @@ import QuestionDisplay from "./QuestionDisplay";
 import StudentInfo from "./StudentInfo";
 import SubmitModal from "./SubmitModal";
 import SimpleCalculator from "./SimpleCalculator";
+import RichText from "../RichText";
 import { emitSchoolDomDataMutation } from "../../AppShared";
 
 const CBT_CACHE_KEY = "schooldom.cbt_attempt_cache";
@@ -808,7 +809,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
             <h2>Exam Instructions</h2>
             <div className="instructions-content">
               {examData.instructions ? (
-                <div dangerouslySetInnerHTML={{ __html: examData.instructions }} />
+                <RichText value={examData.instructions} />
               ) : (
                 <>
                   <h3>General Instructions</h3>

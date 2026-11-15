@@ -64,7 +64,16 @@ def env_list(name: str, default: str = "") -> list[str]:
     raw = os.getenv(name, default)
     return [item.strip() for item in raw.split(",") if item.strip()]
 
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key-change-in-production')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', '')
+if not SECRET_KEY:
+    if env_bool('DEBUG', False):
+        # Convenience fallback for local dev only - never used once DEBUG=False.
+        SECRET_KEY = 'dev-secret-key-change-in-production'
+    else:
+        raise ValueError(
+            "DJANGO_SECRET_KEY must be set via environment variable when DEBUG=False - "
+            "refusing to start signing sessions/tokens with a publicly-known key in production."
+        )
 
 # ── Web Push (browser notifications) ────────────────────────────────────────
 # Both keys are raw base64url (no PEM wrapper) - this is the exact format
@@ -147,7 +156,10 @@ OPENROUTER_SITE_NAME = os.getenv('OPENROUTER_SITE_NAME', 'SchoolDom')
 # changes for an existing deployment unless AI_PROVIDER is explicitly set.
 AI_PROVIDER = os.getenv('AI_PROVIDER', 'ollama').strip().lower()
 
-DEBUG = env_bool('DEBUG', True)
+# Defaults to False (secure) - set DEBUG=true in your local .env for dev.
+# A deploy that forgets to set this explicitly now fails safe instead of
+# silently serving stack traces and settings values to every visitor.
+DEBUG = env_bool('DEBUG', False)
 # Keep local setup zero-config unless PostgreSQL is explicitly requested.
 USE_SQLITE_FOR_DEV = env_bool('USE_SQLITE_FOR_DEV', True)
 # When False and USE_SQLITE_FOR_DEV is also False: plain PostgreSQL (no tenants) for local dev.
@@ -155,10 +167,17 @@ USE_SQLITE_FOR_DEV = env_bool('USE_SQLITE_FOR_DEV', True)
 USE_DJANGO_TENANTS = env_bool('USE_DJANGO_TENANTS', not USE_SQLITE_FOR_DEV)
 
 # Hosts / CSRF / CORS
-ALLOWED_HOSTS = env_list('ALLOWED_HOSTS', '*')
-if not ALLOWED_HOSTS or ALLOWED_HOSTS == ['*']:
+ALLOWED_HOSTS = env_list('ALLOWED_HOSTS', '*' if DEBUG else '')
+if DEBUG and (not ALLOWED_HOSTS or ALLOWED_HOSTS == ['*']):
     # Accept all hosts during development so phones on the LAN can reach :8000
     ALLOWED_HOSTS = ['*']
+elif not DEBUG and not ALLOWED_HOSTS:
+    # Previously defaulted to '*' here too, which accepted every Host header
+    # in production if this env var was ever left unset. Fail loudly instead.
+    raise ValueError(
+        "ALLOWED_HOSTS must be set via the ALLOWED_HOSTS environment variable "
+        "when DEBUG=False - refusing to start accepting every Host header in production."
+    )
 
 CSRF_TRUSTED_ORIGINS = env_list(
     'CSRF_TRUSTED_ORIGINS',
@@ -713,8 +732,12 @@ if PAYMENT_PROVIDER == 'flutterwave' and not FLUTTERWAVE_SECRET_KEY:
 FLUTTERWAVE_PUBLIC_KEY = FLUTTERWAVE_PUBLIC_KEY or ''
 
 # CORS Settings
-# Allow all during dev; override via env for stricter setups
-CORS_ALLOW_ALL_ORIGINS = True  # For development
+# Wide open only in local development (DEBUG=True), so phones/other devices on
+# the LAN and arbitrary dev ports can reach the API without friction.
+# Production (DEBUG=False) relies solely on the explicit CORS_ALLOWED_ORIGINS
+# allowlist below - it was previously bypassed by this being unconditionally
+# True, which let any origin make credentialed cross-origin requests.
+CORS_ALLOW_ALL_ORIGINS = DEBUG
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = env_list(
     'CORS_ALLOWED_ORIGINS',
