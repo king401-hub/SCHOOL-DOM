@@ -27,6 +27,23 @@ SKIP_PATHS = frozenset(
         # already in the school, so replaying an earlier answer would show a
         # class list as importable right after it was imported.
         "/api/app/students/import/preview/",
+        # The face-gate terminal's own poll/heartbeat/report endpoints
+        # (facegate.urls) - an unattended device hits each of these with a
+        # byte-identical body every cycle (it has no per-poll nonce to vary
+        # it with). device/selectRestart is the one that actually matters for
+        # safety: it pops a one-shot admin command (e.g. open the door) and
+        # clears the DB flag in the same request, so a cached replay of that
+        # response within the TTL would tell the device to fire the command
+        # again seconds later even though the flag was already cleared - the
+        # other five would just see stale data for up to IDEMPOTENCY_TTL
+        # seconds, not an actively wrong repeated action, but are skipped too
+        # for the same reason.
+        "/api/facegate/device/updateStateDevice",
+        "/api/facegate/devicePass/selectPassInfo",
+        "/api/facegate/devicePass/selectDeleteInfo",
+        "/api/facegate/devicePass/setPassResult",
+        "/api/facegate/note/insertNoteFace",
+        "/api/facegate/device/selectRestart",
     }
 )
 
