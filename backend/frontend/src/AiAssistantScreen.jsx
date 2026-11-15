@@ -273,14 +273,22 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
       saveMessages(storageKey, [...priorMessages, userMsg, assistantMsg]);
       setMessages((prev) => [...prev.filter((m) => !m.thinking), assistantMsg]);
     } catch (err) {
-      if (err?.name !== "AbortError") {
+      const aborted = err?.name === "AbortError";
+      // Marked failed either way (network/server error, or the admin hit
+      // Stop) - in both cases the message genuinely never made it, so the
+      // retry button (rendered off msg.failed below) should offer to resend
+      // it regardless of which happened.
+      const failedUserMsg = { ...userMsg, failed: true };
+      if (!aborted) {
         // Still worth keeping the admin's own message even though the reply
         // failed - matches what staying on the page and seeing the error
         // already left behind.
-        saveMessages(storageKey, [...priorMessages, userMsg]);
+        saveMessages(storageKey, [...priorMessages, failedUserMsg]);
       }
-      setMessages((prev) => prev.filter((m) => !m.thinking));
-      if (err?.name !== "AbortError") {
+      setMessages((prev) =>
+        prev.filter((m) => !m.thinking).map((m) => (m.id === userMsg.id ? failedUserMsg : m))
+      );
+      if (!aborted) {
         setError(err.message || "Something went wrong.");
       }
     }
@@ -307,6 +315,43 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
 
     try {
       await sendTurn(trimmed, priorMessages, userMsg, image);
+    } finally {
+      setBusy(false);
+      setBusySeconds(0);
+      clearInterval(busyTimerRef.current);
+      abortRef.current = null;
+      refreshUsage();
+    }
+  }
+
+  // Resends a message still marked msg.failed (never got a reply - a
+  // network/server error, or the admin hit Stop). Rebuilds history from
+  // everything before it in the transcript, same as handleSend's own
+  // priorMessages, rather than the full current list - a later message sent
+  // in the meantime must not get replayed as if it were already answered.
+  async function retryMessage(msg) {
+    if (busy) return;
+    const index = messages.findIndex((m) => m.id === msg.id);
+    if (index === -1) return;
+
+    const priorMessages = messages.slice(0, index);
+    const userMsg = { ...msg, failed: false };
+    const thinkingMsg = { id: makeId(), role: "assistant", content: "", thinking: true };
+
+    setError(null);
+    setMessages((prev) => {
+      const next = prev.map((m) => (m.id === msg.id ? userMsg : m));
+      const insertAt = next.findIndex((m) => m.id === msg.id) + 1;
+      next.splice(insertAt, 0, thinkingMsg);
+      return next;
+    });
+    setBusy(true);
+    setBusySeconds(0);
+    abortRef.current = new AbortController();
+    busyTimerRef.current = setInterval(() => setBusySeconds((s) => s + 1), 1000);
+
+    try {
+      await sendTurn(userMsg.content, priorMessages, userMsg, userMsg.image);
     } finally {
       setBusy(false);
       setBusySeconds(0);
@@ -607,6 +652,20 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
                   )}
                   {msg.studentCard && (
                     <StudentCardMessage student={msg.studentCard} session={session} />
+                  )}
+                  {msg.role === "user" && msg.failed && (
+                    <div className="ai-message-retry">
+                      <AlertTriangle size={13} strokeWidth={2} />
+                      <span>Not sent</span>
+                      <button
+                        type="button"
+                        className="ai-message-retry-btn"
+                        onClick={() => retryMessage(msg)}
+                        disabled={busy}
+                      >
+                        <RotateCcw size={12} strokeWidth={2} /> Retry
+                      </button>
+                    </div>
                   )}
                   {msg.thinking && (
                     <span className="sec-thinking-label">

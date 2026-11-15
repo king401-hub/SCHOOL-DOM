@@ -4343,6 +4343,51 @@ body[data-theme="dark"] .student-card-details dt {
   color: #94a3b8;
 }
 
+/* AI dashboard: retry a message that never got a reply (network/server
+   error, or the admin hit Stop) - AiAssistantScreen.jsx's msg.failed */
+.ai-message-retry {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.1rem;
+  font-size: 0.75rem;
+  color: #dc2626;
+}
+.ai-assistant-message-user .ai-message-retry {
+  align-self: flex-end;
+}
+.ai-message-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #dc2626;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ai-message-retry-btn:hover {
+  background: #fef2f2;
+}
+.ai-message-retry-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+body[data-theme="dark"] .ai-message-retry {
+  color: #f87171;
+}
+body[data-theme="dark"] .ai-message-retry-btn {
+  background: #1e1315;
+  border-color: #7f1d1d;
+  color: #f87171;
+}
+body[data-theme="dark"] .ai-message-retry-btn:hover {
+  background: #2a1518;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 .inline-icon {
