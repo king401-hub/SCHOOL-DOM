@@ -7,6 +7,7 @@ server-side — the LLM never sees or supplies tenant identifiers.
 """
 import json
 import logging
+import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
 
@@ -1501,10 +1502,20 @@ class SecretaryTools:
             if not search_term:
                 return {"status": "error", "error_code": "BAD_ARGS", "message": "A name to search for is required."}
 
+            # Each word must match SOME name field (AND across words, OR
+            # across fields per word) - a single icontains on the whole
+            # string would never match a two-word query like "Chidinma
+            # Okafor" against separate first_name/last_name columns, even
+            # though that is exactly the student being asked for.
+            words = [w for w in re.split(r"\s+", search_term) if w]
+            name_filter = Q()
+            for word in words:
+                name_filter &= (
+                    Q(first_name__icontains=word) | Q(last_name__icontains=word) | Q(middle_name__icontains=word)
+                )
+
             qs = self.User.objects.filter(tenant=self.tenant, role="student", is_active=True).filter(
-                Q(first_name__icontains=search_term)
-                | Q(last_name__icontains=search_term)
-                | Q(middle_name__icontains=search_term)
+                name_filter
             ).select_related("student_profile__current_class")
 
             class_label = (class_name or "").strip()

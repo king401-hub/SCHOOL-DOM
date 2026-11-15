@@ -97,6 +97,15 @@ def secretary_chat(request):
         response["student_card"] = result["student_card"]
     if result.get("student_choices"):
         response["student_choices"] = result["student_choices"]
+    if result.get("provider_failure"):
+        # A real provider/infra failure (network, timeout, OpenRouter error)
+        # still comes back as a normal 200 with an apologetic `reply` - this
+        # tells the frontend to offer "not sent / retry" on the admin's own
+        # message anyway, same as an actual HTTP failure would, since
+        # resending is exactly what might work. Every other `error` value
+        # (NOT_FOUND, a confirmation prompt, quota exhausted) is a genuine
+        # conversational reply and must never set this.
+        response["failed"] = True
     return JsonResponse(response)
 
 

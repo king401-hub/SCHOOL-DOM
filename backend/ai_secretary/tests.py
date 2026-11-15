@@ -901,6 +901,34 @@ class StudentLookupAndCardTests(TestCase):
         self.assertEqual(parsed["tool"], "find_students")
         self.assertEqual(parsed["params"]["query"], "chi")
 
+    def test_phase_one_handles_a_phrasing_with_no_named_or_called_keyword(self):
+        """Regression test: "Show me all of the students with the name chu"
+        used to fall all the way through to the general agent loop (and from
+        there to a raw provider error) because the old gate only recognized
+        a handful of exact phrases ("show me the student", singular, "find
+        a student", etc.) - none of which match "show me all of the
+        students" (plural, with "all of" in between)."""
+        from ai_secretary.agent import parse_phase_one_command
+
+        parsed = parse_phase_one_command("Show me all of the students with the name chu")
+        self.assertEqual(parsed["tool"], "find_students")
+        self.assertEqual(parsed["params"]["query"], "chu")
+
+    def test_phase_one_does_not_hijack_an_unrelated_fee_status_request(self):
+        """The broadened verb+"student" gate must not shadow a more specific
+        intent just because it also mentions "student" and a common verb
+        like "get"."""
+        from ai_secretary.agent import parse_phase_one_command
+
+        parsed = parse_phase_one_command("Get the fee status for my students")
+        self.assertEqual(parsed["tool"], "get_fee_status")
+
+    def test_find_students_matches_a_two_word_full_name(self):
+        result = self.tools.dispatch("find_students", {"query": "Chidinma Okafor"})
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["students"][0]["student_id"], str(self.chidinma.user_id))
+
     def test_run_agent_asks_which_one_when_several_students_match(self):
         from ai_secretary.agent import run_agent
 

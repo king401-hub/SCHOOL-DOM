@@ -108,6 +108,64 @@ def _extract_term(text: str):
     return "First Term"
 
 
+# Verbs that plausibly introduce a "find/show me a student" request,
+# matched as whole words/phrases so e.g. "shower" or "lookout" can't misfire.
+# Deliberately broad - the admin's phrasing for this is the least
+# predictable part of the whole Phase 1 system, and a stray match is
+# harmless on its own: it only fires alongside "student" (see
+# parse_phase_one_command below) and only ever dispatches if
+# _extract_student_name_query actually pulls out something that looks like
+# a name.
+_STUDENT_LOOKUP_VERBS = re.compile(
+    r"\b(show|bring up|pull up|look ?up|find|search|get|fetch|display|list|locate|open)\b",
+    re.IGNORECASE,
+)
+
+# Words a student-lookup phrase is built from, never a real name fragment -
+# stripped out in _extract_student_name_query's fallback so whatever is left
+# of the sentence is (hopefully) just the name, however the admin phrased
+# the rest of it.
+_STUDENT_LOOKUP_STOPWORDS = {
+    "show", "me", "bring", "up", "pull", "look", "lookup", "find", "search", "for",
+    "get", "fetch", "display", "list", "locate", "open", "whats", "what",
+    "all", "of", "the", "a", "an", "is", "are", "with", "whose", "who", "goes", "by",
+    "please", "can", "you", "could", "would", "i", "want", "to", "see", "about",
+    "student", "students", "name", "named", "called", "record", "records", "profile",
+    "profiles", "details", "detail", "info", "information", "account", "file", "data",
+}
+
+
+def _extract_student_name_query(message: str) -> str | None:
+    """Pulls the name fragment out of a "find/show/bring up a student..."
+    request. Tries the precise, connector-based patterns first (most
+    reliable); falls back to stripping every recognized trigger/filler word
+    and using whatever is left - what makes an unanticipated phrasing
+    ("Show me all of the students with the name chu", no "named"/"called"
+    and no bare singular "student") work the same as "Bring up the student
+    named chu", without needing a dedicated regex for every way to say it."""
+    for pattern in (
+        r"\b(?:named|called)\s+([a-zA-Z][a-zA-Z'\-. ]*?)\s*[.?!]*$",
+        r"\bname\s+([a-zA-Z][a-zA-Z'\-. ]*?)\s*[.?!]*$",
+        r"\bstudents?\b\s+([a-zA-Z][a-zA-Z'\-. ]*?)\s*[.?!]*$",
+    ):
+        found = re.search(pattern, message, re.IGNORECASE)
+        if found:
+            candidate = found.group(1).strip()
+            if candidate and candidate.lower() not in _STUDENT_LOOKUP_STOPWORDS:
+                return candidate
+
+    tokens = re.findall(r"[a-zA-Z']+", message)
+    remaining = [t for t in tokens if t.lower().strip("'") not in _STUDENT_LOOKUP_STOPWORDS]
+    # Capped at 3 words: a real name is short. A longer leftover means the
+    # stopword list didn't recognize most of the sentence - probably because
+    # it was about something else entirely - so it's safer to fall through
+    # to the general agent loop than dispatch find_students with a garbage
+    # multi-word query.
+    if remaining and len(remaining) <= 3:
+        return " ".join(remaining)
+    return None
+
+
 def parse_phase_one_command(text: str, history: list | None = None) -> dict:
     """Map short admin requests to the five Phase 1 agent actions."""
     message = (text or "").strip()
@@ -170,44 +228,6 @@ def parse_phase_one_command(text: str, history: list | None = None) -> dict:
         cache.set(cache_key, result, timeout=300)
         return result
 
-    # "Bring up all the students with the name chi" / "find the student
-    # named chi" / "show me the student chi" - a deterministic name-lookup
-    # fast path, same reasoning as the other Phase 1 branches: asking a
-    # clarifying question when a name matches several students must not
-    # depend on a small model's judgment, so this (and the shaping of
-    # find_students' result into student_card/student_choices in run_agent)
-    # happens in plain Python, not by hoping the model calls the tool
-    # correctly on its own.
-    student_lookup_keywords = [
-        "bring up", "pull up", "look up", "find the student", "find a student",
-        "search for", "show me the student", "show me student",
-    ]
-    looks_like_student_lookup = (
-        any(phrase in lowered for phrase in student_lookup_keywords)
-        or ("find" in lowered and "student" in lowered)
-        or ("student" in lowered and re.search(r"\b(named|called)\b", lowered))
-    )
-    if looks_like_student_lookup:
-        name_query = None
-        for pattern in (
-            r"\b(?:named|called)\s+([a-zA-Z][a-zA-Z'\-. ]*?)\s*[.?!]*$",
-            r"\bname\s+([a-zA-Z][a-zA-Z'\-. ]*?)\s*[.?!]*$",
-            r"\bstudents?\b\s+([a-zA-Z][a-zA-Z'\-. ]*?)\s*[.?!]*$",
-        ):
-            found = re.search(pattern, message, re.IGNORECASE)
-            if found:
-                candidate = found.group(1).strip()
-                # The looser fallback patterns can grab a filler word instead
-                # of a real name fragment - treat those as "no name found"
-                # rather than searching for "with" or "the" literally.
-                if candidate.lower() not in {"with", "the", "a", "an", "up", "for", "record", "profile", "details"}:
-                    name_query = candidate
-                    break
-        if name_query:
-            result = {"tool": "find_students", "params": {"query": name_query}, "confidence": 0.9}
-            cache.set(cache_key, result, timeout=300)
-            return result
-
     if "timetable" in lowered:
         result = {
             "tool": "generate_timetable",
@@ -261,6 +281,22 @@ def parse_phase_one_command(text: str, history: list | None = None) -> dict:
         result = {"tool": "navigate_to_page", "params": {"page": page}, "confidence": 0.89}
         cache.set(cache_key, result, timeout=300)
         return result
+
+    # "Bring up all the students with the name chi" / "Show me all of the
+    # students with the name chu" / "find the student named Tunde" - a
+    # deterministic name-lookup fast path, same reasoning as every other
+    # Phase 1 branch above: asking a clarifying question when a name matches
+    # several students must not depend on a small model's judgment, so this
+    # (and the shaping of find_students' result into student_card/
+    # student_choices in run_agent) happens in plain Python. Checked last,
+    # after every more specific intent above, so a broad verb match here can
+    # never shadow e.g. "get the fee status for my students".
+    if "student" in lowered and _STUDENT_LOOKUP_VERBS.search(lowered):
+        name_query = _extract_student_name_query(message)
+        if name_query:
+            result = {"tool": "find_students", "params": {"query": name_query}, "confidence": 0.9}
+            cache.set(cache_key, result, timeout=300)
+            return result
 
     result = {"tool": "general_chat", "params": {}, "confidence": 0.1}
     cache.set(cache_key, result, timeout=300)
@@ -672,6 +708,7 @@ def run_agent(user_message: str, history: list, tenant, requesting_user, images:
                     "reply": "Network issue — might be light problem 😅. I'll retry when you're back online.",
                     "tools_called": tools_called,
                     "error": f"ConnectionError: {exc}",
+                    "provider_failure": True,
                 }
             except requests.exceptions.Timeout as exc:
                 logger.error("Ollama timed out (model may be overloaded): %s", exc)
@@ -679,6 +716,7 @@ def run_agent(user_message: str, history: list, tenant, requesting_user, images:
                     "reply": "The AI is taking too long to respond. Please try again in a moment.",
                     "tools_called": tools_called,
                     "error": f"Timeout: {exc}",
+                    "provider_failure": True,
                 }
             except requests.exceptions.HTTPError as exc:
                 logger.error("Ollama HTTP error: %s — response: %s", exc, getattr(exc.response, 'text', ''))
@@ -686,6 +724,7 @@ def run_agent(user_message: str, history: list, tenant, requesting_user, images:
                     "reply": "Something went wrong communicating with the AI. Let's try again.",
                     "tools_called": tools_called,
                     "error": f"HTTPError: {exc}",
+                    "provider_failure": True,
                 }
             except requests.exceptions.RequestException as exc:
                 logger.error("Ollama request failed: %s", exc)
@@ -693,6 +732,7 @@ def run_agent(user_message: str, history: list, tenant, requesting_user, images:
                     "reply": "Network issue — might be light problem 😅. I'll retry when you're back online.",
                     "tools_called": tools_called,
                     "error": str(exc),
+                    "provider_failure": True,
                 }
             except OpenRouterTimeout as exc:
                 logger.error("OpenRouter timed out: %s", exc)
@@ -700,6 +740,7 @@ def run_agent(user_message: str, history: list, tenant, requesting_user, images:
                     "reply": "The AI is taking too long to respond. Please try again in a moment.",
                     "tools_called": tools_called,
                     "error": f"Timeout: {exc}",
+                    "provider_failure": True,
                 }
             except OpenRouterError as exc:
                 logger.error("OpenRouter error (status=%s, code=%s): %s", exc.status_code, exc.code, exc)
@@ -707,6 +748,14 @@ def run_agent(user_message: str, history: list, tenant, requesting_user, images:
                     "reply": _friendly_openrouter_message(exc),
                     "tools_called": tools_called,
                     "error": f"OpenRouterError: {exc}",
+                    # Distinguishes a real provider/infra failure (worth a
+                    # retry button on the admin's message - see
+                    # ai_secretary/views.py) from every other "error" value
+                    # in this function, most of which are normal
+                    # conversational replies (NOT_FOUND, a confirmation
+                    # prompt, quota exhausted) that were never a failure to
+                    # begin with and must never show "not sent / retry".
+                    "provider_failure": True,
                 }
 
             message = data.get("message", {})

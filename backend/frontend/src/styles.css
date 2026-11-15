@@ -4244,6 +4244,37 @@ body[data-theme="dark"] .sec-confirm-decline:hover {
   margin-top: 0.5rem;
   max-width: 320px;
 }
+.student-candidate-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #475569;
+  padding: 0 0.1rem;
+}
+.student-candidate-list-close,
+.student-card-close {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  border-radius: 50%;
+  cursor: pointer;
+  flex: none;
+}
+.student-candidate-list-close:hover,
+.student-card-close:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+.student-card-close {
+  margin-left: auto;
+  align-self: flex-start;
+}
 .student-candidate-row {
   display: flex;
   align-items: center;
@@ -4336,6 +4367,18 @@ body[data-theme="dark"] .student-card {
 }
 body[data-theme="dark"] .student-candidate-row:hover {
   background: #1e293b;
+}
+body[data-theme="dark"] .student-candidate-list-head {
+  color: #94a3b8;
+}
+body[data-theme="dark"] .student-candidate-list-close,
+body[data-theme="dark"] .student-card-close {
+  color: #94a3b8;
+}
+body[data-theme="dark"] .student-candidate-list-close:hover,
+body[data-theme="dark"] .student-card-close:hover {
+  background: #1e293b;
+  color: #e2e8f0;
 }
 body[data-theme="dark"] .student-candidate-info small,
 body[data-theme="dark"] .student-card-identity small,

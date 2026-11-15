@@ -4258,9 +4258,25 @@ export function PhoneCountryInput({
 // what shapes student_choices/student_card in the first place.
 
 export function StudentCandidateList({ candidates = [], onPick, disabled = false }) {
-  if (!candidates.length) return null;
+  // Self-contained dismiss - closing this just means "never mind, I don't
+  // want to pick one", nothing a parent needs to know about or persist.
+  const [dismissed, setDismissed] = useState(false);
+  if (!candidates.length || dismissed) return null;
   return (
     <div className="student-candidate-list">
+      <div className="student-candidate-list-head">
+        <span>Which one did you mean?</span>
+        <button
+          type="button"
+          className="student-candidate-list-close"
+          onClick={() => setDismissed(true)}
+          disabled={disabled}
+          aria-label="Close"
+          title="Close"
+        >
+          <XIcon size={13} />
+        </button>
+      </div>
       {candidates.map((candidate) => (
         <button
           key={candidate.student_id}
@@ -4313,8 +4329,11 @@ export function StudentCardMessage({ student, session, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [savedNote, setSavedNote] = useState("");
+  const [dismissed, setDismissed] = useState(false);
 
   const set = (field) => (value) => setForm((prev) => ({ ...prev, [field]: value }));
+
+  if (dismissed) return null;
 
   async function openEditor() {
     setEditing(true);
@@ -4368,6 +4387,16 @@ export function StudentCardMessage({ student, session, onSaved }) {
             {student.admission_number ? ` · ${student.admission_number}` : ""}
           </small>
         </div>
+        <button
+          type="button"
+          className="student-card-close"
+          onClick={() => setDismissed(true)}
+          disabled={saving}
+          aria-label="Close"
+          title="Close"
+        >
+          <XIcon size={13} />
+        </button>
       </div>
       <dl className="student-card-details">
         <div><dt>Guardian</dt><dd>{student.guardian_name || "-"}{student.guardian_phone ? ` (${student.guardian_phone})` : ""}</dd></div>

@@ -275,6 +275,13 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
         studentCard: data.student_card || null,
         studentChoices: data.student_choices || null,
       };
+      // A real provider/infra failure (network, timeout, OpenRouter) still
+      // comes back as an ordinary 200 with an apologetic `reply` - res.ok is
+      // true, so none of the catch-block handling below ever sees it.
+      // data.failed (set by views.py off run_agent's provider_failure flag)
+      // is what marks the admin's own message retryable in that case too -
+      // the apology text stays visible, but so does Not sent / Retry.
+      const sentUserMsg = data.failed ? { ...userMsg, failed: true } : userMsg;
 
       if (assistantMsg.route && typeof window !== "undefined") {
         const normalizedRoute = assistantMsg.route.startsWith("/") ? assistantMsg.route : `/${assistantMsg.route}`;
@@ -285,8 +292,11 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
         }
       }
 
-      saveMessages(storageKey, [...priorMessages, userMsg, assistantMsg]);
-      setMessages((prev) => [...prev.filter((m) => !m.thinking), assistantMsg]);
+      saveMessages(storageKey, [...priorMessages, sentUserMsg, assistantMsg]);
+      setMessages((prev) => [
+        ...prev.filter((m) => !m.thinking).map((m) => (m.id === userMsg.id ? sentUserMsg : m)),
+        assistantMsg,
+      ]);
     } catch (err) {
       if (err?.authExpired) {
         // refreshAccessToken (see AppShared.jsx) throws this same shape when
@@ -347,11 +357,15 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
     }
   }
 
-  // Resends a message still marked msg.failed (never got a reply - a
-  // network/server error, or the admin hit Stop). Rebuilds history from
-  // everything before it in the transcript, same as handleSend's own
-  // priorMessages, rather than the full current list - a later message sent
-  // in the meantime must not get replayed as if it were already answered.
+  // Resends a message still marked msg.failed - either it never got a reply
+  // at all (a network/server error, or the admin hit Stop), or it got an
+  // apology reply from a real provider failure (data.failed in sendTurn's
+  // success path above). Rebuilds history from everything before it in the
+  // transcript, same as handleSend's own priorMessages, rather than the
+  // full current list - a later message sent in the meantime must not get
+  // replayed as if it were already answered. Whatever already followed this
+  // message up to the next real user turn - nothing, or that apology - is
+  // dropped too, since it's about to be superseded by a fresh attempt.
   async function retryMessage(msg) {
     if (busy) return;
     const index = messages.findIndex((m) => m.id === msg.id);
@@ -361,13 +375,14 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
     const userMsg = { ...msg, failed: false };
     const thinkingMsg = { id: makeId(), role: "assistant", content: "", thinking: true };
 
+    let afterIndex = index + 1;
+    while (afterIndex < messages.length && messages[afterIndex].role !== "user") {
+      afterIndex += 1;
+    }
+    const afterMessages = messages.slice(afterIndex);
+
     setError(null);
-    setMessages((prev) => {
-      const next = prev.map((m) => (m.id === msg.id ? userMsg : m));
-      const insertAt = next.findIndex((m) => m.id === msg.id) + 1;
-      next.splice(insertAt, 0, thinkingMsg);
-      return next;
-    });
+    setMessages([...priorMessages, userMsg, thinkingMsg, ...afterMessages]);
     setBusy(true);
     setBusySeconds(0);
     abortRef.current = new AbortController();
