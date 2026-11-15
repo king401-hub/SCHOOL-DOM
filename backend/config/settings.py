@@ -739,9 +739,14 @@ FLUTTERWAVE_PUBLIC_KEY = FLUTTERWAVE_PUBLIC_KEY or ''
 # True, which let any origin make credentialed cross-origin requests.
 CORS_ALLOW_ALL_ORIGINS = DEBUG
 CORS_ALLOW_CREDENTIALS = True
+# This allowlist used to be dead code (CORS_ALLOW_ALL_ORIGINS was always True,
+# so it never mattered what was in here) - now that it's live in production,
+# its *default* must not include the local dev origins below, or a VPS whose
+# .env doesn't set CORS_ALLOWED_ORIGINS explicitly would trust localhost.
 CORS_ALLOWED_ORIGINS = env_list(
     'CORS_ALLOWED_ORIGINS',
-    "http://localhost:5173,http://127.0.0.1:5173,https://schooldom.academy"
+    "http://localhost:5173,http://127.0.0.1:5173,https://schooldom.academy" if DEBUG
+    else "https://schooldom.academy"
 )
 
 # File Uploads
