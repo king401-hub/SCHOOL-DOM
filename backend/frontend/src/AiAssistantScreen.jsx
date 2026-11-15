@@ -82,7 +82,7 @@ function buildHistoryForApi(msgs) {
 // implementation (no streaming path, since only admin roles ever reach
 // this screen) rather than a shared hook, to avoid touching the already-
 // shipped floating widget for this page's sake.
-export default function AiAssistantScreen({ session, data, loading, error: dashboardError, onRetry }) {
+export default function AiAssistantScreen({ session, data, loading, error: dashboardError, onRetry, onSignOut }) {
   const storageKey = `${CHAT_STORAGE_PREFIX}:${session?.user?.id || session?.user?.email || "user"}`;
   const [messages, setMessages] = useState(() => loadSavedMessages(storageKey));
   const [input, setInput] = useState("");
@@ -244,6 +244,21 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
         return sendTurn(text, priorMessages, userMsg, image, true);
       }
 
+      if (res.status === 401) {
+        // Still 401 after a refresh - the server rejected the refreshed
+        // token too, or the refresh token itself is now too old (same as
+        // any JWT session eventually goes stale). No amount of retrying
+        // this exact request will ever succeed, so this is treated as the
+        // admin's whole session being over - same as the main dashboard's
+        // own fetch failure already is (see DashboardHome's loadDashboard
+        // in App.jsx) - rather than leaving a raw backend error ("Given
+        // token not valid for any token type") on screen with a Retry
+        // button that can only ever fail the same way again.
+        const error = new Error("Your session has expired. Please sign in again.");
+        error.authExpired = true;
+        throw error;
+      }
+
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         if (data?.usage) setUsage(data.usage);
@@ -273,6 +288,14 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
       saveMessages(storageKey, [...priorMessages, userMsg, assistantMsg]);
       setMessages((prev) => [...prev.filter((m) => !m.thinking), assistantMsg]);
     } catch (err) {
+      if (err?.authExpired) {
+        // refreshAccessToken (see AppShared.jsx) throws this same shape when
+        // there is no refresh token to use, or the refresh call itself was
+        // rejected - identical "session is just over" conclusion as the
+        // explicit 401-after-retry case above, so both land here.
+        onSignOut?.();
+        return;
+      }
       const aborted = err?.name === "AbortError";
       // Marked failed either way (network/server error, or the admin hit
       // Stop) - in both cases the message genuinely never made it, so the

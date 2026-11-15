@@ -9505,6 +9505,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         loading={loading}
         error={error}
         onRetry={handleRetry}
+        onSignOut={onSignOut}
       />
     );
   } else if (activePath === "/performance-heatmap") {
@@ -11512,12 +11513,12 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
         <PwaUpdatePrompt />
         <GlobalHomeButton session={session} currentPath={currentPath} onNavigate={navigate} />
         <GlobalNotificationBell session={session} onNavigate={navigate} />
-        {session && <AiChatWidget session={session} />}
+        {session && <AiChatWidget session={session} onSignOut={handleSignOut} />}
         {session && <AccentPickerWidget session={session} />}
         {content}
       </>
     ),
-    [currentPath, navigate, session]
+    [currentPath, navigate, session, handleSignOut]
   );
 
   const withGlobalHome = useCallback(
@@ -11530,12 +11531,12 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
             Neither the AI assistant nor the accent picker must be reachable while a
             quiz could be active, same reasoning as the dedicated /exam/:id CBT route
             below. */}
-        {session && currentPath !== "/quizzes" && <AiChatWidget session={session} />}
+        {session && currentPath !== "/quizzes" && <AiChatWidget session={session} onSignOut={handleSignOut} />}
         {session && currentPath !== "/quizzes" && <AccentPickerWidget session={session} />}
         {content}
       </>
     ),
-    [currentPath, navigate, session]
+    [currentPath, navigate, session, handleSignOut]
   );
 
   if (currentPath === ID_CARD_VERIFY_PATH) {

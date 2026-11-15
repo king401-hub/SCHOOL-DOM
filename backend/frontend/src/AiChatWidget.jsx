@@ -102,7 +102,7 @@ function appendChunk(prev, chunk) {
 // routing is invisible. The admin-only tool-execution boundary is unchanged
 // server-side (ai_secretary/agent.py's role check); isAdmin here is only UX
 // routing, never the security boundary.
-export default function AiChatWidget({ session }) {
+export default function AiChatWidget({ session, onSignOut }) {
   const isAdmin = ADMIN_ROLES.has(session?.user?.role || "");
 
   const [open, setOpen] = useState(false);
@@ -424,6 +424,16 @@ export default function AiChatWidget({ session }) {
         return sendAdminTurn(text, savedId, priorMessages, image, true);
       }
 
+      if (res.status === 401) {
+        // Still 401 after a refresh - see the matching comment in
+        // AiAssistantScreen.jsx's sendTurn. No retry can ever succeed here,
+        // so treat it as the admin's session being over rather than
+        // leaving a raw backend error on screen.
+        const error = new Error("Your session has expired. Please sign in again.");
+        error.authExpired = true;
+        throw error;
+      }
+
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         if (data?.usage) setUsage(data.usage);
@@ -456,6 +466,10 @@ export default function AiChatWidget({ session }) {
         return updated;
       });
     } catch (err) {
+      if (err?.authExpired) {
+        onSignOut?.();
+        return;
+      }
       setMessages((prev) => prev.filter((m) => !m.thinking));
       if (err?.name !== "AbortError") {
         setError(err.message || "Something went wrong.");
