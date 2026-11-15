@@ -208,6 +208,7 @@ SHARED_APPS = [
     'settings_app',
     'ops',  # platform-level staff/roles, not tenant-scoped - lives with core
     'django_countries',
+    'drf_spectacular',  # OpenAPI schema generation - not tenant-scoped, lives with core infra
     'django.contrib.contenttypes',
     'django.contrib.auth',
     'django.contrib.admin',
@@ -234,6 +235,7 @@ TENANT_APPS = [
     'attendance',
     'rfid_attendance',
     'device_fleet',
+    'facegate',
     'ai_chat',
     'ai_secretary',
     'django_otp',
@@ -255,6 +257,7 @@ _FLAT_APPS = [
     'django_otp.plugins.otp_email',
     'django_htmx',
     'rest_framework',
+    'drf_spectacular',
     'corsheaders',
     'core',
     'settings_app',
@@ -275,6 +278,7 @@ _FLAT_APPS = [
     'attendance',
     'rfid_attendance',
     'device_fleet',
+    'facegate',
     'ai_chat',
     'ai_secretary',
     'superadmin_dashboard',
@@ -473,6 +477,36 @@ REST_FRAMEWORK = {
         # users.views.AuthRateThrottle) - per-IP, not global.
         'auth': '20/minute',
     },
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# OpenAPI schema (drf-spectacular) - served at /api/schema/, browsable at
+# /api/docs/ (Swagger) and /api/redoc/ (Redoc). drf_spectacular's own
+# default for these views is AllowAny regardless of DEFAULT_PERMISSION_CLASSES
+# above (confirmed: leaving SERVE_PERMISSIONS unset actually serves the
+# schema to an anonymous request) - SERVE_PERMISSIONS overrides that back to
+# IsAuthenticated, since this is an internal multi-tenant platform, not a
+# public developer API. Sign in once in the browser tab and the UI's own
+# "Try it out" calls (and just viewing the schema) work with that session.
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'SchoolDom API',
+    'DESCRIPTION': (
+        'REST API for the SchoolDom school management platform - admin, teacher, '
+        'student and parent dashboards, finance, attendance, exams, HR, the device '
+        'fleet (kiosks/scanners), and the AI Secretary assistant. Generated directly '
+        'from the live views/serializers, so it reflects exactly what is deployed.'
+    ),
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SERVE_PERMISSIONS': ['rest_framework.permissions.IsAuthenticated'],
+    # Most views here are plain function-based @api_view endpoints that parse
+    # request.data by hand rather than through a serializer - drf-spectacular
+    # can only introspect what it can see, so those show up with a generic/
+    # thin request body in the generated schema instead of a fully typed one.
+    # That is a limitation of auto-generation from this codebase's existing
+    # view style, not a sign anything is misconfigured.
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SORT_OPERATIONS': False,
 }
 
 # JWT Settings
