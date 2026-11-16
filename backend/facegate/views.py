@@ -208,13 +208,36 @@ def _handle_sendlog(request):
     return Response(response)
 
 
+FINGERPRINT_BACKUPNUM_MAX = 9  # 0~9 per the protocol's backupnum convention
+
+
 def _handle_senduser(request):
     """A user added via the device's OWN local keypad (Section A - "When
     use keypad to add new user, and then send this message to server").
-    Deliberately a no-op beyond the ack: this app's roster is one-way
-    (admin enroll/unenroll -> device, see services.enroll_user_on_device),
-    not device -> us, for this first pass - acking without creating
+
+    The only case this acts on is a fingerprint (backupnum 0-9): that's the
+    one enrollment a terminal operator can ONLY capture locally, in person,
+    on the device's own sensor - there's no way to push a fingerprint
+    template down from a photo like a face enrollment, and the template
+    itself is an opaque, vendor-algorithm-specific blob we deliberately
+    never store (see FaceGateEnrollment.fingerprint_enrolled_at). An
+    enrollid the device reports that we never pre-allocated via
+    admin_bulk_enroll is ignored outright - this app's roster is one-way
+    (admin enroll/unenroll -> device), so there is no SchoolDom user to
+    attribute an unexpected local add to; acking without recording
     anything just stops the device retrying a message it thinks failed."""
+    sn = request.data.get('sn')
+    device = _device_or_none(sn)
+    if device:
+        try:
+            number = int(request.data.get('enrollid'))
+            backupnum = int(request.data.get('backupnum'))
+        except (TypeError, ValueError):
+            number = backupnum = None
+        if number is not None and 0 <= backupnum <= FINGERPRINT_BACKUPNUM_MAX:
+            FaceGateEnrollment.objects.filter(
+                device=device, device_employee_number=number,
+            ).update(fingerprint_enrolled_at=timezone.now())
     return Response({'ret': 'senduser', 'result': True, 'cloudtime': _cloudtime()})
 
 
@@ -284,6 +307,7 @@ def _device_payload(device):
         'last_seen_at': device.last_seen_at,
         'enrolled_count': sum(by_status.values()),
         'enrolled_by_status': by_status,
+        'fingerprint_enrolled_count': device.enrollments.filter(fingerprint_enrolled_at__isnull=False).count(),
     }
 
 

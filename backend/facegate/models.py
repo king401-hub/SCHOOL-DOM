@@ -100,6 +100,16 @@ class FaceGateEnrollment(models.Model):
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default=STATUS_PENDING_ADD)
     error_message = models.CharField(max_length=255, blank=True, default='')
 
+    # Set the moment the device reports (via `senduser`) that someone
+    # pressed a finger on ITS OWN sensor for this enrollid - a fingerprint
+    # template can only be captured in person on the terminal, never pushed
+    # down from the server like a face photo (see facegate/views.py's
+    # _handle_senduser), so this is bookkeeping only: we deliberately never
+    # store the raw template itself, only whether one exists on this
+    # specific device, which is also the right call for a sensitive
+    # biometric - less of it at rest, not more.
+    fingerprint_enrolled_at = models.DateTimeField(null=True, blank=True)
+
     # De-dupes a repeated check-in upload for the exact same event - the
     # vendor protocol retries a `sendlog` batch until it gets back success,
     # which must never replay as a second clock toggle. See

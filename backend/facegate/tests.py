@@ -200,6 +200,80 @@ class FaceGateEnrollmentPushTests(TestCase):
         self.assertEqual(enrollment.status, FaceGateEnrollment.STATUS_PENDING_ADD)
 
 
+class FaceGateLocalFingerprintTests(TestCase):
+    """A fingerprint can only ever be captured locally on the terminal's own
+    sensor (see facegate.views._handle_senduser's docstring) - these
+    simulate the device reporting that capture back via `senduser`, using
+    the exact field shape confirmed from both the vendor's protocol doc
+    and its own reference server (FlaskProject/app.py's get_enroll_info)."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Fingerprint School", schema_name="facegate_fingerprint_school")
+        self.device = FaceGateDevice.objects.create(tenant=self.school, device_id="AT3003-FP-1")
+        self.student = _make_student(self.school, "Finger", "Student", "FP001")
+        self.enrollment = enroll_user_on_device(self.device, self.student)
+        self.client = APIClient()
+
+    def test_a_locally_captured_fingerprint_is_recorded_for_the_preallocated_enrollid(self):
+        self.assertIsNone(self.enrollment.fingerprint_enrolled_at)
+
+        resp = self.client.post(DEVICE_API, {
+            "cmd": "senduser", "sn": "AT3003-FP-1",
+            "enrollid": self.enrollment.device_employee_number, "name": "Finger Student",
+            "backupnum": 0, "admin": 0, "record": "opaque-thbio-template-bytes",
+        }, format="json")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data["result"])
+        self.enrollment.refresh_from_db()
+        self.assertIsNotNone(self.enrollment.fingerprint_enrolled_at)
+
+    def test_a_password_or_card_local_add_is_acked_but_not_recorded_as_a_fingerprint(self):
+        resp = self.client.post(DEVICE_API, {
+            "cmd": "senduser", "sn": "AT3003-FP-1",
+            "enrollid": self.enrollment.device_employee_number, "name": "Finger Student",
+            "backupnum": 11, "admin": 0, "record": 2352253,
+        }, format="json")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data["result"])
+        self.enrollment.refresh_from_db()
+        self.assertIsNone(self.enrollment.fingerprint_enrolled_at)
+
+    def test_a_fingerprint_for_an_enrollid_we_never_allocated_is_safely_ignored(self):
+        resp = self.client.post(DEVICE_API, {
+            "cmd": "senduser", "sn": "AT3003-FP-1",
+            "enrollid": 99999, "name": "Nobody", "backupnum": 0, "admin": 0, "record": "x",
+        }, format="json")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data["result"])
+        self.assertFalse(FaceGateEnrollment.objects.filter(fingerprint_enrolled_at__isnull=False).exists())
+
+    def test_an_unregistered_device_still_gets_a_safe_ack(self):
+        resp = self.client.post(DEVICE_API, {
+            "cmd": "senduser", "sn": "GHOST", "enrollid": 1, "backupnum": 0, "record": "x",
+        }, format="json")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data["result"])
+
+    def test_admin_device_list_surfaces_the_fingerprint_enrolled_count(self):
+        admin = User.objects.create_user(
+            email="admin@fingerprint.test", password="testpass123", role="school_admin", tenant=self.school,
+        )
+        self.enrollment.fingerprint_enrolled_at = datetime.datetime.now(datetime.timezone.utc)
+        self.enrollment.save(update_fields=["fingerprint_enrolled_at"])
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        resp = client.get("/api/facegate/admin/devices")
+
+        self.assertEqual(resp.status_code, 200)
+        device_row = next(d for d in resp.data["devices"] if d["device_id"] == "AT3003-FP-1")
+        self.assertEqual(device_row["fingerprint_enrolled_count"], 1)
+
+
 class FaceGateUnenrollTests(TestCase):
     def setUp(self):
         self.school = SchoolTenant.objects.create(name="Unenroll School", schema_name="facegate_unenroll_school")
