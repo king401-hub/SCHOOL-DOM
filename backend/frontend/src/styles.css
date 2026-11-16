@@ -1677,6 +1677,14 @@ body[data-theme="dark"] .app-shell-page {
   left: 0;
   width: 260px;
   height: 100vh;
+  /* 100vh is the LARGEST possible mobile viewport (toolbars collapsed) - on
+     a phone with the address bar showing, the real visible area is shorter,
+     so the sidebar's own .sidebar-footer (sign-out button) rendered past
+     that point was cut off below the fold with no way to reach it, since
+     only .app-nav scrolls internally, not this whole fixed box. 100dvh
+     tracks the actual visible viewport in browsers that support it - same
+     fix already applied to .teacher-sidebar below. */
+  height: 100dvh;
   overflow-y: auto;
   overflow-x: hidden;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
