@@ -682,11 +682,40 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         // once per terminal, ever; steer straight to this app's own toggle
         // instead of leaving them to find Settings > Apps > Special access
         // themselves.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
-            promptToAllowInstalls()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!packageManager.canRequestPackageInstalls()) {
+                promptToAllowInstalls()
+                return
+            }
+        } else if (!unknownSourcesEnabledLegacy()) {
+            // Below API 26 there is no per-app permission at all - "unknown
+            // sources" is one GLOBAL toggle under Settings > Security, a
+            // completely different screen (and different wording) than the
+            // Android 8+ "Apps & notifications > Advanced > Special app
+            // access > Install unknown apps" path above. The fleet's
+            // confirmed oldest terminals (Android 7.0 / API 24, see
+            // app/build.gradle.kts's minSdk comment) are on this old model,
+            // so without this branch they fell straight through to
+            // launchInstaller with no check and no guidance at all - the
+            // install silently failed or showed a generic OS dialog, and
+            // any written instructions pointing at the Android 8+ menu path
+            // simply don't exist on their device to find.
+            promptToAllowInstallsLegacy()
             return
         }
         launchInstaller(file)
+    }
+
+    // Deprecated from API 26 onward (where it's meaningless - real source of
+    // truth becomes the per-app canRequestPackageInstalls() above), but still
+    // the only way to read this on anything older.
+    @Suppress("DEPRECATION")
+    private fun unknownSourcesEnabledLegacy(): Boolean {
+        return try {
+            Settings.Secure.getInt(contentResolver, Settings.Secure.INSTALL_NON_MARKET_APPS, 0) == 1
+        } catch (e: Exception) {
+            true // Can't tell - don't block the install attempt on a read failure.
+        }
     }
 
     private fun promptToAllowInstalls() {
@@ -697,6 +726,21 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
             .setPositiveButton("Continue") { _, _ ->
                 try {
                     startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Could not open settings: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+            .show()
+    }
+
+    private fun promptToAllowInstallsLegacy() {
+        AlertDialog.Builder(this)
+            .setTitle("One-time permission needed")
+            .setMessage("This terminal needs permission to install app updates. On the next screen, open Security and turn on \"Unknown sources\", then come back here and tap Install Now again.")
+            .setCancelable(false)
+            .setPositiveButton("Continue") { _, _ ->
+                try {
+                    startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
                 } catch (e: Exception) {
                     Toast.makeText(this, "Could not open settings: ${e.message}", Toast.LENGTH_LONG).show()
                 }
