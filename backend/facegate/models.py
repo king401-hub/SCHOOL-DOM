@@ -1,8 +1,18 @@
-"""Models for the vendor face-recognition SchoolGate terminal integration
-(the "Cloud Attendance and Access Control (HTTP)" protocol - see the two
-vendor PDFs; this project implements the HTTP variant only, not the MQTT
-alternative the same vendor also offers, since HTTP needs no broker and
-fits this app's existing request/response architecture).
+"""Models for the vendor face-recognition SchoolGate terminal integration -
+the "cloud solution" HTTP+JSON protocol (device registers/heartbeats with
+`cmd`/`sn`, the server answers a heartbeat with a queued command instead of
+a plain ack when one is pending - see facegate/views.py's module docstring
+for why that needs no new infrastructure).
+
+This repurposes an app originally built against a *different* vendor's
+protocol (`deviceId`/`selectPassInfo`/`insertNoteFace`) - that device choice
+turned out to be wrong and was never deployed to a real school, but the
+model shapes below (and facegate/services.py's attendance-integration
+logic) needed almost no change to fit the new protocol: both need a
+tenant-scoped device row, a generic pending-command queue by boolean flag
+(restart/shutdown/opendoor), and a way to bridge a real user's UUID to the
+small numeric id (`enrollid` in this protocol, `employeeNumberId` in the
+old one) these vendor protocols require.
 """
 import uuid
 
@@ -11,10 +21,10 @@ from django.db import models
 
 class FaceGateDevice(models.Model):
     """One row per physical terminal. `device_id` is the vendor's own
-    serial number, printed on the unit - it is also the device's ONLY
-    credential in this protocol (see facegate/views.py's module docstring
-    for why that's weak, and the IP-allowlist recommendation that goes
-    with it)."""
+    serial number (the protocol's `sn` field), printed on the unit - it is
+    also the device's ONLY credential in this protocol (see
+    facegate/views.py's module docstring for why that's weak, and the
+    IP-allowlist recommendation that goes with it)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -29,13 +39,15 @@ class FaceGateDevice(models.Model):
     last_seen_at = models.DateTimeField(null=True, blank=True)
 
     # Handed out sequentially to each new FaceGateEnrollment on this device -
-    # the device's own employeeNumberId field must be pure numeric (spec
-    # section 4.2), so a SchoolDom user's real (UUID) id can't be sent as-is.
+    # the device's own `enrollid` field must be pure numeric, so a SchoolDom
+    # user's real (UUID) id can't be sent as-is.
     next_employee_number = models.PositiveIntegerField(default=1)
 
-    # One-shot commands the device's next poll of device_select_restart
-    # should act on - cleared the moment they're read (pop semantics, see
-    # views.device_select_restart).
+    # One-shot commands delivered on the device's NEXT checklive/reg poll
+    # (this protocol has no dedicated "any commands for me?" endpoint like
+    # the old one's device_select_restart - the queued command is returned
+    # in place of the plain heartbeat ack instead) - cleared the moment
+    # they're served (pop semantics, see views.device_api's _handle_checklive).
     pending_restart = models.BooleanField(default=False)
     pending_shutdown = models.BooleanField(default=False)
     pending_opendoor = models.BooleanField(default=False)
@@ -65,11 +77,12 @@ class FaceGateDevice(models.Model):
 class FaceGateEnrollment(models.Model):
     """One row per (device, person) that should exist on that specific
     terminal. Created/removed by an admin action (see
-    facegate.services.enroll_user_on_device); the device's own
-    selectPassInfo/selectDeleteInfo polls are driven entirely by rows here,
-    never by querying StudentProfile/User directly - that keeps each
-    device's roster explicit, revocable per-terminal, and lets one school
-    run several gates with different rosters (e.g. a staff-only side door)."""
+    facegate.services.enroll_user_on_device); a PENDING_ADD row here is
+    what views.py's _handle_checklive pushes down as a `senduser` command
+    on the device's next heartbeat - never driven by querying
+    StudentProfile/User directly - that keeps each device's roster
+    explicit, revocable per-terminal, and lets one school run several
+    gates with different rosters (e.g. a staff-only side door)."""
 
     STATUS_PENDING_ADD = 'pending_add'
     STATUS_SYNCED = 'synced'
@@ -88,8 +101,8 @@ class FaceGateEnrollment(models.Model):
     error_message = models.CharField(max_length=255, blank=True, default='')
 
     # De-dupes a repeated check-in upload for the exact same event - the
-    # vendor protocol retries note/insertNoteFace until it gets back
-    # success, which must never replay as a second clock toggle. See
+    # vendor protocol retries a `sendlog` batch until it gets back success,
+    # which must never replay as a second clock toggle. See
     # facegate.services.record_checkin.
     last_note_time = models.DateTimeField(null=True, blank=True)
 

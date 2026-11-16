@@ -3,15 +3,10 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # Device-facing (vendor-fixed paths, see the "Cloud Attendance and
-    # Access Control (HTTP)" protocol doc - the device calls these exact
-    # paths, they are not ours to rename).
-    path('device/updateStateDevice', views.device_update_state, name='facegate-device-update-state'),
-    path('devicePass/selectPassInfo', views.device_select_pass_info, name='facegate-select-pass-info'),
-    path('devicePass/selectDeleteInfo', views.device_select_delete_info, name='facegate-select-delete-info'),
-    path('devicePass/setPassResult', views.device_set_pass_result, name='facegate-set-pass-result'),
-    path('note/insertNoteFace', views.note_insert_note_face, name='facegate-insert-note-face'),
-    path('device/selectRestart', views.device_select_restart, name='facegate-select-restart'),
+    # Device-facing - one URL, commands multiplexed by the JSON body's
+    # `cmd`/`ret` field (the "cloud solution" protocol's actual wire shape -
+    # see views.device_api).
+    path('device_api/', views.device_api, name='facegate-device-api'),
 
     # Admin-facing (SchoolDom's own convention, authenticated).
     path('admin/devices', views.admin_list_devices, name='facegate-admin-list-devices'),

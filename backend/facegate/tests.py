@@ -1,21 +1,25 @@
 """Tests for the vendor face-recognition SchoolGate terminal HTTP
-integration. There is no real F45 unit to test against, so these simulate
-the device side of each vendor-documented endpoint with plain HTTP calls -
-exactly the requests a real terminal would send."""
+integration (the "cloud solution" cmd/sn protocol). There is no real
+AT3003F unit to test against, so these simulate the device side of each
+vendor-documented command with plain HTTP calls to the single device_api/
+endpoint - exactly the requests a real terminal would send."""
 import datetime
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework.test import APIClient
 
 from academic.models import AttendanceRecord
-from core.tenant import SchoolTenant
+from core.models import SchoolTenant
 
 from .models import FaceGateDevice, FaceGateEnrollment
 from .services import enroll_user_on_device
 
 User = get_user_model()
+
+DEVICE_API = "/api/facegate/device_api/"
 
 
 class _ImmediateThread:
@@ -31,13 +35,16 @@ class _ImmediateThread:
         self._target(*self._args, **self._kwargs)
 
 
-def _make_student(tenant, first, last, student_id, phone="08010000000"):
+def _make_student(tenant, first, last, student_id, phone="08010000000", with_photo=False):
     from users.models import StudentProfile
 
     user = User.objects.create_user(
         email=f"{student_id.lower()}@facegate.test", password="testpass123", role="student",
         tenant=tenant, first_name=first, last_name=last,
     )
+    if with_photo:
+        user.profile_picture = SimpleUploadedFile(f"{student_id}.jpg", b"fake-photo-bytes", content_type="image/jpeg")
+        user.save(update_fields=["profile_picture"])
     StudentProfile.objects.create(
         user=user, student_id=student_id, admission_number=f"ADM-{student_id}",
         admission_date=datetime.date(2024, 9, 1), guardian_name="Guardian",
@@ -58,19 +65,19 @@ class FaceGateAdminDeviceTests(TestCase):
     def test_admin_can_register_a_new_device(self):
         resp = self.client.post(
             "/api/facegate/admin/devices/register",
-            {"device_id": "F45-0001", "label": "Front Gate"},
+            {"device_id": "AT3003-0001", "label": "Front Gate"},
             format="json",
         )
         self.assertEqual(resp.status_code, 201, resp.data)
-        self.assertTrue(FaceGateDevice.objects.filter(tenant=self.school, device_id="F45-0001").exists())
+        self.assertTrue(FaceGateDevice.objects.filter(tenant=self.school, device_id="AT3003-0001").exists())
 
     def test_registering_the_same_device_id_for_another_school_is_rejected(self):
         other_school = SchoolTenant.objects.create(name="Other School", schema_name="facegate_other_school")
-        FaceGateDevice.objects.create(tenant=other_school, device_id="F45-SHARED", label="Theirs")
+        FaceGateDevice.objects.create(tenant=other_school, device_id="AT3003-SHARED", label="Theirs")
 
         resp = self.client.post(
             "/api/facegate/admin/devices/register",
-            {"device_id": "F45-SHARED", "label": "Mine"},
+            {"device_id": "AT3003-SHARED", "label": "Mine"},
             format="json",
         )
         self.assertEqual(resp.status_code, 400, resp.data)
@@ -82,123 +89,115 @@ class FaceGateAdminDeviceTests(TestCase):
         self.client.force_authenticate(user=teacher)
 
         resp = self.client.post(
-            "/api/facegate/admin/devices/register", {"device_id": "F45-0002"}, format="json",
+            "/api/facegate/admin/devices/register", {"device_id": "AT3003-0002"}, format="json",
         )
         self.assertEqual(resp.status_code, 403)
 
     def test_an_admin_only_sees_devices_from_their_own_school(self):
         other_school = SchoolTenant.objects.create(name="Other School 2", schema_name="facegate_other_school_2")
-        FaceGateDevice.objects.create(tenant=other_school, device_id="F45-NOT-MINE")
-        FaceGateDevice.objects.create(tenant=self.school, device_id="F45-MINE")
+        FaceGateDevice.objects.create(tenant=other_school, device_id="AT3003-NOT-MINE")
+        FaceGateDevice.objects.create(tenant=self.school, device_id="AT3003-MINE")
 
         resp = self.client.get("/api/facegate/admin/devices")
 
         self.assertEqual(resp.status_code, 200)
         device_ids = [d["device_id"] for d in resp.data["devices"]]
-        self.assertEqual(device_ids, ["F45-MINE"])
+        self.assertEqual(device_ids, ["AT3003-MINE"])
 
 
-class FaceGateHeartbeatTests(TestCase):
+class FaceGateRegAndHeartbeatTests(TestCase):
     def setUp(self):
         self.school = SchoolTenant.objects.create(name="Heartbeat School", schema_name="facegate_heartbeat_school")
-        self.device = FaceGateDevice.objects.create(tenant=self.school, device_id="F45-HB-1")
+        self.device = FaceGateDevice.objects.create(tenant=self.school, device_id="AT3003-HB-1")
         self.client = APIClient()
 
-    def test_update_state_for_a_known_device_updates_firmware_and_last_seen(self):
+    def test_reg_for_a_known_sn_updates_devinfo_and_last_seen(self):
         self.assertIsNone(self.device.last_seen_at)
 
-        resp = self.client.post(
-            "/api/facegate/device/updateStateDevice",
-            {"deviceId": "F45-HB-1", "data": {
-                "deviceType": "faceid", "parameterVersion": "6.1.0", "parameterMAC": "AA:BB:CC",
-            }},
-            format="json",
-        )
+        resp = self.client.post(DEVICE_API, {
+            "cmd": "reg", "sn": "AT3003-HB-1",
+            "devinfo": {"modelname": "AT3003F", "firmware": "6.1.0", "mac": "AA:BB:CC"},
+        }, format="json")
 
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["success"], 0)
+        self.assertTrue(resp.data["result"])
         self.device.refresh_from_db()
         self.assertIsNotNone(self.device.last_seen_at)
         self.assertEqual(self.device.firmware_version, "6.1.0")
         self.assertEqual(self.device.mac_address, "AA:BB:CC")
 
-    def test_update_state_for_an_unknown_device_is_a_quiet_success(self):
-        resp = self.client.post(
-            "/api/facegate/device/updateStateDevice", {"deviceId": "NOT-REGISTERED"}, format="json",
-        )
+    def test_reg_for_an_unregistered_sn_fails_safely(self):
+        resp = self.client.post(DEVICE_API, {"cmd": "reg", "sn": "NOT-REGISTERED"}, format="json")
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["success"], 0)
+        self.assertFalse(resp.data["result"])
+
+    def test_checklive_with_nothing_pending_returns_a_plain_ack(self):
+        resp = self.client.post(DEVICE_API, {"cmd": "checklive", "sn": "AT3003-HB-1"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["ret"], "checklive")
+        self.assertTrue(resp.data["result"])
+        self.device.refresh_from_db()
+        self.assertIsNotNone(self.device.last_seen_at)
+
+    def test_an_unknown_command_gets_a_safe_failure_reply(self):
+        resp = self.client.post(DEVICE_API, {"cmd": "somethingunexpected", "sn": "AT3003-HB-1"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.data["result"])
 
 
-class FaceGatePassInfoCursorTests(TestCase):
+class FaceGateEnrollmentPushTests(TestCase):
     def setUp(self):
-        self.school = SchoolTenant.objects.create(name="Cursor School", schema_name="facegate_cursor_school")
-        self.device = FaceGateDevice.objects.create(tenant=self.school, device_id="F45-CURSOR-1")
+        self.school = SchoolTenant.objects.create(name="Push School", schema_name="facegate_push_school")
+        self.device = FaceGateDevice.objects.create(tenant=self.school, device_id="AT3003-PUSH-1")
         self.client = APIClient()
 
-    def test_only_pending_enrollments_past_the_cursor_are_returned_in_order(self):
-        s1 = _make_student(self.school, "One", "Student", "CUR001")
-        s2 = _make_student(self.school, "Two", "Student", "CUR002")
-        s3 = _make_student(self.school, "Three", "Student", "CUR003")
-        e1 = enroll_user_on_device(self.device, s1)
-        e2 = enroll_user_on_device(self.device, s2)
-        e3 = enroll_user_on_device(self.device, s3)
-        # e2 is already synced - selectPassInfo must skip it even though its
-        # number is past the cursor, and never hand it back a second time.
-        FaceGateEnrollment.objects.filter(pk=e2.pk).update(status=FaceGateEnrollment.STATUS_SYNCED)
+    def test_a_pending_enrollment_with_a_photo_is_pushed_on_the_next_checklive(self):
+        student = _make_student(self.school, "Has", "Photo", "PHOTO001", with_photo=True)
+        enrollment = enroll_user_on_device(self.device, student)
 
-        resp = self.client.post(
-            "/api/facegate/devicePass/selectPassInfo",
-            {"deviceId": "F45-CURSOR-1", "last_employee_number": e1.device_employee_number},
-            format="json",
-        )
+        resp = self.client.post(DEVICE_API, {"cmd": "checklive", "sn": "AT3003-PUSH-1"}, format="json")
 
         self.assertEqual(resp.status_code, 200)
-        numbers = [row["employeeNumberId"] for row in resp.data["passinfo"]]
-        self.assertEqual(numbers, [str(e3.device_employee_number)])
+        self.assertEqual(resp.data["cmd"], "setuserinfo")
+        self.assertEqual(resp.data["enrollid"], enrollment.device_employee_number)
+        self.assertEqual(resp.data["backupnum"], 50)
+        self.assertTrue(resp.data["record"])  # base64 photo bytes
+        enrollment.refresh_from_db()
+        self.assertEqual(enrollment.status, FaceGateEnrollment.STATUS_PENDING_ADD)  # synced only once acked
 
-    def test_an_unknown_device_gets_an_empty_list_not_an_error(self):
-        resp = self.client.post(
-            "/api/facegate/devicePass/selectPassInfo", {"deviceId": "GHOST", "last_employee_number": 0}, format="json",
-        )
+    def test_a_pending_enrollment_with_no_photo_is_skipped_not_pushed(self):
+        student = _make_student(self.school, "No", "Photo", "NOPHOTO001", with_photo=False)
+        enroll_user_on_device(self.device, student)
+
+        resp = self.client.post(DEVICE_API, {"cmd": "checklive", "sn": "AT3003-PUSH-1"}, format="json")
+
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["passinfo"], [])
+        self.assertEqual(resp.data.get("ret"), "checklive")  # plain ack, nothing to push
 
+    def test_device_ack_of_setuserinfo_marks_the_enrollment_synced(self):
+        student = _make_student(self.school, "Will", "Sync", "SYNC001", with_photo=True)
+        enrollment = enroll_user_on_device(self.device, student)
 
-class FaceGateSetPassResultTests(TestCase):
-    def setUp(self):
-        self.school = SchoolTenant.objects.create(name="Result School", schema_name="facegate_result_school")
-        self.device = FaceGateDevice.objects.create(tenant=self.school, device_id="F45-RESULT-1")
-        self.student = _make_student(self.school, "Result", "Student", "RES001")
-        self.enrollment = enroll_user_on_device(self.device, self.student)
-        self.client = APIClient()
+        resp = self.client.post(DEVICE_API, {
+            "ret": "setuserinfo", "sn": "AT3003-PUSH-1",
+            "enrollid": enrollment.device_employee_number, "result": True,
+        }, format="json")
 
-    def test_a_reported_success_marks_the_enrollment_synced(self):
-        resp = self.client.post(
-            "/api/facegate/devicePass/setPassResult",
-            {
-                "deviceId": "F45-RESULT-1",
-                "successEmployeeId": [{"employeeId": str(self.enrollment.device_employee_number)}],
-            },
-            format="json",
-        )
         self.assertEqual(resp.status_code, 200)
-        self.enrollment.refresh_from_db()
-        self.assertEqual(self.enrollment.status, FaceGateEnrollment.STATUS_SYNCED)
+        enrollment.refresh_from_db()
+        self.assertEqual(enrollment.status, FaceGateEnrollment.STATUS_SYNCED)
 
-    def test_a_reported_failure_marks_the_enrollment_failed_with_its_error_code(self):
-        resp = self.client.post(
-            "/api/facegate/devicePass/setPassResult",
-            {
-                "deviceId": "F45-RESULT-1",
-                "failEmployeeId": [{"employeeId": str(self.enrollment.device_employee_number), "errorCode": "1001"}],
-            },
-            format="json",
-        )
+    def test_a_failed_ack_leaves_the_enrollment_pending_for_retry(self):
+        student = _make_student(self.school, "Will", "Fail", "FAIL001", with_photo=True)
+        enrollment = enroll_user_on_device(self.device, student)
+
+        resp = self.client.post(DEVICE_API, {
+            "ret": "setuserinfo", "sn": "AT3003-PUSH-1", "result": False, "reason": 1,
+        }, format="json")
+
         self.assertEqual(resp.status_code, 200)
-        self.enrollment.refresh_from_db()
-        self.assertEqual(self.enrollment.status, FaceGateEnrollment.STATUS_FAILED)
-        self.assertEqual(self.enrollment.error_message, "1001")
+        enrollment.refresh_from_db()
+        self.assertEqual(enrollment.status, FaceGateEnrollment.STATUS_PENDING_ADD)
 
 
 class FaceGateUnenrollTests(TestCase):
@@ -207,7 +206,7 @@ class FaceGateUnenrollTests(TestCase):
         self.admin = User.objects.create_user(
             email="admin@unenroll.test", password="testpass123", role="school_admin", tenant=self.school,
         )
-        self.device = FaceGateDevice.objects.create(tenant=self.school, device_id="F45-UNENROLL-1")
+        self.device = FaceGateDevice.objects.create(tenant=self.school, device_id="AT3003-UNENROLL-1")
         self.student = _make_student(self.school, "Gone", "Student", "GONE001")
         from users.models import StudentProfile
         self.student_profile = StudentProfile.objects.get(user=self.student)
@@ -226,7 +225,7 @@ class FaceGateUnenrollTests(TestCase):
 
     def test_an_admin_cannot_unenroll_from_another_schools_device(self):
         other_school = SchoolTenant.objects.create(name="Elsewhere", schema_name="facegate_elsewhere_school")
-        other_device = FaceGateDevice.objects.create(tenant=other_school, device_id="F45-ELSEWHERE-1")
+        other_device = FaceGateDevice.objects.create(tenant=other_school, device_id="AT3003-ELSEWHERE-1")
 
         resp = self.client.post(
             f"/api/facegate/admin/devices/{other_device.pk}/unenroll",
@@ -240,20 +239,19 @@ class FaceGateUnenrollTests(TestCase):
 class FaceGateCheckinTests(TestCase):
     def setUp(self):
         self.school = SchoolTenant.objects.create(name="Checkin School", schema_name="facegate_checkin_school")
-        self.device = FaceGateDevice.objects.create(tenant=self.school, device_id="F45-CHECKIN-1")
+        self.device = FaceGateDevice.objects.create(tenant=self.school, device_id="AT3003-CHECKIN-1")
         self.student = _make_student(self.school, "Tap", "Student", "TAP001", phone="08010000099")
         self.enrollment = enroll_user_on_device(self.device, self.student)
         self.client = APIClient()
 
-    def _tap(self, note_time):
-        return self.client.post(
-            "/api/facegate/note/insertNoteFace",
-            {
-                "deviceId": "F45-CHECKIN-1",
-                "data": {"employeeNumberId": str(self.enrollment.device_employee_number), "noteTime": note_time},
-            },
-            format="json",
-        )
+    def _sendlog(self, note_time, enrollid=None):
+        return self.client.post(DEVICE_API, {
+            "cmd": "sendlog", "sn": "AT3003-CHECKIN-1", "count": 1,
+            "record": [{
+                "enrollid": enrollid if enrollid is not None else self.enrollment.device_employee_number,
+                "time": note_time, "mode": 8, "inout": 0, "event": 0,
+            }],
+        }, format="json")
 
     def test_a_tap_in_the_early_window_clocks_in_and_bills_the_wallet(self):
         from finance.models import SmsMessageLog
@@ -266,9 +264,10 @@ class FaceGateCheckinTests(TestCase):
         with patch("finance.services._dispatch_wallet_sms") as mock_send, \
                 patch("rfid_attendance.views.threading.Thread", _ImmediateThread):
             mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
-            resp = self._tap("2026-01-15 08:00:00")
+            resp = self._sendlog("2026-01-15 08:00:00")
 
         self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data["result"])
         record = AttendanceRecord.objects.get(student=self.student)
         self.assertIsNotNone(record.clock_in_at)
         self.assertIsNone(record.clock_out_at)
@@ -282,14 +281,14 @@ class FaceGateCheckinTests(TestCase):
                     "finance.services._dispatch_wallet_sms",
                     return_value={"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}},
                 ):
-            resp = self._tap("2026-01-15 13:30:00")
+            resp = self._sendlog("2026-01-15 13:30:00")
 
         self.assertEqual(resp.status_code, 200)
         record = AttendanceRecord.objects.get(student=self.student)
         self.assertIsNotNone(record.clock_out_at)
 
     def test_a_tap_before_the_clockin_window_opens_is_rejected_as_too_early(self):
-        resp = self._tap("2026-01-15 06:00:00")
+        resp = self._sendlog("2026-01-15 06:00:00")
 
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(AttendanceRecord.objects.filter(student=self.student).exists())
@@ -300,8 +299,8 @@ class FaceGateCheckinTests(TestCase):
                     "finance.services._dispatch_wallet_sms",
                     return_value={"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}},
                 ) as mock_send:
-            self._tap("2026-01-15 08:00:00")
-            self._tap("2026-01-15 08:00:00")  # the device's own documented retry behavior
+            self._sendlog("2026-01-15 08:00:00")
+            self._sendlog("2026-01-15 08:00:00")  # the device's own documented retry behavior
 
         self.assertEqual(AttendanceRecord.objects.filter(student=self.student).count(), 1)
         mock_send.assert_called_once()
@@ -318,7 +317,7 @@ class FaceGateCheckinTests(TestCase):
         wallet.save(update_fields=["balance", "updated_at"])
 
         with patch("rfid_attendance.views.threading.Thread") as mock_thread:
-            resp = self._tap("2026-01-15 08:00:00")
+            resp = self._sendlog("2026-01-15 08:00:00")
 
         self.assertEqual(resp.status_code, 200)
         mock_thread.assert_called_once()
@@ -328,41 +327,49 @@ class FaceGateCheckinTests(TestCase):
         self.assertEqual(wallet.balance, 10)
         self.assertFalse(SmsMessageLog.objects.filter(category=SmsMessageLog.ATTENDANCE).exists())
 
-    def test_a_tap_for_an_unknown_employee_number_is_ignored(self):
-        resp = self.client.post(
-            "/api/facegate/note/insertNoteFace",
-            {"deviceId": "F45-CHECKIN-1", "data": {"employeeNumberId": "99999", "noteTime": "2026-01-15 08:00:00"}},
-            format="json",
-        )
+    def test_a_tap_for_an_unknown_enrollid_is_ignored(self):
+        resp = self._sendlog("2026-01-15 08:00:00", enrollid=99999)
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(AttendanceRecord.objects.filter(student=self.student).exists())
 
+    def test_an_unregistered_device_fails_safely(self):
+        resp = self.client.post(DEVICE_API, {"cmd": "sendlog", "sn": "GHOST", "count": 0, "record": []}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.data["result"])
+
 
 class FaceGateDeviceCommandTests(TestCase):
-    """Pop semantics for the one-shot restart/shutdown/opendoor flags - a
-    queued command must fire exactly once, not on every subsequent poll."""
+    """Pop semantics for the one-shot restart/opendoor flags, delivered on
+    the device's next checklive poll - a queued command must fire exactly
+    once, not on every subsequent heartbeat."""
 
     def setUp(self):
         self.school = SchoolTenant.objects.create(name="Command School", schema_name="facegate_command_school")
         self.admin = User.objects.create_user(
             email="admin@command.test", password="testpass123", role="school_admin", tenant=self.school,
         )
-        self.device = FaceGateDevice.objects.create(tenant=self.school, device_id="F45-CMD-1")
+        self.device = FaceGateDevice.objects.create(tenant=self.school, device_id="AT3003-CMD-1")
         self.client = APIClient()
 
-    def test_no_pending_command_returns_all_zero(self):
-        resp = self.client.post("/api/facegate/device/selectRestart", {"deviceId": "F45-CMD-1"}, format="json")
-
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data, {"restart": 0, "shutdown": 0, "opendoor": 0})
-
-    def test_a_queued_opendoor_command_is_served_once_then_cleared(self):
+    def test_a_queued_opendoor_command_is_served_once_on_checklive_then_cleared(self):
         self.client.force_authenticate(user=self.admin)
         queue_resp = self.client.post(f"/api/facegate/admin/devices/{self.device.pk}/opendoor")
         self.assertEqual(queue_resp.status_code, 200, queue_resp.data)
+        self.client.force_authenticate(user=None)
 
-        first_poll = self.client.post("/api/facegate/device/selectRestart", {"deviceId": "F45-CMD-1"}, format="json")
-        self.assertEqual(first_poll.data["opendoor"], 1)
+        first_poll = self.client.post(DEVICE_API, {"cmd": "checklive", "sn": "AT3003-CMD-1"}, format="json")
+        self.assertEqual(first_poll.data, {"cmd": "opendoor"})
 
-        second_poll = self.client.post("/api/facegate/device/selectRestart", {"deviceId": "F45-CMD-1"}, format="json")
-        self.assertEqual(second_poll.data["opendoor"], 0)
+        second_poll = self.client.post(DEVICE_API, {"cmd": "checklive", "sn": "AT3003-CMD-1"}, format="json")
+        self.assertEqual(second_poll.data["ret"], "checklive")
+
+    def test_a_queued_restart_command_is_served_as_reboot_then_cleared(self):
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(f"/api/facegate/admin/devices/{self.device.pk}/restart")
+        self.client.force_authenticate(user=None)
+
+        first_poll = self.client.post(DEVICE_API, {"cmd": "checklive", "sn": "AT3003-CMD-1"}, format="json")
+        self.assertEqual(first_poll.data, {"cmd": "reboot"})
+
+        second_poll = self.client.post(DEVICE_API, {"cmd": "checklive", "sn": "AT3003-CMD-1"}, format="json")
+        self.assertEqual(second_poll.data["ret"], "checklive")

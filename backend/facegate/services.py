@@ -1,8 +1,9 @@
-"""Business logic for the face-gate HTTP integration - kept out of
-views.py so the device-facing endpoints there stay thin request/response
-plumbing. Deliberately reuses the SAME attendance-clocking and gate-SMS
-primitives every other SchoolGate terminal type (RFID desktop app, QR
-self-scan) already goes through, rather than forking a parallel copy:
+"""Business logic for the face-gate HTTP integration (the "cloud solution"
+cmd/sn protocol) - kept out of views.py so the device-facing endpoints
+there stay thin request/response plumbing. Deliberately reuses the SAME
+attendance-clocking and gate-SMS primitives every other SchoolGate
+terminal type (RFID desktop app, QR self-scan) already goes through,
+rather than forking a parallel copy:
 
 - users.app_views._record_attendance_clock - the shared clock-in/out
   engine every tap/scan endpoint in the platform calls.
@@ -18,6 +19,7 @@ self-scan) already goes through, rather than forking a parallel copy:
 That keeps this new hardware vendor's check-ins behaving identically to
 every other SchoolGate terminal a school might run side by side with it.
 """
+import base64
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -25,36 +27,55 @@ from django.db import transaction
 from django.utils import timezone
 
 from rfid_attendance.services import _legacy_tenant_for_attendance
-from users.app_views import AttendanceClockError, _profile_picture_url, _record_attendance_clock
+from users.app_views import AttendanceClockError, _record_attendance_clock
 
 from .models import FaceGateEnrollment
 
 
-def person_payload(request, enrollment):
-    """One entry of the `passinfo` array selectPassInfo hands back - the
-    minimum fields the vendor's own examples send: a numeric identity (see
-    FaceGateDevice.allocate_employee_number for why it can't just be the
-    real UUID), a display name, and a face photo URL when one exists.
+def _photo_base64(user_obj):
+    """Raw bytes of the user's uploaded profile photo, base64-encoded for
+    this protocol's `record` field when `backupnum=50` ("photo(format is
+    base64)") - this protocol pushes the actual image bytes down for the
+    device's own firmware to extract a face feature from, unlike the old
+    vendor's design (a URL the device fetched on its own). Returns None if
+    no photo has been uploaded yet - there's nothing to push."""
+    picture = getattr(user_obj, 'profile_picture', None)
+    if not picture:
+        return None
+    try:
+        picture.open('rb')
+        try:
+            return base64.b64encode(picture.read()).decode('ascii')
+        finally:
+            picture.close()
+    except Exception:
+        return None
 
-    A person with no uploaded profile photo yet is still sent (so the
-    device at least recognises their number for door-open/record purposes
-    once face data is added later), just without the face/photo keys -
-    the vendor spec treats those as optional per person, not required.
+
+def senduser_payload(enrollment):
+    """The `senduser`/`setuserinfo` command body that enrolls one person's
+    face on the device - see FaceGateDevice.allocate_employee_number for
+    why `enrollid` can't just be the real UUID. This protocol's user-push
+    commands are one-person-at-a-time (unlike the old vendor's batched
+    `passinfo` array), so a device with several pending enrollments gets
+    them one per heartbeat - fine for a pilot's volume.
+
+    Returns None when the person has no photo yet, so the caller can skip
+    to the next pending enrollment instead of pushing an empty command -
+    the row stays PENDING_ADD until a photo is uploaded.
     """
     user_obj = enrollment.user
-    number = str(enrollment.device_employee_number)
-    payload = {
-        'employeeId': number,
-        'employeeNumberId': number,
-        'employeeName': (user_obj.get_full_name() or user_obj.email or number)[:31],
-        'employeeType': 0,  # regular person - see protocol appendix 8.5
+    photo = _photo_base64(user_obj)
+    if not photo:
+        return None
+    return {
+        'cmd': 'setuserinfo',
+        'enrollid': enrollment.device_employee_number,
+        'name': (user_obj.get_full_name() or user_obj.email or str(enrollment.device_employee_number))[:31],
+        'backupnum': 50,
+        'admin': 0,
+        'record': photo,
     }
-    photo_url = _profile_picture_url(request, user_obj)
-    if photo_url:
-        payload['faceType'] = 'photo'
-        payload['employeePhotoWay'] = 'path'
-        payload['employeePhoto'] = photo_url
-    return payload
 
 
 def enroll_user_on_device(device, user):
@@ -113,12 +134,12 @@ def record_checkin(device, enrollment, occurred_at):
     pass doesn't cover staff biometric attendance yet).
 
     Returns True if a new attendance event was actually recorded, False if
-    this was a replay of an already-processed note (see
+    this was a replay of an already-processed `sendlog` entry (see
     FaceGateEnrollment.last_note_time) or the person isn't a student.
     Never raises - a clock-ordering conflict (e.g. "already clocked out
     today") is swallowed rather than surfaced, since the device has no use
-    for an error and would otherwise retry the same rejected tap forever
-    (spec section 5.1).
+    for an error and the protocol has no per-record failure reply anyway
+    (sendlog acks the whole batch at once).
     """
     # rfid_attendance.views import is deferred to avoid a import-time
     # circular import (that module imports academic/users models at
