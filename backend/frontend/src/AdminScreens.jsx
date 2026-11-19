@@ -10957,7 +10957,7 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
                   <input value={adminMiddleName} onChange={(event) => setAdminMiddleName(event.target.value)} placeholder="Optional" disabled={!canEdit || isSaving} />
                 </label>
                 <label className="panel-field">
-                  Last Name
+                  Surname
                   <input value={adminLastName} onChange={(event) => setAdminLastName(event.target.value)} disabled={!canEdit || isSaving} />
                 </label>
                 <label className="panel-field">
@@ -13473,7 +13473,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                   <div className="panel-form-grid">
                     <label className="panel-field">First Name<input value={editForm.first_name} onChange={(event) => setEditForm((prev) => ({ ...prev, first_name: event.target.value }))} required /></label>
                     <label className="panel-field">Middle Name<input value={editForm.middle_name} onChange={(event) => setEditForm((prev) => ({ ...prev, middle_name: event.target.value }))} placeholder="Optional" /></label>
-                    <label className="panel-field">Last Name<input value={editForm.last_name} onChange={(event) => setEditForm((prev) => ({ ...prev, last_name: event.target.value }))} /></label>
+                    <label className="panel-field">Surname<input value={editForm.last_name} onChange={(event) => setEditForm((prev) => ({ ...prev, last_name: event.target.value }))} /></label>
                     <label className="panel-field">Email<input type="email" value={editForm.email} onChange={(event) => setEditForm((prev) => ({ ...prev, email: event.target.value }))} required /></label>
                     <label className="panel-field">Phone<PhoneCountryInput countries={countries} value={editForm.phone} onChange={(val) => setEditForm((prev) => ({ ...prev, phone: val }))} defaultCountryCode={defaultCountryCode} /></label>
                     <label className="panel-field">Occupation<input value={editForm.occupation} onChange={(event) => setEditForm((prev) => ({ ...prev, occupation: event.target.value }))} /></label>
@@ -15146,7 +15146,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
               <input value={form.middle_name} onChange={(event) => setForm((prev) => ({ ...prev, middle_name: event.target.value }))} placeholder="Optional" />
             </label>
             <label className="panel-field">
-              Last Name
+              Surname
                   <input value={form.last_name} onChange={(event) => setForm((prev) => ({ ...prev, last_name: event.target.value }))} required />
                 </label>
                 <label className="panel-field">
@@ -15668,7 +15668,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                         <input value={editForm.middle_name} onChange={(e) => setEditForm((p) => ({ ...p, middle_name: e.target.value }))} placeholder="Optional" />
                       </label>
                       <label className="panel-field">
-                        Last Name
+                        Surname
                         <input value={editForm.last_name} onChange={(e) => setEditForm((p) => ({ ...p, last_name: e.target.value }))} required />
                       </label>
                       <label className="panel-field">
@@ -16334,7 +16334,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
               <input value={form.middle_name} onChange={(event) => setForm((prev) => ({ ...prev, middle_name: event.target.value }))} placeholder="Optional" />
             </label>
             <label className="panel-field">
-              Last Name
+              Surname
               <input value={form.last_name} onChange={(event) => setForm((prev) => ({ ...prev, last_name: event.target.value }))} />
             </label>
             <label className="panel-field">
@@ -16590,7 +16590,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
                     <input value={editForm.middle_name} onChange={(event) => setEditForm((prev) => ({ ...prev, middle_name: event.target.value }))} placeholder="Optional" />
                   </label>
                   <label className="panel-field">
-                    Last Name
+                    Surname
                     <input value={editForm.last_name} onChange={(event) => setEditForm((prev) => ({ ...prev, last_name: event.target.value }))} required />
                   </label>
                   <label className="panel-field">

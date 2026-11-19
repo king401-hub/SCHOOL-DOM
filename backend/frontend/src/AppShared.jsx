@@ -4413,7 +4413,7 @@ export function StudentCardMessage({ student, session, onSaved }) {
           <div className="panel-form-grid">
             <label className="panel-field">First Name<input value={form.first_name} onChange={(e) => set("first_name")(e.target.value)} required /></label>
             <label className="panel-field">Middle Name<input value={form.middle_name} onChange={(e) => set("middle_name")(e.target.value)} /></label>
-            <label className="panel-field">Last Name<input value={form.last_name} onChange={(e) => set("last_name")(e.target.value)} required /></label>
+            <label className="panel-field">Surname<input value={form.last_name} onChange={(e) => set("last_name")(e.target.value)} required /></label>
             <label className="panel-field">Email<input type="email" value={form.email} onChange={(e) => set("email")(e.target.value)} required /></label>
             <label className="panel-field">Phone<input type="tel" value={form.phone} onChange={(e) => set("phone")(e.target.value)} /></label>
             <label className="panel-field">
