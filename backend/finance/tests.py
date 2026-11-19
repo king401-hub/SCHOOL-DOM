@@ -6144,6 +6144,196 @@ class ParentWhatsAppMenuTests(TestCase):
         # The first guardian's name is the placeholder "Guardian": not a name, so no greeting by name.
         self.assertEqual(parent_identity(self.PHONE)[0], "")
 
+    def test_statement_words_and_the_fee_statement_button_open_the_statement(self):
+        from finance.services import parent_topic_from_message as topic
+
+        def text(body):
+            return {"type": "text", "text": {"body": body}}
+
+        self.assertEqual(topic(text("statement")), "statement")
+        self.assertEqual(topic(text("my fee statement")), "statement")
+        self.assertEqual(topic({"type": "button", "button": {"text": "Fee statement"}}), "statement")
+        self.assertEqual(topic({"type": "button", "button": {"text": "Fee Statement"}}), "statement")
+        # The quick balance is unchanged.
+        self.assertEqual(topic(text("fees")), "fees")
+        self.assertEqual(topic(text("Fee Balance")), "fees")
+        self.assertEqual(topic({"type": "button", "button": {"text": "Report card"}}), "results")
+        self.assertEqual(topic({"type": "button", "button": {"text": "Receipt"}}), "receipts")
+
+    def test_the_fee_statement_shows_the_whole_term_record(self):
+        from datetime import timedelta
+        from finance.models import AdminWallet, BankPayment, FeeWaiver, SchoolFee, Transaction
+        from finance.services import parent_topic_reply
+
+        tuition = SchoolFee.objects.create(
+            student=self.student, title="Tuition", amount=Decimal("50000.00"), due_date=timezone.localdate(),
+            status=SchoolFee.STATUS_PARTIAL, term=self.term,
+        )
+        SchoolFee.objects.create(  # unpaid from before this term: carried in and marked
+            student=self.student, title="Arrears carried from Third Term", amount=Decimal("10000.00"),
+            due_date=timezone.localdate() - timedelta(days=120), status=SchoolFee.STATUS_OVERDUE,
+        )
+        SchoolFee.objects.create(  # already rolled into a later arrears fee: must not be counted twice
+            student=self.student, title="Old closed fee", amount=Decimal("99999.00"),
+            due_date=timezone.localdate() - timedelta(days=200), status=SchoolFee.STATUS_OVERDUE,
+            closed_at=timezone.now(),
+        )
+        wallet = AdminWallet.objects.create(tenant=self.school, balance=Decimal("0"))
+        Transaction.objects.create(
+            admin_wallet=wallet, amount=Decimal("20000.00"), tx_type=Transaction.FEE_CREDIT,
+            status=Transaction.STATUS_SUCCESS, reference="LEDGER-1",
+            metadata={"fee_id": str(tuition.id), "bank_payment_id": "bp-1"},
+        )
+        BankPayment.objects.create(
+            tenant=self.school, student=self.student, amount=Decimal("20000.00"), applied_amount=Decimal("20000.00"),
+            narration="Tuition", bank_reference="BANK-REF-1", receipt_number="RCT-0001",
+            status=BankPayment.STATUS_CONFIRMED,
+        )
+        FeeWaiver.objects.create(
+            tenant=self.school, student=self.student, title="Scholarship", amount=Decimal("5000.00"),
+            status=FeeWaiver.STATUS_AUTHORIZED,
+        )
+        AdminWallet.objects.filter(pk=wallet.pk).update(
+            bank_account_name="Greenfield School Ltd", bank_account_number="0123456789", bank_code="058",
+        )
+
+        reply = parent_topic_reply(self.PHONE, "statement")
+        self.assertIn("Fee statement", reply)
+        self.assertIn("Ade Tunde - First Term 2026/2027", reply)
+        self.assertIn("First Term 2026/2027", reply)
+        self.assertIn("Tuition: NGN 50,000.00 billed, NGN 20,000.00 paid, NGN 30,000.00 left", reply)
+        self.assertIn("Arrears carried from Third Term (earlier term): NGN 10,000.00 billed", reply)
+        self.assertNotIn("Old closed fee", reply)
+        self.assertIn("Total billed: NGN 60,000.00", reply)
+        self.assertIn("Total paid: NGN 20,000.00", reply)
+        self.assertIn("Waiver - Scholarship: NGN 5,000.00", reply)
+        # 60,000 billed - 20,000 paid - 5,000 waived
+        self.assertIn("Amount outstanding: NGN 35,000.00", reply)
+        self.assertIn("Payments this term:", reply)
+        self.assertIn("(Bank transfer), ref RCT-0001", reply)
+        self.assertIn("Reply RECEIPT for receipt links.", reply)
+        # Owing, so it ends with where to pay; and the statement itself carries no links.
+        self.assertIn("Pay to the school account:", reply)
+        self.assertIn("GTBank", reply)
+        self.assertNotIn("http", reply)
+
+    def test_a_fully_paid_child_gets_a_statement_without_payment_details(self):
+        from finance.models import AdminWallet, SchoolFee, Transaction
+        from finance.services import parent_topic_reply
+
+        fee = SchoolFee.objects.create(
+            student=self.student, title="Tuition", amount=Decimal("40000.00"), due_date=timezone.localdate(),
+            status=SchoolFee.STATUS_PAID, term=self.term,
+        )
+        wallet = AdminWallet.objects.create(
+            tenant=self.school, bank_account_name="X", bank_account_number="0123456789",
+        )
+        Transaction.objects.create(
+            admin_wallet=wallet, amount=Decimal("40000.00"), tx_type=Transaction.FEE_CREDIT,
+            status=Transaction.STATUS_SUCCESS, reference="LEDGER-PAID",
+            metadata={"fee_id": str(fee.id), "bank_payment_id": "bp-paid"},
+        )
+
+        reply = parent_topic_reply(self.PHONE, "statement")
+        self.assertIn("Amount outstanding: nil, fees fully paid", reply)
+        self.assertNotIn("0123456789", reply)
+        self.assertNotIn("Pay to", reply)
+
+    def test_a_statement_with_nothing_billed_says_so(self):
+        from finance.services import parent_topic_reply
+
+        reply = parent_topic_reply(self.PHONE, "statement")
+        self.assertIn("No fees billed this term.", reply)
+        self.assertIn("No payments recorded this term.", reply)
+
+    def test_the_results_reply_carries_the_report_card_link(self):
+        from academic.models import ResultBatch, StudentSubjectScore, Subject
+        from finance.models import PaymentReceiptLink
+        from finance.services import parent_topic_reply
+
+        maths = Subject.objects.create(name="Maths", code="MTH")
+        StudentSubjectScore.objects.create(
+            student=self.student, subject=maths, term=self.term, score=80, max_score=100,
+            approval_status=ResultBatch.PUBLISHED,
+        )
+        cards = []
+        reply = parent_topic_reply(self.PHONE, "results", report_cards=cards)
+
+        self.assertIn("Report card: http", reply)
+        self.assertIn("/r/", reply)
+        link = PaymentReceiptLink.objects.get(receipt_type="report_card")
+        self.assertTrue(reply.rstrip().split("Report card: ")[1].split()[0].endswith(link.short_code))
+        self.assertEqual(link.data["student_name"], "Ade Tunde")
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0]["label"], "Ade Tunde")
+        self.assertTrue(cards[0]["url"].endswith(link.short_code))
+
+    def test_no_report_card_link_when_nothing_is_published(self):
+        from finance.models import PaymentReceiptLink
+        from finance.services import parent_topic_reply
+
+        cards = []
+        reply = parent_topic_reply(self.PHONE, "results", report_cards=cards)
+        self.assertIn("no results published yet", reply)
+        self.assertNotIn("Report card:", reply)
+        self.assertEqual(cards, [])
+        self.assertFalse(PaymentReceiptLink.objects.filter(receipt_type="report_card").exists())
+
+    @override_settings(WHATSAPP_REPORT_CARD_PDF=True)
+    @patch("finance.services.send_bahasha_whatsapp_document", return_value={"status": "success"})
+    @patch("finance.services.requests.get")
+    def test_the_report_card_pdf_is_warmed_then_sent_as_a_document(self, mock_get, mock_send):
+        from finance.services import send_report_card_pdfs
+
+        mock_get.return_value = Mock(status_code=200, headers={"content-type": "application/pdf"})
+        send_report_card_pdfs(self.PHONE, [{"label": "Ade Tunde", "url": "https://schooldom.test/r/abc123"}])
+
+        mock_get.assert_called_once_with("https://schooldom.test/r/abc123.pdf", timeout=90)
+        mock_send.assert_called_once_with(
+            self.PHONE, "https://schooldom.test/r/abc123.pdf",
+            filename="Report Card - Ade Tunde.pdf", caption="Report card: Ade Tunde",
+        )
+
+    @override_settings(WHATSAPP_REPORT_CARD_PDF=True)
+    @patch("finance.services.send_bahasha_whatsapp_document")
+    @patch("finance.services.requests.get")
+    def test_a_pdf_that_cannot_be_rendered_is_skipped_quietly(self, mock_get, mock_send):
+        from finance.services import send_report_card_pdfs
+
+        mock_get.return_value = Mock(status_code=503, headers={"content-type": "text/html"})
+        send_report_card_pdfs(self.PHONE, [{"label": "Ade Tunde", "url": "https://schooldom.test/r/abc123"}])
+        mock_send.assert_not_called()
+
+        mock_get.side_effect = RuntimeError("network down")
+        send_report_card_pdfs(self.PHONE, [{"label": "Ade Tunde", "url": "https://schooldom.test/r/abc123"}])
+        mock_send.assert_not_called()
+
+    @override_settings(WHATSAPP_REPORT_CARD_PDF=False)
+    @patch("finance.services.requests.get")
+    def test_the_pdf_step_does_nothing_unless_it_is_switched_on(self, mock_get):
+        from finance.services import send_report_card_pdfs
+
+        send_report_card_pdfs(self.PHONE, [{"label": "Ade Tunde", "url": "https://schooldom.test/r/abc123"}])
+        mock_get.assert_not_called()
+
+    @override_settings(**BAHASHA_SETTINGS)
+    @patch("finance.services.requests.post")
+    def test_the_document_is_posted_to_bahasha_as_a_media_url(self, mock_post):
+        from finance.services import send_bahasha_whatsapp_document
+
+        mock_post.return_value = _bahasha_response(200, {"success": True, "message_id": "wamid.D1"})
+        result = send_bahasha_whatsapp_document(
+            "08012345678", "https://schooldom.test/r/abc.pdf", "Report Card.pdf", caption="Report card",
+        )
+
+        self.assertEqual(result, {"status": "success", "message_id": "wamid.D1"})
+        args, kwargs = mock_post.call_args
+        self.assertTrue(args[0].endswith("/v1/whatsapp/send/media"))
+        self.assertEqual(kwargs["json"], {
+            "to": "+2348012345678", "media_type": "document", "media_url": "https://schooldom.test/r/abc.pdf",
+            "filename": "Report Card.pdf", "caption": "Report card", "phone_number_id": "pn_123",
+        })
+
     def test_long_replies_are_split_into_parts_that_fit_one_whatsapp_text(self):
         from finance.services import split_whatsapp_text as split
 
@@ -6208,6 +6398,64 @@ class ParentWhatsAppMenuTests(TestCase):
         self.assertNotIn("Tunde", system)
 
 
+class ReceiptPdfRouteTests(TestCase):
+    """/r/<code>.pdf: the public page as a PDF, cached, with the same access rules."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.school = SchoolTenant.objects.create(name="PDF School", schema_name="pdf_school", is_active=True)
+
+    def _link(self):
+        from finance.models import PaymentReceiptLink
+        from finance.services import create_receipt_link
+
+        create_receipt_link(
+            {"student_name": "Ada Obi", "school_name": "PDF School", "term_name": "First Term",
+             "average_score": 70, "scores": []},
+            tenant=self.school, receipt_type="report_card",
+        )
+        return PaymentReceiptLink.objects.latest("created_at")
+
+    @patch("finance.pdf.render_html_to_pdf", return_value=b"%PDF-1.4 fake")
+    def test_the_pdf_is_served_and_cached_and_the_page_is_unchanged(self, mock_render):
+        link = self._link()
+
+        first = self.client.get(f"/r/{link.short_code}.pdf")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first["Content-Type"], "application/pdf")
+        self.assertTrue(first.content.startswith(b"%PDF"))
+        self.assertIn(f"SchoolDom-Report-Card-{link.short_code}.pdf", first["Content-Disposition"])
+        # The HTML the PDF is made from is exactly what the page serves.
+        self.assertIn("Ada Obi", mock_render.call_args.args[0])
+
+        self.client.get(f"/r/{link.short_code}.pdf")
+        mock_render.assert_called_once()  # second fetch comes from the cache
+
+        page = self.client.get(f"/r/{link.short_code}")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("text/html", page["Content-Type"])
+        self.assertContains(page, "Ada Obi")
+
+    @patch("finance.pdf.render_html_to_pdf", return_value=b"%PDF-1.4 fake")
+    def test_unknown_and_expired_links_are_refused(self, mock_render):
+        from datetime import timedelta
+
+        self.assertEqual(self.client.get("/r/doesnotexist.pdf").status_code, 404)
+
+        link = self._link()
+        link.expires_at = timezone.now() - timedelta(days=1)
+        link.save(update_fields=["expires_at"])
+        self.assertEqual(self.client.get(f"/r/{link.short_code}.pdf").status_code, 410)
+        mock_render.assert_not_called()
+
+    @patch("finance.pdf.render_html_to_pdf", side_effect=RuntimeError("chromium missing"))
+    def test_a_render_failure_is_a_503_not_a_crash(self, _render):
+        link = self._link()
+        self.assertEqual(self.client.get(f"/r/{link.short_code}.pdf").status_code, 503)
+
+
 class BahashaWhatsAppWebhookTests(TestCase):
     URL = "/api/finance/whatsapp/bahasha/webhook/"
 
@@ -6270,7 +6518,7 @@ class BahashaWhatsAppWebhookTests(TestCase):
         again = self.client.post(self.URL + "?token=s3cret", retry, format="json")
         self.assertEqual(again.status_code, 200)
         self.assertEqual(again.json()["processed"], [])
-        mock_reply.assert_called_once_with("2348012345678", "fees")
+        mock_reply.assert_called_once_with("2348012345678", "fees", report_cards=[])
         mock_send.assert_called_once_with("2348012345678", "reply text")
 
     @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
@@ -6305,6 +6553,58 @@ class BahashaWhatsAppWebhookTests(TestCase):
         self.assertEqual(response.json()["processed"], [{"from": "2348012345678", "action": "attendance"}])
         mock_send.assert_called_once()
 
+    @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret", WHATSAPP_REPORT_CARD_PDF=True)
+    @patch("finance.views.run_in_background")
+    @patch("finance.views.students_for_parent_phone")
+    @patch("finance.views.send_whatsapp_message")
+    @patch("finance.views.parent_topic_reply")
+    def test_a_results_reply_queues_the_report_card_pdfs_after_the_text(self, mock_reply, mock_send, mock_students, mock_bg):
+        mock_students.return_value.exists.return_value = True
+
+        def reply(phone, topic, report_cards=None):
+            report_cards.append({"label": "Ade Tunde", "url": "https://schooldom.test/r/abc123"})
+            return "Results text with link"
+
+        mock_reply.side_effect = reply
+        response = self.client.post(self.URL + "?token=s3cret", self._payload(text="results"), format="json")
+
+        self.assertEqual(response.json()["processed"], [{"from": "2348012345678", "action": "results"}])
+        mock_send.assert_called_once_with("2348012345678", "Results text with link")
+        mock_bg.assert_called_once()
+        self.assertEqual(mock_bg.call_args.kwargs["name"], "whatsapp-report-card-pdf")
+
+    @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret", WHATSAPP_REPORT_CARD_PDF=False)
+    @patch("finance.views.run_in_background")
+    @patch("finance.views.students_for_parent_phone")
+    @patch("finance.views.send_whatsapp_message")
+    @patch("finance.views.parent_topic_reply")
+    def test_no_pdf_is_queued_while_the_switch_is_off(self, mock_reply, mock_send, mock_students, mock_bg):
+        mock_students.return_value.exists.return_value = True
+
+        def reply(phone, topic, report_cards=None):
+            report_cards.append({"label": "Ade Tunde", "url": "https://schooldom.test/r/abc123"})
+            return "Results text with link"
+
+        mock_reply.side_effect = reply
+        self.client.post(self.URL + "?token=s3cret", self._payload(text="results"), format="json")
+        mock_send.assert_called_once()
+        mock_bg.assert_not_called()
+
+    @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
+    @patch("finance.views.students_for_parent_phone")
+    @patch("finance.views.send_whatsapp_message")
+    @patch("finance.views.parent_topic_reply", return_value="Fee statement text")
+    def test_the_fee_statement_button_sends_the_statement(self, mock_reply, mock_send, mock_students):
+        mock_students.return_value.exists.return_value = True
+        tap = {"entry": [{"changes": [{"value": {"messages": [
+            {"from": "2348012345678", "id": "wamid.STMT1", "type": "button",
+             "button": {"text": "Fee statement", "payload": "Fee statement"}},
+        ]}}]}]}
+        response = self.client.post(self.URL + "?token=s3cret", tap, format="json")
+        self.assertEqual(response.json()["processed"], [{"from": "2348012345678", "action": "statement"}])
+        mock_reply.assert_called_once_with("2348012345678", "statement", report_cards=[])
+        mock_send.assert_called_once_with("2348012345678", "Fee statement text")
+
     @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")
     @patch("finance.views.students_for_parent_phone")
     @patch("finance.views.send_parent_menu")
@@ -6338,7 +6638,7 @@ class BahashaWhatsAppWebhookTests(TestCase):
             self.URL + "?token=s3cret", self._payload(text="give me reciept for my payhment"), format="json",
         )
         self.assertEqual(response.json()["processed"], [{"from": "2348012345678", "action": "receipts"}])
-        mock_reply.assert_called_once_with("2348012345678", "receipts")
+        mock_reply.assert_called_once_with("2348012345678", "receipts", report_cards=[])
         mock_send.assert_called_once_with("2348012345678", "Recent payments ...")
 
     @override_settings(BAHASHA_WEBHOOK_SECRET="s3cret")

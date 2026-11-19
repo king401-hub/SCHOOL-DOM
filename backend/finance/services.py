@@ -1342,6 +1342,23 @@ def _bahasha_post(path: str, payload: dict) -> dict:
         return {"status": "error", "reason": str(exc)}
 
 
+def send_bahasha_whatsapp_document(to_phone: str, media_url: str, filename: str, caption: str = "") -> dict:
+    """A PDF as a WhatsApp document via Bahasha (POST /v1/whatsapp/send/media).
+
+    `media_url` must be a public, direct HTTPS link to the file: this endpoint takes
+    no upload and no media id. Like free-form text it only works inside the 24-hour
+    window the parent's own message opened."""
+    payload = {
+        "to": "+" + normalize_phone_number(to_phone),
+        "media_type": "document",
+        "media_url": media_url,
+        "filename": filename,
+    }
+    if caption:
+        payload["caption"] = caption
+    return _bahasha_post("/v1/whatsapp/send/media", payload)
+
+
 def send_bahasha_whatsapp(to_phone: str, message: str) -> dict:
     """Free-form WhatsApp text via Bahasha. Only works inside the 24-hour
     window that opens when the parent messages us."""
@@ -5579,8 +5596,8 @@ def send_parent_balance_response(parent_phone):
 # receipts carry the official receipt link.
 
 PARENT_HELP_TEXT = (
-    "SchoolDom: reply FEES, ATTENDANCE, RESULTS or RECEIPT to see your children's "
-    "information, or HELP to reach your school."
+    "SchoolDom: reply FEES, STATEMENT, ATTENDANCE, RESULTS or RECEIPT to see your "
+    "children's information, or HELP to reach your school."
 )
 PARENT_NOT_LINKED_TEXT = (
     "SchoolDom: this number isn't linked to a student. Please ask your school "
@@ -5588,6 +5605,7 @@ PARENT_NOT_LINKED_TEXT = (
 )
 _PARENT_TOPIC_HEADINGS = {
     "fees": "Fee balance",
+    "statement": "Fee statement",
     "receipts": "Recent payments",
     "attendance": "Attendance (last 30 days)",
     "results": "Latest results",
@@ -5619,6 +5637,10 @@ def parent_topic_from_message(message) -> Optional[str]:
     # school close?" must not turn into the contact reply).
     if not tapped and len(text.split()) > 4:
         return None
+    # Checked before "fee": a "Fee statement" tap is the full term record, while a
+    # typed "fees" or "balance" stays the quick balance.
+    if words & {"statement", "statements"}:
+        return "statement"
     if words & {"balance", "bal", "fee", "fees"}:
         return "fees"
     if any(word.startswith("attend") for word in words):
@@ -5645,7 +5667,23 @@ def _parent_student_label(student) -> str:
     return f"{name} ({class_name})" if class_name else name
 
 
-def _parent_topic_line(topic: str, student) -> str:
+def _parent_report_card_url(student, report, phone="") -> str:
+    """Mint the public report-card page link (/r/<code>), the same page the school's
+    report-card SMS opens. "" if it cannot be made, so the results line still shows."""
+    try:
+        from users.app_views import _report_card_link_data
+
+        school = getattr(student.user, "tenant", None)
+        return create_receipt_link(
+            _report_card_link_data(report, school), tenant=school, phone=str(phone or ""),
+            receipt_type="report_card",
+        )
+    except Exception:
+        logger.exception("WhatsApp report card link could not be made for student %s", student.pk)
+        return ""
+
+
+def _parent_topic_line(topic: str, student, report_cards=None, phone="") -> str:
     label = _parent_student_label(student)
     if topic == "receipts":
         return _parent_receipt_line(student)
@@ -5682,7 +5720,13 @@ def _parent_topic_line(topic: str, student) -> str:
     if report.get("class_position"):
         parts.append(f"position {report['class_position']}/{report.get('class_size') or 0}")
     term_name = latest.term.name if latest.term else "latest term"
-    return f"{label}: {term_name}, {', '.join(parts)}"
+    line = f"{label}: {term_name}, {', '.join(parts)}"
+    url = _parent_report_card_url(student, report, phone)
+    if url:
+        line += f"\n  Report card: {url}"
+        if report_cards is not None:
+            report_cards.append({"label": student.user.get_full_name() or "Student", "url": url})
+    return line
 
 
 def split_whatsapp_text(text: str, limit: int = 3500) -> list:
@@ -5777,53 +5821,174 @@ def _bank_payment_receipt_url(payment) -> str:
         return ""
 
 
-def _parent_receipt_line(student, limit=5) -> str:
-    """The child's most recent successful payments as text: date, amount, what it
-    was for, reference, and the official receipt link where one exists.
+_PAYMENT_METHOD_SHORT = {"bank_transfer": "Bank transfer", "cash": "Cash", "pos": "POS", "cheque": "Cheque"}
 
-    Recorded payments (cash, POS, cheque, bank transfer: `BankPayment`) have an
-    official receipt page, so they carry its link. Wallet debits and split or
-    virtual-account allocations have no receipt page and are listed as text. Bank
-    credits are read from BankPayment only, so they are not listed twice."""
+
+def _student_payment_records(student, date_from=None, date_to=None, bank_limit=None) -> list:
+    """Every successful payment on a child's account, newest first, as dicts with
+    when, amount, what, reference, method and (for a recorded `BankPayment`) the
+    payment itself, which has an official receipt page.
+
+    Payments live in three places: recorded payments (cash, POS, cheque, bank
+    transfer: `BankPayment`), wallet debits, and split or virtual-account
+    allocations. Bank credits on the ledger are read from BankPayment only, so
+    they are not listed twice. `date_from`/`date_to` keep one term's payments."""
     from finance.models import BankPayment
 
-    label = _parent_student_label(student)
-    fees = {str(f.id): f.title for f in SchoolFee.objects.filter(student=student)}
+    def in_range(when):
+        day = timezone.localtime(when).date()
+        return not ((date_from and day < date_from) or (date_to and day > date_to))
 
-    payments = []  # (when, amount, what, reference, receipt_url_or_payment)
+    fees = {str(f.id): f.title for f in SchoolFee.objects.filter(student=student)}
+    records = []
     recorded = BankPayment.objects.filter(
         student=student, status__in=[BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL],
-    ).select_related("tenant", "student__user", "student__current_class").order_by("-created_at")[:limit]
+    ).select_related("tenant", "student__user", "student__current_class").order_by("-created_at")
     for payment in recorded:
-        payments.append((
-            payment.matched_at or payment.created_at, payment.applied_amount or payment.amount,
-            payment.narration or "School fees", payment.receipt_number or payment.bank_reference, payment,
-        ))
+        when = payment.matched_at or payment.created_at
+        if not in_range(when):
+            continue
+        method = _payment_method_of(payment)
+        records.append({
+            "when": when, "amount": payment.applied_amount or payment.amount,
+            "what": payment.narration or "School fees",
+            "reference": payment.receipt_number or payment.bank_reference,
+            "method": _PAYMENT_METHOD_SHORT.get(method, method.replace("_", " ").title()),
+            "payment": payment,
+        })
+        if bank_limit and len(records) >= bank_limit:
+            break
     if fees:
         for tx in Transaction.objects.filter(
             tx_type=Transaction.FEE_DEBIT, status=Transaction.STATUS_SUCCESS, metadata__fee_id__in=list(fees),
         ):
-            payments.append((tx.created_at, tx.amount, fees.get(str(tx.metadata.get("fee_id")), "Fee"), tx.reference, ""))
+            if in_range(tx.created_at):
+                records.append({
+                    "when": tx.created_at, "amount": tx.amount,
+                    "what": fees.get(str(tx.metadata.get("fee_id")), "Fee"),
+                    "reference": tx.reference, "method": "Wallet", "payment": None,
+                })
         for allocation in FeeAllocation.objects.filter(
             fee__student=student,
             status__in=[FeeAllocation.STATUS_PAID, FeeAllocation.STATUS_PARTIAL],
             transaction__status=Transaction.STATUS_SUCCESS,
         ).select_related("fee", "transaction"):
-            payments.append((
-                allocation.transaction.created_at, allocation.amount_allocated,
-                allocation.fee.title, allocation.transaction.reference, "",
-            ))
+            if in_range(allocation.transaction.created_at):
+                records.append({
+                    "when": allocation.transaction.created_at, "amount": allocation.amount_allocated,
+                    "what": allocation.fee.title, "reference": allocation.transaction.reference,
+                    "method": "Online", "payment": None,
+                })
+    records.sort(key=lambda r: r["when"], reverse=True)
+    return records
 
-    if not payments:
+
+def _parent_receipt_line(student, limit=5) -> str:
+    """The child's most recent successful payments as text: date, amount, what it
+    was for, reference, and the official receipt link where one exists (recorded
+    payments have a receipt page; wallet and online payments do not)."""
+    label = _parent_student_label(student)
+    records = _student_payment_records(student, bank_limit=limit)
+    if not records:
         return f"{label}: no payments recorded"
-    payments.sort(key=lambda p: p[0], reverse=True)
     lines = [f"{label}:"]
-    for when, amount, what, reference, source in payments[:limit]:
-        lines.append(f"  - {timezone.localtime(when):%d %b %Y}: {_format_naira(amount)} ({what}), ref {reference}")
-        url = _bank_payment_receipt_url(source) if source != "" else ""
+    for record in records[:limit]:
+        lines.append(
+            f"  - {timezone.localtime(record['when']):%d %b %Y}: {_format_naira(record['amount'])} "
+            f"({record['what']}), ref {record['reference']}"
+        )
+        url = _bank_payment_receipt_url(record["payment"]) if record["payment"] is not None else ""
         if url:
             lines.append(f"    Receipt: {url}")
     return "\n".join(lines)
+
+
+def _parent_statement_lines(student) -> tuple:
+    """(amount_due, lines): the child's full fee statement for the current term.
+
+    What was billed (fee by fee, including any arrears carried in from an earlier
+    term), what was paid, any authorised waiver, what is still outstanding, and
+    the payment records for the term. Text only, no links; RECEIPT gives receipt
+    links. Mirrors the admin statement's arithmetic: amount due is billed minus
+    paid minus authorised waivers, and a fee already rolled into a later term's
+    arrears fee (`closed_at`) is left out so nothing is counted twice."""
+    from academic.models import Term
+    from finance.models import FeeWaiver
+
+    sync_student_class_fees(student, actor=student.user)
+    label = _parent_student_label(student)
+    tenant = getattr(student.user, "tenant", None)
+    term = None
+    if tenant is not None:
+        term = (
+            Term.objects.select_related("academic_year")
+            .filter(tenant__slug__iexact=tenant.schema_name, is_active=True)
+            .order_by("-start_date").first()
+        )
+
+    def in_term(fee):
+        if term is None:
+            return True
+        if fee.term_id:
+            return fee.term_id == term.id
+        return bool(term.start_date and term.end_date and term.start_date <= fee.due_date <= term.end_date)
+
+    fees = list(SchoolFee.objects.filter(student=student, closed_at__isnull=True).order_by("due_date"))
+    paid_amounts = bulk_fee_paid_amounts(fees)
+    scope = [(fee, fee_outstanding_amount(fee, paid_amounts)) for fee in fees]
+    # A fee from this term, or anything still unpaid from before it.
+    scope = [(fee, left) for fee, left in scope if in_term(fee) or left > 0]
+
+    heading = label
+    if term is not None:
+        year = getattr(getattr(term, "academic_year", None), "name", "")
+        heading = f"{label} - {term.name}{' ' + year if year else ''}"
+    lines = [heading]
+    if not scope:
+        lines.append("No fees billed this term.")
+    else:
+        lines.append("Fees:")
+        for fee, left in scope:
+            paid = _as_decimal(fee.amount) - left
+            earlier = "" if in_term(fee) else " (earlier term)"
+            lines.append(
+                f"  - {fee.title}{earlier}: {_format_naira(fee.amount)} billed, "
+                f"{_format_naira(paid)} paid, {_format_naira(left)} left"
+            )
+
+    billed = sum((_as_decimal(fee.amount) for fee, _ in scope), Decimal("0.00"))
+    left_total = sum((left for _, left in scope), Decimal("0.00"))
+    scope_ids = {fee.id for fee, _ in scope}
+    waivers = [
+        w for w in FeeWaiver.objects.filter(student=student, status=FeeWaiver.STATUS_AUTHORIZED)
+        if (w.fee_id in scope_ids)
+        or (w.fee_id is None and (term is None or not term.start_date or not term.end_date
+                                   or term.start_date <= timezone.localtime(w.granted_at).date() <= term.end_date))
+    ]
+    waived = sum((_as_decimal(w.amount) for w in waivers), Decimal("0.00"))
+    due = max(left_total - waived, Decimal("0.00"))
+    lines.append(f"Total billed: {_format_naira(billed)}")
+    lines.append(f"Total paid: {_format_naira(billed - left_total)}")
+    for waiver in waivers:
+        lines.append(f"Waiver - {waiver.title}: {_format_naira(waiver.amount)}")
+    lines.append(f"Amount outstanding: {_format_naira(due)}" if due > 0 else "Amount outstanding: nil, fees fully paid")
+
+    date_from = term.start_date if term is not None and term.start_date else None
+    date_to = term.end_date if term is not None and term.end_date else None
+    records = _student_payment_records(student, date_from=date_from, date_to=date_to)
+    if records:
+        lines.append("Payments this term:" if term is not None else "Payments:")
+        for record in records[:10]:
+            lines.append(
+                f"  - {timezone.localtime(record['when']):%d %b %Y}: {_format_naira(record['amount'])} "
+                f"({record['method']}), ref {record['reference']}"
+            )
+        if len(records) > 10:
+            lines.append(f"  ...and {len(records) - 10} earlier payments")
+        lines.append("Reply RECEIPT for receipt links.")
+    else:
+        lines.append("No payments recorded this term." if term is not None else "No payments recorded.")
+    return due, lines
 
 
 def _parent_payment_lines(tenant, owing_kids) -> list:
@@ -5865,8 +6030,11 @@ def _parent_payment_lines(tenant, owing_kids) -> list:
     return lines
 
 
-def parent_topic_reply(parent_phone, topic: str) -> str:
-    """The text reply for one menu topic, grouped by school then child."""
+def parent_topic_reply(parent_phone, topic: str, report_cards=None) -> str:
+    """The text reply for one menu topic, grouped by school then child.
+
+    `report_cards`, when a list is passed, receives one {"label", "url"} per report
+    card link a results reply contains, so the caller can also send each as a PDF."""
     name, students = parent_identity(parent_phone)
     if not students:
         return PARENT_NOT_LINKED_TEXT
@@ -5879,13 +6047,13 @@ def parent_topic_reply(parent_phone, topic: str) -> str:
         owing = []
         for kid in kids:
             try:
-                if topic == "fees":
-                    owed, kid_lines = _parent_fee_lines(kid)
+                if topic in ("fees", "statement"):
+                    owed, kid_lines = (_parent_fee_lines if topic == "fees" else _parent_statement_lines)(kid)
                     lines.extend(kid_lines)
                     if owed > 0:
                         owing.append(kid)
                 else:
-                    lines.append(_parent_topic_line(topic, kid))
+                    lines.append(_parent_topic_line(topic, kid, report_cards=report_cards, phone=parent_phone))
             except Exception:
                 logger.exception("WhatsApp %s lookup failed for student %s", topic, kid.pk)
                 lines.append(f"{_parent_student_label(kid)}: unavailable right now")
@@ -5899,6 +6067,33 @@ def parent_topic_reply(parent_phone, topic: str) -> str:
         lines.append(_school_contact_line(tenant))
         sections.append("\n".join(lines))
     return (f"Hello {name},\n\n" if name else "") + "\n\n".join(sections)
+
+
+def send_report_card_pdfs(parent_phone, cards) -> None:
+    """Follow a results reply with each report card as a PDF document.
+
+    Runs in the background, after the text reply (which already carries the link),
+    so a slow render never delays the answer. Off unless WHATSAPP_REPORT_CARD_PDF is
+    true. The PDF is fetched from our own /r/<code>.pdf first: that renders it and
+    caches it, so WhatsApp's own fetch of the same URL moments later is instant. Any
+    failure is logged and skipped: the parent already has the link."""
+    if not getattr(settings, "WHATSAPP_REPORT_CARD_PDF", False):
+        return
+    for card in cards:
+        pdf_url = f"{card['url']}.pdf"
+        label = card.get("label") or "Student"
+        try:
+            warm = requests.get(pdf_url, timeout=90)
+            if warm.status_code != 200 or "pdf" not in warm.headers.get("content-type", ""):
+                logger.warning("Report card PDF not ready for %s: HTTP %s", label, warm.status_code)
+                continue
+            result = send_bahasha_whatsapp_document(
+                parent_phone, pdf_url, filename=f"Report Card - {label}.pdf", caption=f"Report card: {label}",
+            )
+            if result.get("status") == "error":
+                logger.warning("Report card PDF to %s failed: %s", parent_phone, result.get("reason"))
+        except Exception:
+            logger.exception("Report card PDF for %s could not be sent", label)
 
 
 def parent_contact_reply(parent_phone) -> str:
@@ -5925,20 +6120,22 @@ def parent_question_from_message(message) -> Optional[str]:
     return None
 
 
-PARENT_AI_INTENTS = ("fees", "attendance", "results", "receipts", "contact")
+PARENT_AI_INTENTS = ("fees", "statement", "attendance", "results", "receipts", "contact")
 
 _PARENT_AI_SYSTEM = (
     "You are the WhatsApp assistant for the school(s) below. A parent has sent a message. "
     "Reply with ONLY a JSON object {\"intent\": ..., \"answer\": ...} and nothing else.\n"
     "Pick \"intent\" by what the parent wants, even if the message has typos or is worded loosely:\n"
-    "- \"fees\": their own child's fee balance or what they owe.\n"
+    "- \"fees\": a quick answer on their own child's fee balance or what they owe.\n"
+    "- \"statement\": their own child's full fee statement or account record for the term: "
+    "what was billed, paid and is outstanding, with the payment records.\n"
     "- \"attendance\": their own child's attendance.\n"
-    "- \"results\": their own child's results, scores, grades or position.\n"
+    "- \"results\": their own child's results, scores, grades, position or report card.\n"
     "- \"receipts\": a receipt or proof of a payment they made, or their payment history.\n"
     "- \"contact\": they want to reach or speak to the school.\n"
     "- \"question\": anything else, such as general information about the school (closing time, "
     "resumption, uniform, rules, location).\n"
-    "For the first five, set \"answer\" to \"\": the system sends the data itself, so never "
+    "For the first six, set \"answer\" to \"\": the system sends the data itself, so never "
     "tell the parent to type a keyword. For \"question\", write \"answer\" using ONLY the school "
     "information below. If it is not there, say you are not sure and give the school's phone or "
     "email. Never invent fees, dates, names or policies, and never state any child's fees, "

@@ -687,6 +687,10 @@ BAHASHA_MENU_TEMPLATE_LANGUAGE = os.getenv('BAHASHA_MENU_TEMPLATE_LANGUAGE', 'en
 WHATSAPP_AI_ENABLED = os.getenv('WHATSAPP_AI_ENABLED', 'false').lower() == 'true'
 WHATSAPP_AI_MODEL = os.getenv('WHATSAPP_AI_MODEL', '')  # blank = OPENROUTER_DEFAULT_MODEL
 WHATSAPP_AI_HOURLY_LIMIT = int(os.getenv('WHATSAPP_AI_HOURLY_LIMIT', '10'))
+# Also send each report card as a PDF document after the results reply. Off by
+# default: it needs headless Chromium on the server and /r/<code>.pdf publicly
+# reachable over HTTPS (Bahasha fetches the file from that URL).
+WHATSAPP_REPORT_CARD_PDF = os.getenv('WHATSAPP_REPORT_CARD_PDF', 'false').lower() == 'true'
 # Name of the body variable holding the school name in the menu template (blank = none).
 BAHASHA_MENU_TEMPLATE_SCHOOL_PARAM = os.getenv('BAHASHA_MENU_TEMPLATE_SCHOOL_PARAM', '')
 BAHASHA_WEBHOOK_VERIFY_TOKEN = os.getenv('BAHASHA_WEBHOOK_VERIFY_TOKEN', '')
