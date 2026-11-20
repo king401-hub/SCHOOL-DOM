@@ -57,6 +57,20 @@ function formatLogDate(value) {
   return parsed.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
 }
 
+// Local-time (not UTC) yyyy-mm-dd, matching what a native <input type="date"> expects/emits.
+function toISODate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+const DATE_QUICK_FILTERS = [
+  ["today", "Today", 0],
+  ["15d", "Last 15 Days", 14],
+  ["30d", "Last 30 Days", 29],
+];
+
 async function downloadAuthedFile(session, endpoint, filename) {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     headers: session?.access ? { Authorization: `Bearer ${session.access}` } : {},
@@ -89,6 +103,7 @@ export function AttendanceLogsPanel({ session }) {
 
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [quickRange, setQuickRange] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [termFilter, setTermFilter] = useState("");
@@ -115,6 +130,15 @@ export function AttendanceLogsPanel({ session }) {
     setStaffId("");
     setResult(null);
   }, [personType]);
+
+  const applyDateQuickFilter = (key, daysBack) => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - daysBack);
+    setStartDate(toISODate(start));
+    setEndDate(toISODate(end));
+    setQuickRange(key);
+  };
 
   useEffect(() => {
     if (personType !== "student" || !session) return undefined;
@@ -390,12 +414,51 @@ export function AttendanceLogsPanel({ session }) {
           )}
           <label className="panel-field">
             Start Date
-            <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+            <input
+              type="date"
+              value={startDate}
+              onChange={(event) => {
+                setStartDate(event.target.value);
+                setQuickRange("");
+              }}
+            />
           </label>
           <label className="panel-field">
             End Date
-            <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+            <input
+              type="date"
+              value={endDate}
+              onChange={(event) => {
+                setEndDate(event.target.value);
+                setQuickRange("");
+              }}
+            />
           </label>
+        </div>
+
+        <div className="segmented-control" style={{ justifyContent: "flex-start", marginTop: "0.5rem" }}>
+          {DATE_QUICK_FILTERS.map(([key, label, daysBack]) => (
+            <button
+              key={key}
+              type="button"
+              className={quickRange === key ? "active" : ""}
+              onClick={() => applyDateQuickFilter(key, daysBack)}
+            >
+              {label}
+            </button>
+          ))}
+          {startDate || endDate ? (
+            <button
+              type="button"
+              onClick={() => {
+                setStartDate("");
+                setEndDate("");
+                setQuickRange("");
+              }}
+            >
+              Clear
+            </button>
+          ) : null}
         </div>
 
         {canShowResults ? (
