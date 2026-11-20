@@ -159,6 +159,30 @@ class SchoolTenant(models.Model):
     @property
     def is_schoolgate(self):
         return self.product == self.PRODUCT_SCHOOLGATE
+
+    # Attendance Analytics packaging ("Workforce"/"Students"/"Complete" in
+    # the CTO brief) - orthogonal to `product`/`subscription_tier` above,
+    # and applies to every school, not just SchoolGate ones (a full-product
+    # school could still want to restrict which analytics its admins see).
+    SCOPE_STAFF_ONLY = 'staff_only'
+    SCOPE_STUDENT_ONLY = 'student_only'
+    SCOPE_BOTH = 'both'
+    ATTENDANCE_ANALYTICS_SCOPE_CHOICES = [
+        (SCOPE_STAFF_ONLY, 'Workforce'),
+        (SCOPE_STUDENT_ONLY, 'Students'),
+        (SCOPE_BOTH, 'Complete'),
+    ]
+    attendance_analytics_scope = models.CharField(
+        max_length=20, choices=ATTENDANCE_ANALYTICS_SCOPE_CHOICES, default=SCOPE_BOTH,
+    )
+
+    @property
+    def attendance_analytics_includes_staff(self):
+        return self.attendance_analytics_scope in (self.SCOPE_STAFF_ONLY, self.SCOPE_BOTH)
+
+    @property
+    def attendance_analytics_includes_students(self):
+        return self.attendance_analytics_scope in (self.SCOPE_STUDENT_ONLY, self.SCOPE_BOTH)
     
     # Relationships to new configurations (will be created by related apps)
     # These are auto-created OneToOneFields from the related apps:

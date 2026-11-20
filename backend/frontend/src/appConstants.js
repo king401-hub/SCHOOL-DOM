@@ -48,6 +48,14 @@ export const ADMIN_ROUTES = [
     ]
   },
   {
+    path: "/attendance-analytics-group",
+    label: "Attendance Analytics",
+    children: [
+      { path: "/attendance-analytics", label: "Overview" },
+      { path: "/attendance-analytics/daily", label: "Daily Analytics" },
+    ]
+  },
+  {
     path: "/finance-group",
     label: "Finance & HR",
     children: [
@@ -101,6 +109,7 @@ export const ADMIN_ROUTE_REDIRECTS = {
   "/hr": "/hr/activity",
   "/people-group": "/students",
   "/academics-group": "/classes",
+  "/attendance-analytics-group": "/attendance-analytics",
   "/finance-group": "/finance",
   "/admin-group": "/id-cards",
   "/legal-group": "/compliance",
@@ -108,6 +117,8 @@ export const ADMIN_ROUTE_REDIRECTS = {
 export const ADMIN_ENDPOINTS = {
   "/dashboard": "/api/app/dashboard/",
   "/performance-heatmap": "/api/app/performance-heatmap/",
+  "/attendance-analytics": "/api/attendance-analytics/overview/",
+  "/attendance-analytics/daily": "/api/attendance-analytics/daily/",
   "/finance": "/api/finance/admin/overview/",
   "/expenses": "/api/finance/admin/expenses/",
   "/sms-wallet": "/api/finance/admin/sms-wallet/",

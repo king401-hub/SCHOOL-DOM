@@ -6,7 +6,7 @@ import {
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
   Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
   Package, Archive, Palette, KeyRound, Wallet, Trophy, Search, Pencil,
-  FilePlus2, ClipboardList, Monitor,
+  FilePlus2, ClipboardList, Monitor, PieChart,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -129,6 +129,8 @@ const ProprietorShell = lazy(() => import("./ProprietorScreens").then((module) =
 const IdCardVerificationPage = lazyAdminScreen("IdCardVerificationPage");
 const StudentIdCardPreview = lazyAdminScreen("IdCardPreview");
 const AdminPerformanceHeatmapScreen = lazyAdminScreen("AdminPerformanceHeatmapScreen");
+const AttendanceAnalyticsOverviewScreen = lazyAdminScreen("AttendanceAnalyticsOverviewScreen");
+const AttendanceAnalyticsDailyScreen = lazyAdminScreen("AttendanceAnalyticsDailyScreen");
 const AdminFinanceScreen = lazyAdminScreen("AdminFinanceScreen");
 const AdminExamResultsScreen = lazyAdminScreen("AdminExamResultsScreen");
 const AdminTimetablesScreen = lazyAdminScreen("AdminTimetablesScreen");
@@ -3957,6 +3959,19 @@ function SchoolGateLocked({ pageTitle, reason = "plan", onActivate }) {
   );
 }
 
+// Attendance Analytics packaging (core.SchoolTenant.attendance_analytics_scope:
+// staff_only/student_only/both - the brief's Workforce/Students/Complete):
+// deliberately NOT a route-level lock like SchoolGate's above. Both
+// /attendance-analytics and /attendance-analytics/daily are single shared
+// routes that can show either population - AttendanceAnalyticsDailyScreen's
+// own population toggle only renders when scope is "both" and otherwise
+// silently defaults to whichever population the scope allows, and the
+// Overview screen just omits whichever of data.staff/data.students the
+// backend's own scope check left out. There is currently no per-population
+// URL to lock out at the router level the way SchoolGate's paths are - the
+// backend's 403 (see attendance_analytics.views._check_population_scope) is
+// what actually enforces this if the API is ever called directly.
+
 const TIMETABLE_DAY_FALLBACK = [
   { value: 0, label: "Monday" },
   { value: 1, label: "Tuesday" },
@@ -7144,6 +7159,9 @@ const ADMIN_ROUTE_ICONS = {
   "/non-teaching-staff": Briefcase,
   "/classes": School,
   "/academics-group": School,
+  "/attendance-analytics-group": PieChart,
+  "/attendance-analytics": PieChart,
+  "/attendance-analytics/daily": CalendarCheck,
   "/exams": FileCheck,
   "/timetables": CalendarClock,
   "/results": BarChart2,
@@ -7163,6 +7181,7 @@ const ADMIN_NAV_SECTIONS = [
   { label: "Overview", paths: ["/dashboard", "/performance-heatmap"] },
   { label: "People", paths: ["/people-group"] },
   { label: "Academics", paths: ["/academics-group"] },
+  { label: "Attendance Analytics", paths: ["/attendance-analytics-group"] },
   { label: "Finance & HR", paths: ["/finance-group"] },
   { label: "Administration", paths: ["/admin-group", "/legal-group"] },
 ];
@@ -9517,6 +9536,14 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onRetry={handleRetry}
       />
     );
+  } else if (activePath === "/attendance-analytics") {
+    // Self-fetches via its own date-driven requestJson calls rather than the
+    // generic screenData/loadScreen flow, since the admin controls which
+    // date is being viewed client-side - same pattern as the trait-catalog
+    // self-fetch elsewhere in AdminScreens.jsx.
+    content = <AttendanceAnalyticsOverviewScreen session={session} />;
+  } else if (activePath === "/attendance-analytics/daily") {
+    content = <AttendanceAnalyticsDailyScreen session={session} />;
   } else if (activePath === "/finance") {
     content = (
       <AdminFinanceScreen

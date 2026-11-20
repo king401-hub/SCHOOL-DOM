@@ -645,6 +645,7 @@ def _activity_calendar_payload(item):
         "end_date": item.end_date,
         "description": item.description,
         "color": item.color,
+        "is_non_school_day": item.is_non_school_day,
         "created_at": item.created_at,
         "updated_at": item.updated_at,
     }
@@ -721,6 +722,10 @@ def _activity_calendar_items_from_request(request):
         color = str(item.get("color") or "#2563EB").strip()
         if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
             color = "#2563EB"
+        # Only meaningful with a concrete activity_date - a month/year-only
+        # placeholder has no single day for attendance_analytics.services
+        # .closed_dates to exclude, so the flag is simply ignored for those.
+        is_non_school_day = bool(item.get("is_non_school_day")) and activity_date is not None
         normalized.append(
             {
                 "month": month,
@@ -730,6 +735,7 @@ def _activity_calendar_items_from_request(request):
                 "end_date": end_date,
                 "description": str(item.get("description") or "").strip(),
                 "color": color,
+                "is_non_school_day": is_non_school_day,
             }
         )
     return normalized

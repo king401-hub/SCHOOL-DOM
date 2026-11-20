@@ -53,6 +53,7 @@ urlpatterns = [
     path('api/alumni/', include('alumni.urls')),
     path('api/attendance/', include('attendance.urls')),
     path('api/rfid/', include('rfid_attendance.urls')),
+    path('api/attendance-analytics/', include('attendance_analytics.urls')),
     path('api/facegate/', include('facegate.urls')),
     path('api/device-fleet/', include('device_fleet.urls')),
     path('api/app/license/', include('licensing.urls')),

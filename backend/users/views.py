@@ -593,6 +593,7 @@ def auth_school_payload(user):
             if getattr(school, "product", "full") == "schoolgate"
             else None
         ),
+        "attendance_analytics_scope": getattr(school, "attendance_analytics_scope", "both") or "both",
         "personal_quiz_enabled": school.is_feature_enabled("personal_quiz"),
         # False only for a Non K-12 school that switched grading off in School
         # Settings; the frontend hides letter grades and the grading scale.

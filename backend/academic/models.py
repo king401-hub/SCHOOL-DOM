@@ -268,6 +268,12 @@ class SchoolActivityCalendar(TenantAwareModel, TimeStampedModel):
     end_date = models.DateField(null=True, blank=True)
     description = models.TextField(blank=True)
     color = models.CharField(max_length=7, default="#2563EB")
+    # Lets an admin flag a specific dated entry (a public holiday, a school
+    # closure) as a non-school day, so attendance_analytics.services.closed_dates
+    # can exclude it from expected-working-days calculations. Only meaningful
+    # when activity_date is set - a month/year-only placeholder entry has no
+    # single concrete day to exclude.
+    is_non_school_day = models.BooleanField(default=False)
     created_by = models.ForeignKey(
         "users.User",
         on_delete=models.SET_NULL,

@@ -12257,6 +12257,7 @@ function AdminSettingsScreen({
     end_date: "",
     description: "",
     color: "#2563EB",
+    is_non_school_day: false,
   });
   const [activityToast, setActivityToast] = useState(null);
   const [pendingActivityRemoval, setPendingActivityRemoval] = useState(null);
@@ -12318,6 +12319,7 @@ function AdminSettingsScreen({
         end_date: (item.end_date || "").slice(0, 10),
         description: item.description || "",
         color: item.color || "#2563EB",
+        is_non_school_day: Boolean(item.is_non_school_day),
       }))
     );
   }, [data?.activity_calendar]);
@@ -12382,6 +12384,7 @@ function AdminSettingsScreen({
             end_date: item.end_date || null,
             description: item.description.trim(),
             color: item.color || "#2563EB",
+            is_non_school_day: Boolean(item.is_non_school_day),
           }))
       ),
     }),
@@ -12423,6 +12426,7 @@ function AdminSettingsScreen({
       end_date: activityDraft.end_date,
       description: activityDraft.description,
       color: activityDraft.color || "#2563EB",
+      is_non_school_day: Boolean(activityDraft.is_non_school_day) && Boolean(activityDraft.activity_date),
     };
     const nextCalendar = [...activityCalendar, nextActivity];
     setIsSaving(true);
@@ -12923,6 +12927,16 @@ onClick={() => handleThemeSelect("light")}
                             <label className="panel-field">
                               Color
                               <input type="color" value={activityDraft.color} onChange={(event) => setActivityDraft((current) => ({ ...current, color: event.target.value }))} disabled={!canEdit || isSaving} />
+                            </label>
+                            <label className="panel-field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(activityDraft.is_non_school_day)}
+                                onChange={(event) => setActivityDraft((current) => ({ ...current, is_non_school_day: event.target.checked }))}
+                                disabled={!canEdit || isSaving || !activityDraft.activity_date}
+                                style={{ width: "auto" }}
+                              />
+                              Exclude from attendance % (school closed this day)
                             </label>
                             <button type="button" className="table-action activity-calendar-add" onClick={addActivity} disabled={!canEdit || isSaving}>
                               {isSaving ? <><Spinner size={12} /> Adding...</> : "Add Activity"}
@@ -17494,12 +17508,531 @@ function AdminLicenseScreen({ data, loading, error, onRetry, onActivate, onPurch
   );
 }
 
+// ---------------------------------------------------------------------------
+// Attendance Analytics (Phase 1) - overview dashboard, daily analytics, and
+// individual staff/student profiles. No charting library exists in this
+// project yet, so DonutChart is a from-scratch SVG stroke-dasharray ring -
+// the one visual primitive every screen below reuses.
+// ---------------------------------------------------------------------------
+
+function DonutChart({ segments, total, size = 160, strokeWidth = 18, centerLabel, centerSubLabel, showLegend = true, onSegmentClick }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const sumValues = segments.reduce((acc, seg) => acc + (seg.value || 0), 0);
+  const effectiveTotal = total != null ? Math.max(total, sumValues) : sumValues;
+  const remainder = Math.max(0, effectiveTotal - sumValues);
+  const allSegments = remainder > 0
+    ? [...segments, { key: "__remainder", value: remainder, color: "#e2e8f0", label: "" }]
+    : segments;
+
+  let cumulativeFraction = 0;
+  const arcs = allSegments.map((seg) => {
+    const fraction = effectiveTotal > 0 ? seg.value / effectiveTotal : 0;
+    const dash = fraction * circumference;
+    const arc = { ...seg, dash, gap: circumference - dash, offset: -cumulativeFraction * circumference };
+    cumulativeFraction += fraction;
+    return arc;
+  });
+
+  return (
+    <div className="donut-chart-wrap">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={centerLabel ? `${centerLabel} ${centerSubLabel || ""}` : "Attendance chart"}>
+        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+          {arcs.map((arc) => (
+            <circle
+              key={arc.key}
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              fill="none"
+              stroke={arc.color}
+              strokeWidth={strokeWidth}
+              strokeDasharray={`${arc.dash} ${arc.gap}`}
+              strokeDashoffset={arc.offset}
+              style={arc.key !== "__remainder" && onSegmentClick ? { cursor: "pointer" } : undefined}
+              onClick={arc.key !== "__remainder" && onSegmentClick ? () => onSegmentClick(arc.key) : undefined}
+            />
+          ))}
+        </g>
+        {centerLabel ? (
+          <text x="50%" y={centerSubLabel ? "46%" : "52%"} textAnchor="middle" dominantBaseline="middle" style={{ fontSize: size * 0.16, fontWeight: 700, fill: "#0f172a" }}>
+            {centerLabel}
+          </text>
+        ) : null}
+        {centerSubLabel ? (
+          <text x="50%" y="62%" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: size * 0.08, fill: "#64748b" }}>
+            {centerSubLabel}
+          </text>
+        ) : null}
+      </svg>
+      {showLegend ? (
+        <ul className="donut-chart-legend">
+          {segments.map((seg) => (
+            <li key={seg.key}>
+              <span className="donut-chart-legend-swatch" style={{ background: seg.color }} />
+              {seg.label}: {seg.value}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+const ATTENDANCE_DONUT_COLORS = { onTime: "#4ADE80", late: "#FBBF24", absent: "#F87171", unresolved: "#CBD5E1" };
+
+function attendanceDonutSegments(stats) {
+  return [
+    { key: "present_on_time", value: stats.present_on_time || 0, color: ATTENDANCE_DONUT_COLORS.onTime, label: "On time" },
+    { key: "present_late", value: stats.present_late || 0, color: ATTENDANCE_DONUT_COLORS.late, label: "Late" },
+    { key: "total_absent", value: stats.total_absent || 0, color: ATTENDANCE_DONUT_COLORS.absent, label: "Absent" },
+    { key: "unresolved", value: stats.unresolved || 0, color: ATTENDANCE_DONUT_COLORS.unresolved, label: "Pending" },
+  ];
+}
+
+function PopulationOverviewCard({ title, stats, onDrilldown }) {
+  if (!stats) return null;
+  return (
+    <article className="app-panel attendance-analytics-population-card">
+      <div className="panel-head">
+        <h3>{title}</h3>
+        {stats.day_in_progress ? <span className="badge-pending">Day in progress</span> : null}
+      </div>
+      <DonutChart
+        segments={attendanceDonutSegments(stats)}
+        total={stats.total_registered}
+        centerLabel={`${stats.attendance_percent}%`}
+        centerSubLabel="present"
+        onSegmentClick={onDrilldown}
+      />
+      <div className="metric-grid">
+        <MetricCard label="Registered" value={stats.total_registered} onClick={onDrilldown ? () => onDrilldown(null) : undefined} />
+        <MetricCard label="Present" value={stats.total_present} onClick={onDrilldown ? () => onDrilldown(null) : undefined} />
+        <MetricCard label="Absent" value={stats.total_absent} onClick={onDrilldown ? () => onDrilldown("absent") : undefined} />
+        <MetricCard label="Late arrivals" value={stats.late_arrivals ?? stats.present_late ?? 0} onClick={onDrilldown ? () => onDrilldown("late") : undefined} />
+        {stats.early_departures != null ? <MetricCard label="Early departures" value={stats.early_departures} /> : null}
+        {stats.not_yet_clocked_out != null ? <MetricCard label="Not yet clocked out" value={stats.not_yet_clocked_out} /> : null}
+        {stats.total_hours != null ? <MetricCard label="Total hours" value={stats.total_hours} /> : null}
+        {stats.average_hours_per_person != null ? <MetricCard label="Avg hours/person" value={stats.average_hours_per_person} /> : null}
+        {stats.average_arrival_time ? <MetricCard label="Avg arrival" value={stats.average_arrival_time} /> : null}
+        {stats.average_departure_time ? <MetricCard label="Avg departure" value={stats.average_departure_time} /> : null}
+      </div>
+      {stats.hours_and_lateness_cover_teachers_only ? (
+        <p className="panel-empty">Hours/lateness figures reflect teaching staff only - non-teaching staff attendance is manually marked with no clock data to derive them from.</p>
+      ) : null}
+    </article>
+  );
+}
+
+function AttendanceAnalyticsOverviewScreen({ session }) {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [drilldown, setDrilldown] = useState(null); // {population, status} | null
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    (async () => {
+      try {
+        const result = await requestJson(session, "GET", `/api/attendance-analytics/overview/?date=${date}`);
+        if (!cancelled) setData(result);
+      } catch (err) {
+        if (!cancelled) setError(err.message || "Could not load attendance overview.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, date]);
+
+  return (
+    <section className="screen-grid">
+      <div className="screen-hero">
+        <div className="screen-hero-title-row">
+          <h2>Attendance Analytics</h2>
+          <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="attendance-analytics-date-input" />
+        </div>
+        <p>How many people reported to school today, and how attendance is performing.</p>
+      </div>
+
+      <ScreenState loading={loading && !data} error={error} onRetry={() => setDate((d) => d)} />
+
+      {data ? (
+        <div className="attendance-analytics-population-grid">
+          {data.staff ? (
+            <PopulationOverviewCard
+              title="Staff Attendance"
+              stats={data.staff}
+              onDrilldown={(status) => setDrilldown({ population: "staff", status })}
+            />
+          ) : null}
+          {data.students ? (
+            <PopulationOverviewCard
+              title="Student Attendance"
+              stats={data.students}
+              onDrilldown={(status) => setDrilldown({ population: "student", status })}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {drilldown ? (
+        <AttendanceAnalyticsDrilldownPanel
+          session={session}
+          population={drilldown.population}
+          status={drilldown.status}
+          date={date}
+          onClose={() => setDrilldown(null)}
+          onViewProfile={(id) => setDrilldown(null)}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function AttendanceAnalyticsDrilldownPanel({ session, population, status, date, onClose, onViewProfile }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [profileTarget, setProfileTarget] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    (async () => {
+      try {
+        const params = new URLSearchParams({ population, date });
+        if (status) params.set("status", status);
+        const result = await requestJson(session, "GET", `/api/attendance-analytics/daily/register/?${params.toString()}`);
+        if (!cancelled) setData(result);
+      } catch (err) {
+        if (!cancelled) setError(err.message || "Could not load attendance records.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, population, status, date]);
+
+  if (profileTarget) {
+    return population === "student"
+      ? <StudentAttendanceProfile session={session} studentId={profileTarget.split(":")[1]} onBack={() => setProfileTarget(null)} />
+      : <StaffAttendanceProfile session={session} personId={profileTarget} onBack={() => setProfileTarget(null)} />;
+  }
+
+  return (
+    <article className="app-panel">
+      <div className="panel-head">
+        <h3>{status ? `${status[0].toUpperCase()}${status.slice(1)} records` : "All records"} - {date}</h3>
+        <button type="button" className="table-action" onClick={onClose}>Close</button>
+      </div>
+      <ScreenState loading={loading} error={error} />
+      {data ? <AttendanceRegisterTable rows={data.results} onViewProfile={setProfileTarget} /> : null}
+    </article>
+  );
+}
+
+function AttendanceRegisterTable({ rows, onViewProfile }) {
+  if (!rows || !rows.length) {
+    return <p className="panel-empty">No records for this selection.</p>;
+  }
+  return (
+    <div className="table-scroll">
+      <table className="admin-table">
+        <thead>
+          <tr>
+            <th>Name</th><th>ID</th><th>Class / Dept</th><th>First arrival</th><th>Last departure</th><th>Hours</th><th>Status</th><th />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td>{row.name}</td>
+              <td>{row.identifier}</td>
+              <td>{row.group_label}</td>
+              <td>{row.first_arrival || "-"}</td>
+              <td>{row.last_departure || "-"}</td>
+              <td>{row.total_hours != null ? row.total_hours : "-"}</td>
+              <td><span className={`badge-status tone-${row.status}`}>{row.status}</span></td>
+              <td>
+                <button type="button" className="table-action" onClick={() => onViewProfile(row.id)}>View Profile</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AttendanceAnalyticsDailyScreen({ session }) {
+  const [population, setPopulation] = useState(session?.school?.attendance_analytics_scope === "staff_only" ? "staff" : "student");
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [summary, setSummary] = useState(null);
+  const [register, setRegister] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [profileTarget, setProfileTarget] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    (async () => {
+      try {
+        const [summaryResult, registerResult] = await Promise.all([
+          requestJson(session, "GET", `/api/attendance-analytics/daily/?population=${population}&date=${date}`),
+          requestJson(session, "GET", `/api/attendance-analytics/daily/register/?${new URLSearchParams({ population, date, status: statusFilter, page }).toString()}`),
+        ]);
+        if (cancelled) return;
+        setSummary(summaryResult);
+        setRegister(registerResult);
+      } catch (err) {
+        if (!cancelled) setError(err.message || "Could not load daily analytics.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, population, date, statusFilter, page]);
+
+  if (profileTarget) {
+    return population === "student"
+      ? <StudentAttendanceProfile session={session} studentId={profileTarget.split(":")[1]} onBack={() => setProfileTarget(null)} />
+      : <StaffAttendanceProfile session={session} personId={profileTarget} onBack={() => setProfileTarget(null)} />;
+  }
+
+  const scope = session?.school?.attendance_analytics_scope || "both";
+
+  return (
+    <section className="screen-grid">
+      <div className="screen-hero">
+        <h2>Daily Attendance Analytics</h2>
+        <p>Who was present, late, or absent on a given day.</p>
+      </div>
+
+      <div className="attendance-analytics-filter-row">
+        {scope === "both" ? (
+          <div className="segmented-toggle">
+            <button type="button" className={population === "student" ? "active" : ""} onClick={() => { setPopulation("student"); setPage(1); }}>Students</button>
+            <button type="button" className={population === "staff" ? "active" : ""} onClick={() => { setPopulation("staff"); setPage(1); }}>Staff</button>
+          </div>
+        ) : null}
+        <input type="date" value={date} onChange={(event) => { setDate(event.target.value); setPage(1); }} />
+        <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}>
+          <option value="">All statuses</option>
+          <option value="present">Present</option>
+          <option value="absent">Absent</option>
+          <option value="in_progress">In progress</option>
+        </select>
+      </div>
+
+      <ScreenState loading={loading && !summary} error={error} />
+
+      {summary ? (
+        <>
+          <div className="metric-grid">
+            <MetricCard label="Registered" value={summary.summary.total_registered} />
+            <MetricCard label="Present" value={summary.summary.total_present} />
+            <MetricCard label="Absent" value={summary.summary.total_absent} />
+            <MetricCard label="Attendance %" value={`${summary.summary.attendance_percent}%`} />
+          </div>
+          <article className="app-panel">
+            <DonutChart segments={attendanceDonutSegments(summary.donut)} total={summary.summary.total_registered} centerLabel={`${summary.summary.attendance_percent}%`} />
+          </article>
+          {summary.histogram && summary.histogram.length ? (
+            <article className="app-panel">
+              <h3>Arrival times</h3>
+              <div className="attendance-analytics-histogram">
+                {summary.histogram.map((bucket) => (
+                  <div key={bucket.bucket_start} className="attendance-analytics-histogram-bar">
+                    <div className="attendance-analytics-histogram-bar-fill" style={{ height: `${Math.min(100, bucket.count * 12)}px` }} />
+                    <small>{bucket.bucket_start}</small>
+                    <b>{bucket.count}</b>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ) : null}
+        </>
+      ) : null}
+
+      {register ? (
+        <article className="app-panel">
+          <AttendanceRegisterTable rows={register.results} onViewProfile={setProfileTarget} />
+          <div className="table-pagination">
+            <button type="button" className="table-action" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button>
+            <span>Page {register.page}</span>
+            <button type="button" className="table-action" disabled={register.results.length < register.page_size} onClick={() => setPage((p) => p + 1)}>Next</button>
+          </div>
+        </article>
+      ) : null}
+    </section>
+  );
+}
+
+function AttendancePeriodStatsGrid({ stats }) {
+  return (
+    <div className="metric-grid">
+      <MetricCard label="Days present" value={stats.days_present} />
+      <MetricCard label="Days absent" value={stats.days_absent} />
+      <MetricCard label="Expected days" value={stats.expected_working_days} />
+      {stats.late_arrivals != null ? <MetricCard label="Late arrivals" value={stats.late_arrivals} /> : null}
+      {stats.early_departures != null ? <MetricCard label="Early departures" value={stats.early_departures} /> : null}
+      {stats.total_hours != null ? <MetricCard label="Total hours" value={stats.total_hours} /> : null}
+      {stats.average_hours_per_day != null ? <MetricCard label="Avg hours/day" value={stats.average_hours_per_day} /> : null}
+      {stats.average_arrival_time ? <MetricCard label="Avg arrival" value={stats.average_arrival_time} /> : null}
+      {stats.average_departure_time ? <MetricCard label="Avg departure" value={stats.average_departure_time} /> : null}
+    </div>
+  );
+}
+
+const ATTENDANCE_PERIOD_OPTIONS = [["daily", "Today"], ["weekly", "This week"], ["monthly", "This month"], ["termly", "This term"]];
+
+function StaffAttendanceProfile({ session, personId, onBack }) {
+  const [period, setPeriod] = useState("termly");
+  const [profile, setProfile] = useState(null);
+  const [history, setHistory] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    (async () => {
+      try {
+        const [profileResult, historyResult] = await Promise.all([
+          requestJson(session, "GET", `/api/attendance-analytics/staff/${personId}/?period=${period}`),
+          requestJson(session, "GET", `/api/attendance-analytics/staff/${personId}/history/?period=${period}`),
+        ]);
+        if (cancelled) return;
+        setProfile(profileResult);
+        setHistory(historyResult);
+      } catch (err) {
+        if (!cancelled) setError(err.message || "Could not load this staff member's attendance.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, personId, period]);
+
+  return (
+    <section className="screen-grid">
+      <div className="screen-hero">
+        <button type="button" className="table-action" onClick={onBack}>&larr; Back</button>
+        <h2>{profile?.person?.name || "Staff Attendance"}</h2>
+        {profile ? (
+          <p>
+            {profile.person.designation || "Staff"}
+            {profile.person.department ? ` - ${profile.person.department}` : ""}
+            {profile.kind === "non_teaching" ? " (manually marked attendance)" : ""}
+          </p>
+        ) : null}
+      </div>
+      <div className="segmented-toggle">
+        {ATTENDANCE_PERIOD_OPTIONS.map(([value, label]) => (
+          <button key={value} type="button" className={period === value ? "active" : ""} onClick={() => setPeriod(value)}>{label}</button>
+        ))}
+      </div>
+      <ScreenState loading={loading && !profile} error={error} />
+      {profile ? (
+        <>
+          <article className="app-panel">
+            <DonutChart
+              segments={[{ key: "present", value: profile.stats.days_present, color: ATTENDANCE_DONUT_COLORS.onTime, label: "Present" }]}
+              total={profile.stats.expected_working_days}
+              centerLabel={`${profile.stats.attendance_percent}%`}
+              centerSubLabel="attendance"
+              showLegend={false}
+            />
+          </article>
+          <AttendancePeriodStatsGrid stats={profile.stats} />
+        </>
+      ) : null}
+      {history ? <article className="app-panel"><AttendanceRegisterTable rows={history.results.map((r) => ({ ...r, name: r.date, identifier: "" }))} onViewProfile={() => {}} /></article> : null}
+    </section>
+  );
+}
+
+function StudentAttendanceProfile({ session, studentId, onBack }) {
+  const [period, setPeriod] = useState("termly");
+  const [profile, setProfile] = useState(null);
+  const [history, setHistory] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    (async () => {
+      try {
+        const [profileResult, historyResult] = await Promise.all([
+          requestJson(session, "GET", `/api/attendance-analytics/students/${studentId}/?period=${period}`),
+          requestJson(session, "GET", `/api/attendance-analytics/students/${studentId}/history/?period=${period}`),
+        ]);
+        if (cancelled) return;
+        setProfile(profileResult);
+        setHistory(historyResult);
+      } catch (err) {
+        if (!cancelled) setError(err.message || "Could not load this student's attendance.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, studentId, period]);
+
+  return (
+    <section className="screen-grid">
+      <div className="screen-hero">
+        <button type="button" className="table-action" onClick={onBack}>&larr; Back</button>
+        <h2>{profile?.person?.name || "Student Attendance"}</h2>
+        {profile ? <p>{profile.person.class_name} {profile.person.arm} - {profile.person.admission_number}</p> : null}
+      </div>
+      <div className="segmented-toggle">
+        {ATTENDANCE_PERIOD_OPTIONS.map(([value, label]) => (
+          <button key={value} type="button" className={period === value ? "active" : ""} onClick={() => setPeriod(value)}>{label}</button>
+        ))}
+      </div>
+      <ScreenState loading={loading && !profile} error={error} />
+      {profile ? (
+        <>
+          <article className="app-panel">
+            <DonutChart
+              segments={[{ key: "present", value: profile.stats.days_present, color: ATTENDANCE_DONUT_COLORS.onTime, label: "Present" }]}
+              total={profile.stats.expected_working_days}
+              centerLabel={`${profile.stats.attendance_percent}%`}
+              centerSubLabel="attendance"
+              showLegend={false}
+            />
+          </article>
+          <AttendancePeriodStatsGrid stats={profile.stats} />
+        </>
+      ) : null}
+      {history ? <article className="app-panel"><AttendanceRegisterTable rows={history.results.map((r) => ({ ...r, name: r.date, identifier: "" }))} onViewProfile={() => {}} /></article> : null}
+    </section>
+  );
+}
+
 export {
   TermTransitionPopup,
   PhoneVerificationBanner,
   BranchSwitcher,
   AdminDashboardScreen,
   AdminPerformanceHeatmapScreen,
+  AttendanceAnalyticsOverviewScreen,
+  AttendanceAnalyticsDailyScreen,
+  StaffAttendanceProfile,
+  StudentAttendanceProfile,
   AdminFinanceScreen,
   AdminExamResultsScreen,
   AdminTimetablesScreen,
