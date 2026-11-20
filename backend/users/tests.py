@@ -860,6 +860,27 @@ class EnrollmentsAPITests(TestCase):
         self.assertGreaterEqual(len(response.data["recent_students"]), 1)
         self.assertIn("profile_picture", response.data["recent_students"][0])
 
+    def test_dashboard_snapshot_warns_on_a_low_or_dry_sms_wallet(self):
+        from finance.services import get_or_create_sms_wallet
+
+        wallet = get_or_create_sms_wallet(self.school)  # starts at 100, well above the default threshold
+
+        response = self.client.get("/api/app/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(any(a["type"].startswith("sms_wallet_") for a in response.data["alerts"]))
+
+        wallet.balance = 30
+        wallet.save(update_fields=["balance", "updated_at"])
+        response = self.client.get("/api/app/dashboard/")
+        low_alerts = [a for a in response.data["alerts"] if a["type"] == "sms_wallet_low"]
+        self.assertEqual(len(low_alerts), 1)
+
+        wallet.balance = 0
+        wallet.save(update_fields=["balance", "updated_at"])
+        response = self.client.get("/api/app/dashboard/")
+        dry_alerts = [a for a in response.data["alerts"] if a["type"] == "sms_wallet_dry"]
+        self.assertEqual(len(dry_alerts), 1)
+
     def test_messages_snapshot_includes_recipient_directory(self):
         teacher_user = User.objects.create_user(
             email="teacher.msg@smoke.edu",

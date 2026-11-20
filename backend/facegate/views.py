@@ -44,6 +44,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from finance.services import sms_wallet_is_dry
 from users.app_views import _can_manage_school_settings, _resolve_school_tenant_for_user
 from users.models import StudentProfile
 
@@ -205,6 +206,18 @@ def _handle_sendlog(request):
         response['count'] = count
     if 'logindex' in request.data:
         response['logindex'] = request.data['logindex']
+
+    # access/message are only acted on by the terminal "When AI face is set
+    # to Servermode" per the protocol doc - harmless to include otherwise,
+    # since a device not in that mode just ignores them. Not yet verified
+    # against real hardware (no pilot unit reachable), but worth sending on
+    # the same no-risk-if-ignored reasoning as every other best-effort field
+    # in this app - see rfid_attendance's identical dry-wallet gate for the
+    # policy this mirrors.
+    if not (device.tenant.is_schoolgate and device.tenant.subscription_tier == 'premium') and sms_wallet_is_dry(device.tenant):
+        response['access'] = 0
+        response['message'] = 'SMS wallet empty - ask your school admin to top up to resume attendance.'
+
     return Response(response)
 
 

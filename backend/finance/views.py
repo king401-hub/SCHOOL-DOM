@@ -172,6 +172,7 @@ from finance.services import (
     SMS_UNIT_BLOCK_SIZE,
     SMS_UNIT_BLOCK_PRICE,
     SMS_UNIT_CURRENCY,
+    SMS_CREDITS_PER_MESSAGE,
     create_receipt_link,
     send_wallet_sms,
     send_payslip_email,
@@ -5258,6 +5259,8 @@ def sms_wallet_overview(request):
             "balance": wallet.balance,
             "low_balance_threshold": wallet.low_balance_threshold,
             "is_locked": wallet.is_locked,
+            "is_low_balance": wallet.balance <= wallet.low_balance_threshold,
+            "is_dry": wallet.balance < SMS_CREDITS_PER_MESSAGE,
         },
         "unit_pricing": {
             "block_size": SMS_UNIT_BLOCK_SIZE,

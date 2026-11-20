@@ -354,6 +354,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
             ScanOutcome.GOODBYE -> Triple("Goodbye!", 0xFF60A5FA.toInt(), "✓")
             ScanOutcome.INVALID -> Triple("Card Not Recognized", 0xFFF87171.toInt(), "✕")
             ScanOutcome.DUPLICATE -> Triple("Already Recorded", 0xFFFBBF24.toInt(), "⚠")
+            ScanOutcome.WALLET_DRY -> Triple("SMS Wallet Empty", 0xFFF87171.toInt(), "⚠")
             ScanOutcome.ERROR -> Triple("Something Went Wrong", 0xFFF87171.toInt(), "✕")
         }
         resultTitle.text = title
@@ -417,6 +418,7 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
             ScanOutcome.GOODBYE -> "Goodbye."
             ScanOutcome.INVALID -> "This card is not registered."
             ScanOutcome.DUPLICATE -> "Attendance has already been recorded."
+            ScanOutcome.WALLET_DRY -> "This school's SMS wallet is empty. Attendance is paused."
             ScanOutcome.ERROR -> "Unable to record attendance. Please try again."
         }
         tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, null)
@@ -459,6 +461,9 @@ class KioskHomeActivity : Activity(), NfcAdapter.ReaderCallback {
         val displayMs = when {
             hasFees -> 15_000L
             result.outcome == ScanOutcome.INVALID -> 12_000L
+            // Staff standing at the gate need time to actually read this and
+            // go tell the school admin, not a 6s flash - this isn't a retry.
+            result.outcome == ScanOutcome.WALLET_DRY -> 12_000L
             else -> 6_000L
         }
         val runnable = Runnable {

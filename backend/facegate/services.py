@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from django.db import transaction
 from django.utils import timezone
 
+from finance.services import sms_wallet_is_dry
 from rfid_attendance.services import _legacy_tenant_for_attendance
 from users.app_views import AttendanceClockError, _record_attendance_clock
 
@@ -135,7 +136,8 @@ def record_checkin(device, enrollment, occurred_at):
 
     Returns True if a new attendance event was actually recorded, False if
     this was a replay of an already-processed `sendlog` entry (see
-    FaceGateEnrollment.last_note_time) or the person isn't a student.
+    FaceGateEnrollment.last_note_time), the person isn't a student, or the
+    school's SMS wallet is dry (see finance.services.sms_wallet_is_dry).
     Never raises - a clock-ordering conflict (e.g. "already clocked out
     today") is swallowed rather than surfaced, since the device has no use
     for an error and the protocol has no per-record failure reply anyway
@@ -162,6 +164,13 @@ def record_checkin(device, enrollment, occurred_at):
     gate_settings = get_or_create_gate_settings(school)
     event = gate_settings.classify_event(occurred_at.time())
     if event == 'too_early':
+        return False
+
+    # Same deliberate exception to "billing never blocks the thing itself"
+    # that rfid_attendance._record_student_scan makes (see
+    # finance.services.sms_wallet_is_dry) - a premium SchoolGate school
+    # never draws from this wallet for gate texts at all, so it's exempt.
+    if not (school.is_schoolgate and school.subscription_tier == 'premium') and sms_wallet_is_dry(school):
         return False
 
     tenant_obj = _legacy_tenant_for_attendance(school)

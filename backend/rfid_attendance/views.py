@@ -33,7 +33,7 @@ from attendance.models import TeacherAttendance
 from attendance.views import _apply_clock_out, get_client_ip
 from core.models import SchoolTenant
 from core.schoolgate import require_full_product
-from finance.services import fee_totals_by_student
+from finance.services import fee_totals_by_student, sms_wallet_is_dry
 from users.models import StudentProfile, User
 from users.app_views import (
     AttendanceClockError,
@@ -652,7 +652,27 @@ def _too_early_response(gate_settings):
     return _bad_request(f"Clock-in opens at {opens_at}. Try again then.")
 
 
+def _sms_wallet_dry_response():
+    # The word "wallet" is deliberate and load-bearing - ScanHandler.kt's
+    # Kotlin side matches on it (looksLikeWalletDry) to show a dedicated
+    # "SMS Wallet Empty" screen instead of the generic error one, the same
+    # text-heuristic pattern _too_early_response's own docstring explains.
+    return _bad_request(
+        "Attendance is paused - this school's SMS wallet is empty. "
+        "Ask your school admin to top up SMS credits to resume."
+    )
+
+
 def _record_student_scan(request, school, student, card_uid, idempotency_key):
+    # A dry wallet blocks the scan itself (not just the SMS) for every
+    # school that would otherwise bill this text to its own wallet - see
+    # finance.services.sms_wallet_is_dry's docstring for why this is a
+    # deliberate exception to this codebase's usual "billing never blocks
+    # the thing itself" rule. A premium SchoolGate school never draws from
+    # this wallet for gate texts at all (see _send_gate_sms), so it's exempt.
+    if not (school.is_schoolgate and school.subscription_tier == "premium") and sms_wallet_is_dry(school):
+        return _sms_wallet_dry_response()
+
     scanned_at = _parse_scanned_at(request)
     today = _school_localtime(school, scanned_at).date()
     gate_settings = get_or_create_gate_settings(school)

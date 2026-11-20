@@ -9,7 +9,7 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
 
-enum class ScanOutcome { WELCOME, GOODBYE, INVALID, DUPLICATE, ERROR }
+enum class ScanOutcome { WELCOME, GOODBYE, INVALID, DUPLICATE, ERROR, WALLET_DRY }
 
 data class ScanResult(val outcome: ScanOutcome, val message: String?, val data: JSONObject?)
 
@@ -38,6 +38,12 @@ object ScanHandler {
     private fun looksLikeAlreadyHandled(message: String): Boolean {
         val m = message.lowercase()
         return "already" in m || "wait" in m || "recently" in m
+    }
+
+    // Matches _sms_wallet_dry_response's backend message - "wallet" never
+    // appears in any other scan-flow error text, so this is unambiguous.
+    private fun looksLikeWalletDry(message: String): Boolean {
+        return "wallet" in message.lowercase()
     }
 
     private fun formatTime(millis: Long): String {
@@ -109,6 +115,7 @@ object ScanHandler {
             } catch (e: ApiException) {
                 val outcome = when {
                     e.statusCode == 404 -> ScanOutcome.INVALID
+                    e.statusCode == 400 && looksLikeWalletDry(e.message ?: "") -> ScanOutcome.WALLET_DRY
                     e.statusCode == 400 && looksLikeAlreadyHandled(e.message ?: "") -> ScanOutcome.DUPLICATE
                     else -> ScanOutcome.ERROR
                 }

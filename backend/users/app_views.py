@@ -4089,6 +4089,27 @@ def dashboard_snapshot(request):
     except Exception:
         pass
 
+    try:
+        from finance.services import get_or_create_sms_wallet, SMS_CREDITS_PER_MESSAGE
+        sms_wallet = get_or_create_sms_wallet(user.tenant)
+        if sms_wallet.balance < SMS_CREDITS_PER_MESSAGE:
+            alerts.append({
+                "type": "sms_wallet_dry",
+                "title": "SMS wallet empty",
+                "message": (
+                    "Your SMS wallet is empty - gate/kiosk attendance scans that rely on it "
+                    "will be refused until you top up."
+                ),
+            })
+        elif sms_wallet.balance <= sms_wallet.low_balance_threshold:
+            alerts.append({
+                "type": "sms_wallet_low",
+                "title": "SMS wallet running low",
+                "message": f"Your SMS wallet has {sms_wallet.balance} credit(s) left. Top up soon to avoid interrupted attendance alerts.",
+            })
+    except Exception:
+        pass
+
     term_transition = None
     if user.role in ADMIN_ROLES:
         # No confirmed Celery worker in production runs the nightly sweep

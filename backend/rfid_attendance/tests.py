@@ -339,6 +339,44 @@ class SchoolGateSmsProviderTests(TestCase):
         self.assertEqual(wallet.balance, 10)
         self.assertFalse(SmsMessageLog.objects.filter(category=SmsMessageLog.ATTENDANCE).exists())
 
+    def test_a_dry_wallet_blocks_the_scan_itself_not_just_the_sms(self):
+        from academic.models import AttendanceRecord
+        from finance.services import get_or_create_sms_wallet
+
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 0
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        resp = self.client.post(
+            "/api/rfid/attendance/scan/",
+            {"card_uid": "9999", "idempotency_key": "gate-dry-wallet-1"},
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("wallet", resp.data["message"].lower())
+        self.assertFalse(AttendanceRecord.objects.filter(student=self.student_user).exists())
+
+    def test_a_premium_schoolgate_school_is_exempt_from_the_dry_wallet_block(self):
+        from finance.services import get_or_create_sms_wallet
+
+        self.school.product = SchoolTenant.PRODUCT_SCHOOLGATE
+        self.school.subscription_tier = "premium"
+        self.school.save(update_fields=["product", "subscription_tier"])
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 0
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        with patch("rfid_attendance.views.require_full_product", return_value=None), \
+                patch("rfid_attendance.views.threading.Thread"):
+            resp = self.client.post(
+                "/api/rfid/attendance/scan/",
+                {"card_uid": "9999", "idempotency_key": "gate-dry-wallet-premium-1"},
+                format="json",
+            )
+
+        self.assertEqual(resp.status_code, 201)
+
     def test_fee_reminder_button_dispatches_via_kudisms(self):
         admin = User.objects.create_user(
             email="admin@gatesms.test", password="testpass123", role="school_admin", tenant=self.school,

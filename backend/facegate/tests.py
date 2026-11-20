@@ -401,6 +401,38 @@ class FaceGateCheckinTests(TestCase):
         self.assertEqual(wallet.balance, 10)
         self.assertFalse(SmsMessageLog.objects.filter(category=SmsMessageLog.ATTENDANCE).exists())
 
+    def test_a_dry_wallet_blocks_the_tap_and_flags_access_denied_for_servermode(self):
+        from finance.services import get_or_create_sms_wallet
+
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 0
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        resp = self._sendlog("2026-01-15 08:00:00")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data["result"])  # sendlog itself still acks - no per-record failure in this protocol
+        self.assertEqual(resp.data.get("access"), 0)
+        self.assertIn("wallet", resp.data.get("message", "").lower())
+        self.assertFalse(AttendanceRecord.objects.filter(student=self.student).exists())
+
+    def test_a_premium_schoolgate_school_is_exempt_from_the_dry_wallet_block(self):
+        from finance.services import get_or_create_sms_wallet
+
+        self.school.product = SchoolTenant.PRODUCT_SCHOOLGATE
+        self.school.subscription_tier = "premium"
+        self.school.save(update_fields=["product", "subscription_tier"])
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 0
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        with patch("rfid_attendance.views.threading.Thread"):
+            resp = self._sendlog("2026-01-15 08:00:00")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("access", resp.data)
+        self.assertTrue(AttendanceRecord.objects.filter(student=self.student).exists())
+
     def test_a_tap_for_an_unknown_enrollid_is_ignored(self):
         resp = self._sendlog("2026-01-15 08:00:00", enrollid=99999)
         self.assertEqual(resp.status_code, 200)

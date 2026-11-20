@@ -3191,6 +3191,21 @@ def get_or_create_sms_wallet(tenant) -> SmsWallet:
     return wallet
 
 
+def sms_wallet_is_dry(tenant) -> bool:
+    """True once a school's own SMS wallet can no longer afford even one
+    more message. A deliberate carve-out from this codebase's usual "never
+    let billing block the thing itself" rule (see send_wallet_sms's own
+    callers, which just let the SMS silently not go out): for a gate/kiosk
+    attendance scan specifically, the product decision is that a dry
+    wallet should refuse the scan outright and say so on the terminal,
+    rather than recording attendance while the parent notification quietly
+    stops arriving with nobody noticing. Callers are responsible for
+    exempting whatever doesn't draw from this wallet at all (e.g. a
+    premium SchoolGate school's free-via-KudiSMS gate texts)."""
+    wallet = get_or_create_sms_wallet(tenant)
+    return wallet.balance < SMS_CREDITS_PER_MESSAGE
+
+
 def initialize_sms_credit_purchase(tenant, units: int, actor) -> dict:
     """Start a Paystack-funded SMS credit purchase. Credits are sold in fixed blocks of
     SMS_UNIT_BLOCK_SIZE at SMS_UNIT_BLOCK_PRICE each - no partial blocks, no per-school

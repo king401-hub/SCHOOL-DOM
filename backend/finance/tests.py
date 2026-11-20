@@ -1405,6 +1405,16 @@ class SmsWalletTests(TestCase):
         self.assertEqual(wallet_b.balance, 250)  # unchanged - welcome credit only applies once
         self.assertEqual(SmsWalletTransaction.objects.filter(wallet=wallet_a, tx_type=SmsWalletTransaction.ADMIN_CREDIT).count(), 1)
 
+    def test_sms_wallet_is_dry_reflects_whether_one_more_message_is_affordable(self):
+        from finance.services import sms_wallet_is_dry
+
+        wallet = get_or_create_sms_wallet(self.school)  # starts at 100 (welcome credit)
+        self.assertFalse(sms_wallet_is_dry(self.school))
+
+        wallet.balance = 0
+        wallet.save(update_fields=["balance", "updated_at"])
+        self.assertTrue(sms_wallet_is_dry(self.school))
+
     def test_initialize_purchase_rejects_units_not_a_multiple_of_100(self):
         with self.assertRaises(ValueError):
             initialize_sms_credit_purchase(self.school, 150, self.admin)
@@ -1953,6 +1963,25 @@ class SmsWalletHistoryApiTests(TestCase):
             self.assertNotIn("reference", row)
         created_dates = [row["created_at"] for row in rows]
         self.assertEqual(created_dates, sorted(created_dates, reverse=True))
+
+    def test_overview_flags_low_balance_and_dry_separately(self):
+        wallet = get_or_create_sms_wallet(self.school)  # starts at 100, threshold defaults to 50
+
+        response = self.client.get("/api/finance/admin/sms-wallet/")
+        self.assertFalse(response.data["wallet"]["is_low_balance"])
+        self.assertFalse(response.data["wallet"]["is_dry"])
+
+        wallet.balance = 30
+        wallet.save(update_fields=["balance", "updated_at"])
+        response = self.client.get("/api/finance/admin/sms-wallet/")
+        self.assertTrue(response.data["wallet"]["is_low_balance"])
+        self.assertFalse(response.data["wallet"]["is_dry"])
+
+        wallet.balance = 0
+        wallet.save(update_fields=["balance", "updated_at"])
+        response = self.client.get("/api/finance/admin/sms-wallet/")
+        self.assertTrue(response.data["wallet"]["is_low_balance"])
+        self.assertTrue(response.data["wallet"]["is_dry"])
 
     def test_transaction_history_paginates_filters_and_hides_reference(self):
         wallet = get_or_create_sms_wallet(self.school)
