@@ -93,10 +93,11 @@ second guardian phone or own phone, which gives the school(s) and child(ren).
 
 | Topic | Words / button | Source |
 |---|---|---|
-| Fees | `Fee balance`, balance, bal, fee, fees | `outstanding_amount_for_student` |
+| Fees | balance, bal, fee, fees | `outstanding_amount_for_student`: the quick balance, with where to pay |
+| Statement | `Fee statement` button, statement | the child's full record for the **current term** (`_parent_statement_lines`): each fee billed / paid / left (earlier-term arrears included and marked), total billed and paid, authorised waivers, amount outstanding, the term's payment records (date, amount, method, reference), then where to pay. Same arithmetic as the admin statement; a fee already rolled into a later arrears fee (`closed_at`) is left out. Text only, no links; RECEIPT gives receipt links |
 | Attendance | `Attendance` | `academic.AttendanceRecord`, last 30 days, counts per status |
-| Results | `Results`, result, report | newest term with **published** scores, via `_student_result_report` (average and class position) |
-| Receipts | receipt, receipts, payment, payments (typed only; the menu template has three buttons) | each child's last five successful payments: date, amount, what for, reference. Recorded payments (`BankPayment`: cash, POS, cheque, bank transfer) carry the official `/r/<code>` receipt link (the one already sent by SMS/email, reused and saved on the payment); wallet debits and split/virtual-account allocations have no receipt page and are text only. Fee replies still carry no links. Sending the receipt as an image is not built: it needs a rendered image and Bahasha's media endpoint, whose docs were not read |
+| Results | `Results` / `Report card` buttons, result, report | newest term with **published** scores, via `_student_result_report` (average and class position), plus the child's **report card link** (`/r/<code>`, the same public page the report-card SMS opens, built by `users.app_views._report_card_link_data`). With `WHATSAPP_REPORT_CARD_PDF=true` the PDF follows as a WhatsApp document (see "Report card PDF") |
+| Receipts | `Receipt` button, receipt, receipts, payment, payments | each child's last five successful payments: date, amount, what for, reference. Recorded payments (`BankPayment`: cash, POS, cheque, bank transfer) carry the official `/r/<code>` receipt link (the one already sent by SMS/email, reused and saved on the payment); wallet debits and split/virtual-account allocations have no receipt page and are text only. Fee replies still carry no links. Sending the receipt as an image is not built: it needs a rendered image and Bahasha's media endpoint, whose docs were not read |
 | Contact | help, contact, school | each school's phone and email |
 | (ignored) | stop | no reply |
 
@@ -128,16 +129,26 @@ number. Add codes there as schools use other banks.
 
 ### Create the menu template in Bahasha
 
-WhatsApp allows at most **three** quick-reply buttons per template (WhatsApp's
-limit, not stated in Bahasha's docs; confirm it), so Contact has no button: every
-reply ends with the school contact line and typing "help" returns it.
+Bahasha's form allows up to 10 buttons per template. WhatsApp shows the first three
+as buttons and puts four or more behind a "See all options" list. Button taps are
+matched by title (`parent_topic_from_message`), so use these titles:
+
+| Button title | Topic |
+|---|---|
+| `Fee statement` | the full term statement |
+| `Attendance` | attendance, last 30 days |
+| `Receipt` | recent payments with receipt links |
+| `Report card` or `Results` | results, with the report card link (and PDF if enabled) |
+| `Talk to the school` (optional) | school contacts |
+
+Typing `help` also returns the contacts, and every reply ends with the school line.
 
 - Name: `schooldom_parent_menu` (any name; put it in `BAHASHA_MENU_TEMPLATE`)
 - Language: `en_US` (or set `BAHASHA_MENU_TEMPLATE_LANGUAGE`)
 - Category: Utility
 - Body: `Hello! What would you like to see about your child at school?`
-- Buttons, type **Quick reply**, titles exactly: `Fee balance`, `Attendance`, `Results`
-- No variables (the code sends none)
+- Buttons, type **Quick reply**, titles as in the table above
+- No variables (the code sends none) unless you use the school-name variable below
 
 Optional school name: WhatsApp footers cannot hold variables, so put it in the body,
 e.g. `Hello! What would you like to see about your child at {{school}}?`, give the
@@ -154,6 +165,27 @@ plain-text menu.
 Bahasha does not document the JSON for a tapped button, so the first live tap
 may need a small adjustment. If a tap gets the menu again instead of a reply,
 read the real payload from the logs and adjust `parent_topic_from_message`.
+
+### Report card PDF
+
+Off by default (`WHATSAPP_REPORT_CARD_PDF=false`). When on, a results reply is followed
+by each report card as a PDF **document**, sent in the background so a slow render never
+delays the text (which already carries the link).
+
+- `GET /r/<code>.pdf` (`finance.views.receipt_pdf_short`) renders the same HTML the
+  `/r/<code>` page serves into a PDF with headless Chromium (`finance/pdf.py`, the same
+  Playwright setup the ID-card export uses), caches it for an hour, and returns it.
+- The background step first fetches that URL itself (warming the cache), then calls
+  Bahasha's `POST /v1/whatsapp/send/media` with `media_type: "document"` and
+  `media_url` set to it (`send_bahasha_whatsapp_document`).
+- Bahasha's media endpoint takes **only a public HTTPS URL** (no upload, no media id) and,
+  like free-form text, only works inside the 24-hour window. Their docs give no size or
+  type limits for a `media_url` send.
+- Needs: Chromium installed for Playwright on the server, and `/r/<code>.pdf` reachable
+  publicly over HTTPS through the same host as `/r/<code>` (`FRONTEND_BASE_URL`). Check
+  with `curl -sI https://<host>/r/<any real code>.pdf` before turning the flag on.
+- A PNG image variant is not built; the same route could serve one with
+  `page.screenshot(full_page=True)`.
 
 ## Webhook behaviour
 

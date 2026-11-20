@@ -25,6 +25,7 @@ from rest_framework.response import Response
 logger = logging.getLogger(__name__)
 
 from academic.models import AcademicYear, Class, Term
+from core.background import run_in_background
 from core.models import SchoolTenant
 from finance.models import (
     ActivationCreditPool,
@@ -133,6 +134,7 @@ from finance.services import (
     parent_topic_from_message,
     parent_topic_reply,
     send_parent_menu,
+    send_report_card_pdfs,
     split_whatsapp_text,
     students_for_parent_phone,
     send_payment_receipt,
@@ -400,11 +402,20 @@ def _handle_whatsapp_inbound(messages):
                     answer = understood["answer"]
         action = topic or ("ai_answer" if answer else "menu")
         try:
-            if topic in ("fees", "attendance", "results", "receipts"):
+            if topic in ("fees", "statement", "attendance", "results", "receipts"):
+                report_cards = []
+                reply = parent_topic_reply(from_phone, topic, report_cards=report_cards)
                 # A parent with several children can produce a long reply; WhatsApp caps
                 # one text at 4096 characters, so it goes out in parts.
-                for part in split_whatsapp_text(parent_topic_reply(from_phone, topic)):
+                for part in split_whatsapp_text(reply):
                     send_whatsapp_message(from_phone, part)
+                if report_cards and getattr(settings, "WHATSAPP_REPORT_CARD_PDF", False):
+                    # After the text, which already carries the link: a slow PDF render
+                    # must never delay or lose the answer.
+                    run_in_background(
+                        lambda phone=from_phone, cards=list(report_cards): send_report_card_pdfs(phone, cards),
+                        name="whatsapp-report-card-pdf",
+                    )
             elif topic == "contact":
                 for part in split_whatsapp_text(parent_contact_reply(from_phone)):
                     send_whatsapp_message(from_phone, part)
@@ -656,6 +667,35 @@ def receipt_page_short(request, short_code):
     from finance.models import PaymentReceiptLink
     link = get_object_or_404(PaymentReceiptLink, short_code=short_code)
     return _render_receipt_link(request, link)
+
+
+def receipt_pdf_short(request, short_code):
+    """The same page as /r/<code>, as a PDF (/r/<code>.pdf). Public, like the page:
+    the short code is the secret. Rendered with headless Chromium from exactly the
+    HTML the page serves, then cached for an hour, so WhatsApp (which fetches the
+    file from this URL) and a retry get it instantly."""
+    from finance.models import PaymentReceiptLink
+    from finance.pdf import render_html_to_pdf
+
+    link = get_object_or_404(PaymentReceiptLink, short_code=short_code)
+    cache_key = f"receipt-pdf:{short_code}"
+    pdf = cache.get(cache_key)
+    if pdf is None:
+        page = _render_receipt_link(request, link)
+        if page.status_code != 200:  # e.g. an expired link
+            return page
+        try:
+            pdf = render_html_to_pdf(page.content.decode("utf-8"))
+        except Exception:
+            logger.exception("Receipt PDF could not be rendered for %s", short_code)
+            return HttpResponse("The PDF could not be generated right now.", status=503)
+        cache.set(cache_key, pdf, 3600)
+    response = HttpResponse(pdf, content_type="application/pdf")
+    kind = {"report_card": "Report-Card", "receipt": "Receipt", "bill": "Bill", "invoice": "Invoice"}.get(
+        link.receipt_type, "Document",
+    )
+    response["Content-Disposition"] = f'inline; filename="SchoolDom-{kind}-{short_code}.pdf"'
+    return response
 
 
 def _classes_for_user(user):

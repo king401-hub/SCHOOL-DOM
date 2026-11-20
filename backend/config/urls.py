@@ -25,7 +25,7 @@ from django.views.generic import TemplateView
 from django.views.decorators.csrf import csrf_exempt
 from apps.auth.views import LoginView, LogoutView, RegisterView, school_superadmin_dashboard
 from config.control_panel import control_panel
-from finance.views import receipt_page_short
+from finance.views import receipt_page_short, receipt_pdf_short
 from apps.app.views import AppDownloadView, admin_app_download_version, download_admin_app, download_android_apk, download_student_cbt_app, download_student_cbt_win7_app, download_student_cbt_win7_student_app, redirect_student_cbt, student_cbt_app_version, student_cbt_win7_app_version, student_cbt_win7_student_app_version
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
@@ -39,6 +39,8 @@ urlpatterns = [
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+    # The .pdf route must come first: <str:short_code> would otherwise swallow "abc.pdf".
+    path('r/<str:short_code>.pdf', receipt_pdf_short, name='receipt_pdf_short'),
     path('r/<str:short_code>', receipt_page_short, name='receipt_page_short'),
     path('admin/', admin.site.urls),
     path('control-panel/', control_panel.urls),

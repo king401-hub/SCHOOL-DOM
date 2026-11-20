@@ -14297,18 +14297,10 @@ def send_class_broadsheet(request):
     return Response({"success": True, "sent": sent, "failed": failed, "skipped": skipped, "errors": errors[:10]})
 
 
-def _send_report_card_sms(user, report, phone):
-    """Create the parent's secure report-card link and SMS it, billed to the
-    school's SMS wallet. `report` has the shape of _student_result_report().
-
-    Shared by the single "Send a Report Card" form and the whole-class send so
-    both use the same wording, link and billing. Raises
-    InsufficientSmsCreditsError / SmsWalletLockedError *before* the provider is
-    called (see send_wallet_sms) - callers decide what that means for them."""
-    from finance.models import SmsMessageLog
-    from finance.services import create_receipt_link, send_wallet_sms, sms_compact_url
-
-    school = getattr(user, "tenant", None)
+def _report_card_link_data(report, school):
+    """The payload behind a parent's public report-card page (/r/<code>), from a
+    _student_result_report() dict. One builder shared by the SMS and the
+    WhatsApp report card, so both open the same page."""
     student = report.get("student") or {}
     student_name = str(student.get("name") or "").strip()
     school_name = str((report.get("school") or {}).get("name") or "").strip() or (school.name if school else "")
@@ -14341,6 +14333,29 @@ def _send_report_card_sms(user, report, phone):
             for s in scores[:30]
         ],
     }
+    return link_data
+
+
+def _send_report_card_sms(user, report, phone):
+    """Create the parent's secure report-card link and SMS it, billed to the
+    school's SMS wallet. `report` has the shape of _student_result_report().
+
+    Shared by the single "Send a Report Card" form and the whole-class send so
+    both use the same wording, link and billing. Raises
+    InsufficientSmsCreditsError / SmsWalletLockedError *before* the provider is
+    called (see send_wallet_sms) - callers decide what that means for them."""
+    from finance.models import SmsMessageLog
+    from finance.services import create_receipt_link, send_wallet_sms, sms_compact_url
+
+    school = getattr(user, "tenant", None)
+    student = report.get("student") or {}
+    student_name = str(student.get("name") or "").strip()
+    school_name = str((report.get("school") or {}).get("name") or "").strip() or (school.name if school else "")
+    class_name = str(student.get("class_name") or "").strip()
+    average_score = report.get("average_score") or 0
+    class_position = report.get("class_position")
+    class_size = report.get("class_size") or 0
+    link_data = _report_card_link_data(report, school)
     report_url = create_receipt_link(link_data, tenant=school, phone=phone, receipt_type="report_card")
 
     sms_parts = [f"{school_name} Report Card: {student_name}."]
