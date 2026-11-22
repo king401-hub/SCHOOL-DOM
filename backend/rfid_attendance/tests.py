@@ -377,6 +377,91 @@ class SchoolGateSmsProviderTests(TestCase):
 
         self.assertEqual(resp.status_code, 201)
 
+    def test_sim_capable_scan_skips_the_wallet_and_returns_guardian_sms(self):
+        from finance.models import SmsMessageLog
+        from finance.services import get_or_create_sms_wallet
+
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 10
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        resp = self.client.post(
+            "/api/rfid/attendance/scan/",
+            {"card_uid": "9999", "idempotency_key": "gate-sim-1", "sim_capable": True},
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["guardian_sms"]["phone"], "08010000099")
+        self.assertIn("arrived", resp.data["guardian_sms"]["message"])
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 10)
+        self.assertFalse(SmsMessageLog.objects.filter(category=SmsMessageLog.ATTENDANCE).exists())
+
+    def test_sim_capable_scan_bypasses_the_dry_wallet_block(self):
+        from finance.services import get_or_create_sms_wallet
+
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 0
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        resp = self.client.post(
+            "/api/rfid/attendance/scan/",
+            {"card_uid": "9999", "idempotency_key": "gate-sim-dry-1", "sim_capable": True},
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["guardian_sms"]["phone"], "08010000099")
+
+    def test_gate_sms_fallback_bills_the_wallet_once(self):
+        from finance.models import SmsMessageLog
+        from finance.services import get_or_create_sms_wallet
+
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 10
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        scan_resp = self.client.post(
+            "/api/rfid/attendance/scan/",
+            {"card_uid": "9999", "idempotency_key": "gate-sim-fallback-1", "sim_capable": True},
+            format="json",
+        )
+        self.assertEqual(scan_resp.status_code, 201)
+
+        with patch("finance.services._dispatch_wallet_sms") as mock_send:
+            mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+            fallback_resp = self.client.post(
+                "/api/rfid/attendance/gate-sms-fallback/",
+                {
+                    "idempotency_key": "gate-sim-fallback-1",
+                    "action": scan_resp.data["action"],
+                    "event": scan_resp.data["attendance_event"],
+                },
+                format="json",
+            )
+        self.assertEqual(fallback_resp.status_code, 200, fallback_resp.data)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 9)
+        self.assertEqual(SmsMessageLog.objects.filter(category=SmsMessageLog.ATTENDANCE).count(), 1)
+
+        # A retried fallback call (e.g. the kiosk didn't get our response)
+        # must never bill the wallet a second time for the same scan.
+        with patch("finance.services._dispatch_wallet_sms") as mock_send_again:
+            retry_resp = self.client.post(
+                "/api/rfid/attendance/gate-sms-fallback/",
+                {
+                    "idempotency_key": "gate-sim-fallback-1",
+                    "action": scan_resp.data["action"],
+                    "event": scan_resp.data["attendance_event"],
+                },
+                format="json",
+            )
+        self.assertEqual(retry_resp.status_code, 200)
+        mock_send_again.assert_not_called()
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 9)
+
     def test_fee_reminder_button_dispatches_via_kudisms(self):
         admin = User.objects.create_user(
             email="admin@gatesms.test", password="testpass123", role="school_admin", tenant=self.school,

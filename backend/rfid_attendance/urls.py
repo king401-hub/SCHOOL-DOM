@@ -10,6 +10,7 @@ urlpatterns = [
     path('card-assignments/revoke/', views.card_assignment_revoke, name='card_assignment_revoke'),
     path('card-assignments/pending-scan/', views.pending_card_scan, name='pending_card_scan'),
     path('attendance/scan/', views.attendance_scan_create, name='attendance_scan_create'),
+    path('attendance/gate-sms-fallback/', views.gate_sms_fallback, name='gate_sms_fallback'),
     path('attendance/history/', views.attendance_history, name='attendance_history'),
     path('classes/', views.classes_lookup, name='classes_lookup'),
     path('people/', views.people_lookup, name='people_lookup'),

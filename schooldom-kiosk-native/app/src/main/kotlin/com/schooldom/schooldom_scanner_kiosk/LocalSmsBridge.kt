@@ -36,6 +36,23 @@ class LocalSmsBridge(private val activity: Activity) {
         activity.checkSelfPermission(Manifest.permission.SEND_SMS) ==
             PackageManager.PERMISSION_GRANTED
 
+    /**
+     * True when this terminal can plausibly text a parent over its own SIM
+     * right now: SEND_SMS granted and the radio reports a ready SIM. There
+     * is no API for the SIM's actual airtime balance - a terminal with a
+     * dry SIM still reports true here, and only finds out when [sendSms]
+     * itself fails (the caller's fallback-to-wallet path handles that).
+     */
+    fun canSendViaSim(): Boolean {
+        if (!hasPermission()) return false
+        return try {
+            val tm = activity.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+            tm?.simState == android.telephony.TelephonyManager.SIM_STATE_READY
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
     fun requestPermission() {
         if (!hasPermission()) {
             // Plain Activity.requestPermissions (API 23+) - no ActivityCompat

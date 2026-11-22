@@ -78,6 +78,7 @@ object ScanHandler {
         val idempotencyKey = UUID.randomUUID().toString()
         worker.execute {
             try {
+                val canSendViaSim = smsBridge?.canSendViaSim() ?: false
                 val payload = JSONObject().apply {
                     put("card_uid", uid)
                     put("idempotency_key", idempotencyKey)
@@ -89,6 +90,10 @@ object ScanHandler {
                     // backend ignores this when missing, malformed, or wildly
                     // out of bounds - see rfid_attendance.views._parse_scanned_at.
                     put("scanned_at", isoAt(now))
+                    // Tells the backend to hand the guardian text back to us
+                    // (guardian_sms in the response) instead of billing the
+                    // school's SMS wallet for it - see _record_student_scan.
+                    put("sim_capable", canSendViaSim)
                 }
                 val result = ApiClient.apiRequest(
                     context, "POST", "/api/rfid/attendance/scan/",
@@ -101,6 +106,7 @@ object ScanHandler {
                 }
 
                 val action = result.optString("action", "")
+                val event = result.optString("attendance_event", "")
                 val combined = JSONObject().apply {
                     result.optJSONObject("person")?.let { person ->
                         person.keys().forEach { k -> put(k, person.get(k)) }
@@ -111,6 +117,7 @@ object ScanHandler {
                 }
                 val outcome = if (action == "clock_out") ScanOutcome.GOODBYE else ScanOutcome.WELCOME
                 val message = if (result.has("message") && !result.isNull("message")) result.getString("message") else null
+                sendGuardianSmsViaSim(context, smsBridge, result.optJSONObject("guardian_sms"), idempotencyKey, action, event)
                 onResult(ScanResult(outcome, message, combined))
             } catch (e: ApiException) {
                 val outcome = when {
@@ -127,6 +134,53 @@ object ScanHandler {
                 onResult(ScanResult(ScanOutcome.ERROR, "Unable to record attendance. Please try again.", null))
             } finally {
                 onBusyChanged(false)
+            }
+        }
+    }
+
+    /**
+     * The online counterpart to [handleOfflineScan]'s SMS branch: the scan
+     * already succeeded against the backend, which handed back the parent
+     * text instead of billing its own wallet (because this device declared
+     * sim_capable - see ScanHandler's payload and _record_student_scan).
+     * Fire-and-forget, after [onResult] would otherwise have already fired
+     * for the scan itself - a card tap's result must never wait on this.
+     * If the SIM send fails, tells the backend to bill the wallet after all
+     * (/gate-sms-fallback/) rather than let the text silently never arrive.
+     */
+    private fun sendGuardianSmsViaSim(
+        context: Context,
+        smsBridge: LocalSmsBridge?,
+        guardianSms: JSONObject?,
+        idempotencyKey: String,
+        action: String,
+        event: String,
+    ) {
+        if (guardianSms == null || smsBridge == null) return
+        val phone = guardianSms.optString("phone", "")
+        val text = guardianSms.optString("message", "")
+        if (phone.isEmpty() || text.isEmpty()) return
+
+        smsBridge.sendSms(phone, text) { ok ->
+            if (!ok) {
+                worker.execute {
+                    try {
+                        val fallbackPayload = JSONObject().apply {
+                            put("idempotency_key", idempotencyKey)
+                            put("action", action)
+                            put("event", event)
+                        }
+                        ApiClient.apiRequest(
+                            context, "POST", "/api/rfid/attendance/gate-sms-fallback/",
+                            payload = fallbackPayload, queueWhenOffline = false, timeoutMs = SCAN_READ_TIMEOUT_MS,
+                        )
+                    } catch (e: Exception) {
+                        // Best-effort, like every other wallet-billed send in
+                        // this codebase - the parent just doesn't get this
+                        // one text if even the fallback call can't land.
+                        Log.e("ScanHandler", "gate-sms-fallback failed", e)
+                    }
+                }
             }
         }
     }

@@ -224,6 +224,74 @@ def _send_gate_sms_from_wallet(school, student_user, student_profile, action, ev
     threading.Thread(target=_send, daemon=True).start()
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def gate_sms_fallback(request):
+    """Called by a kiosk that accepted a scan's guardian_sms (because it
+    declared sim_capable - see _record_student_scan) but whose own SIM send
+    then failed: no airtime, no signal, or SEND_SMS permission pulled
+    mid-session. Bills the school's wallet for the same text instead, so the
+    parent still hears about it a little late rather than never - matching
+    LocalSmsBridge.kt's own "a duplicate text is far better than none"
+    reasoning, just the other way round (wallet picking up after the SIM,
+    not the SIM picking up after the wallet).
+
+    Keyed off the scan's own idempotency_key (already stored on
+    AttendanceRecord by _record_student_scan) rather than anything else the
+    kiosk sends: the phone comes from the student's own guardian contacts,
+    looked up server-side, and the school/wallet charged is the record's
+    real holder school (student.tenant), never anything the request could
+    name. action/event only change the text's wording, so a compromised
+    terminal can at most trigger one misworded resend of a real guardian's
+    real attendance text for a scan that genuinely happened - never an
+    arbitrary message or an arbitrary bill. cache.add's atomic
+    check-and-set stops a retried fallback call from charging the wallet
+    twice for the same scan.
+    """
+    if request.user.role not in SCAN_OPERATOR_ROLES:
+        return _forbidden('Only school staff can record RFID attendance.')
+
+    idempotency_key = str(request.data.get('idempotency_key') or '').strip()
+    action = str(request.data.get('action') or '').strip()
+    event = str(request.data.get('event') or '').strip()
+    if not idempotency_key or action not in ('clock_in', 'clock_out'):
+        return _bad_request('idempotency_key and a valid action are required.')
+
+    kind, record = _find_by_idempotency_key(idempotency_key)
+    if kind != 'student':
+        return _bad_request('No matching scan found for that idempotency_key.')
+
+    holder_school = record.student.tenant
+    if not holder_school:
+        return _bad_request('That scan has no school on file.')
+
+    if not cache.add(f'gate_sms_fallback_sent:{idempotency_key}', True, timeout=86400):
+        return Response({'success': True, 'message': 'Already sent.'})
+
+    from finance.models import SmsMessageLog
+    from finance.services import (
+        InsufficientSmsCreditsError,
+        SmsWalletLockedError,
+        guardian_contacts_for_student,
+        send_wallet_sms,
+    )
+    student_profile = StudentProfile.objects.filter(user=record.student).first()
+    phone, _email = guardian_contacts_for_student(student_profile)
+    if not phone:
+        return Response({'success': True, 'message': 'No guardian phone on file.'})
+
+    message = _gate_sms_text(holder_school, record.student, action, event, occurred_at=_parse_scanned_at(request))
+    try:
+        send_wallet_sms(
+            holder_school, phone, message,
+            category=SmsMessageLog.ATTENDANCE,
+            narration='Attendance (gate/kiosk scan, SIM fallback)',
+        )
+    except (InsufficientSmsCreditsError, SmsWalletLockedError):
+        pass
+    return Response({'success': True})
+
+
 def _person_summary(request, user_obj):
     """Name/role/photo/class for one person - used both by the card-assignment
     conflict response (Section 4d: "show the already-assigned person's name,
@@ -664,13 +732,20 @@ def _sms_wallet_dry_response():
 
 
 def _record_student_scan(request, school, student, card_uid, idempotency_key):
+    # sim_capable: the terminal has an active SIM + SEND_SMS permission and
+    # will attempt the parent text itself over cellular signaling (see
+    # LocalSmsBridge.kt), falling back to /gate-sms-fallback/ (billed to the
+    # wallet) only if that send fails - so a dry wallet doesn't need to
+    # block this scan at all, unlike the non-sim_capable case below.
+    sim_capable = str(request.data.get('sim_capable') or '').strip().lower() in ('1', 'true', 'yes')
+
     # A dry wallet blocks the scan itself (not just the SMS) for every
     # school that would otherwise bill this text to its own wallet - see
     # finance.services.sms_wallet_is_dry's docstring for why this is a
     # deliberate exception to this codebase's usual "billing never blocks
     # the thing itself" rule. A premium SchoolGate school never draws from
     # this wallet for gate texts at all (see _send_gate_sms), so it's exempt.
-    if not (school.is_schoolgate and school.subscription_tier == "premium") and sms_wallet_is_dry(school):
+    if not sim_capable and not (school.is_schoolgate and school.subscription_tier == "premium") and sms_wallet_is_dry(school):
         return _sms_wallet_dry_response()
 
     scanned_at = _parse_scanned_at(request)
@@ -762,9 +837,24 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
     # once back online purely to persist the attendance record - skip
     # re-sending here or the parent gets the same SMS twice.
     sms_sent_locally = str(request.data.get('sms_sent_locally') or '').strip().lower() in ('1', 'true', 'yes')
+    guardian_sms = None
     if not sms_sent_locally:
         if school.is_schoolgate and school.subscription_tier == "premium":
             _send_gate_sms(school, student, student_profile, action, event, occurred_at=scanned_at)
+        elif sim_capable:
+            # Hand the exact text back to the terminal instead of billing
+            # the wallet ourselves - its own SIM carries this one. If that
+            # send then fails, the kiosk calls /gate-sms-fallback/ (keyed on
+            # this same idempotency_key) to have the wallet pick it up
+            # after all, same "a duplicate text is far better than none"
+            # reasoning LocalSmsBridge's own docstring already uses.
+            from finance.services import guardian_contacts_for_student
+            phone, _email = guardian_contacts_for_student(student_profile)
+            if phone:
+                guardian_sms = {
+                    'phone': phone,
+                    'message': _gate_sms_text(school, student, action, event, occurred_at=scanned_at),
+                }
         else:
             _send_gate_sms_from_wallet(school, student, student_profile, action, event, occurred_at=scanned_at)
 
@@ -776,6 +866,7 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
         'person': _person_summary(request, student),
         'fees': fees,
         'student_dva': student_dva,
+        'guardian_sms': guardian_sms,
         'attendance': {
             'status': attendance.status,
             'date': attendance.date,
