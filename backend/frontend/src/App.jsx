@@ -131,6 +131,7 @@ const StudentIdCardPreview = lazyAdminScreen("IdCardPreview");
 const AdminPerformanceHeatmapScreen = lazyAdminScreen("AdminPerformanceHeatmapScreen");
 const AttendanceAnalyticsOverviewScreen = lazyAdminScreen("AttendanceAnalyticsOverviewScreen");
 const AttendanceAnalyticsDailyScreen = lazyAdminScreen("AttendanceAnalyticsDailyScreen");
+const AttendanceAnalyticsTermScreen = lazyAdminScreen("AttendanceAnalyticsTermScreen");
 const AdminFinanceScreen = lazyAdminScreen("AdminFinanceScreen");
 const AdminExamResultsScreen = lazyAdminScreen("AdminExamResultsScreen");
 const AdminTimetablesScreen = lazyAdminScreen("AdminTimetablesScreen");
@@ -7162,6 +7163,7 @@ const ADMIN_ROUTE_ICONS = {
   "/attendance-analytics-group": PieChart,
   "/attendance-analytics": PieChart,
   "/attendance-analytics/daily": CalendarCheck,
+  "/attendance-analytics/term": TrendingUp,
   "/exams": FileCheck,
   "/timetables": CalendarClock,
   "/results": BarChart2,
@@ -9544,6 +9546,8 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
     content = <AttendanceAnalyticsOverviewScreen session={session} />;
   } else if (activePath === "/attendance-analytics/daily") {
     content = <AttendanceAnalyticsDailyScreen session={session} />;
+  } else if (activePath === "/attendance-analytics/term") {
+    content = <AttendanceAnalyticsTermScreen session={session} />;
   } else if (activePath === "/finance") {
     content = (
       <AdminFinanceScreen

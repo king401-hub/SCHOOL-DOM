@@ -30168,3 +30168,213 @@ body[data-theme="dark"] .student-import-count.bad { color: #f87171; }
    banner (injected directly into document.body - see App.jsx) never
    overlaps the app's own top bar/nav. */
 body.schooldom-impersonating { padding-top: 34px; }
+
+/* ── Attendance Analytics ────────────────────────────────────────────────── */
+
+.segmented-toggle {
+  display: inline-flex;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.segmented-toggle button {
+  border: none;
+  background: transparent;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+  color: #475569;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.segmented-toggle button + button { border-left: 1px solid #e2e8f0; }
+.segmented-toggle button.active { background: #4f46e5; color: #ffffff; }
+.segmented-toggle button:hover:not(.active) { background: #eef2ff; }
+
+body[data-theme="dark"] .segmented-toggle { background: #0f172a; border-color: #1e293b; }
+body[data-theme="dark"] .segmented-toggle button { color: #94a3b8; }
+body[data-theme="dark"] .segmented-toggle button + button { border-left-color: #1e293b; }
+body[data-theme="dark"] .segmented-toggle button:hover:not(.active) { background: #1e293b; }
+
+.badge-status {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.badge-status.tone-present { background: #dcfce7; color: #166534; }
+.badge-status.tone-absent { background: #fee2e2; color: #991b1b; }
+.badge-status.tone-late { background: #fef3c7; color: #92400e; }
+.badge-status.tone-in_progress,
+.badge-status.tone-excused { background: #e2e8f0; color: #475569; }
+
+.badge-pending {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: help;
+}
+
+.attendance-analytics-date-input,
+.attendance-analytics-filter-row input,
+.attendance-analytics-filter-row select {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.attendance-analytics-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.attendance-analytics-population-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.attendance-analytics-population-card h3,
+.attendance-analytics-population-card h4 { margin: 0 0 0.5rem; }
+
+.attendance-analytics-histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  height: 140px;
+  padding-top: 0.5rem;
+}
+
+.attendance-analytics-histogram-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.attendance-analytics-histogram-bar-fill {
+  width: 100%;
+  max-width: 36px;
+  background: linear-gradient(180deg, #818cf8, #4f46e5);
+  border-radius: 6px 6px 0 0;
+  min-height: 4px;
+}
+
+.attendance-analytics-histogram-bar small { color: #64748b; font-size: 0.72rem; }
+.attendance-analytics-histogram-bar b { font-size: 0.8rem; color: #0f172a; }
+
+.attendance-analytics-rankings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.attendance-analytics-ranking-list h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.attendance-analytics-ranking-list ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+}
+
+.attendance-analytics-ranking-list li { margin-bottom: 0.3rem; }
+
+.donut-chart-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.donut-chart-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.9rem;
+  justify-content: center;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.donut-chart-legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+}
+
+.trend-chart-wrap { display: grid; gap: 0.3rem; }
+
+.trend-chart-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.form-error {
+  color: #b91c1c;
+  font-size: 0.85rem;
+  margin: 0.3rem 0;
+}
+
+.attendance-analytics-export-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+body[data-theme="dark"] .attendance-analytics-date-input,
+body[data-theme="dark"] .attendance-analytics-filter-row input,
+body[data-theme="dark"] .attendance-analytics-filter-row select {
+  background: #0f172a;
+  border-color: #1e293b;
+  color: #f1f5f9;
+}
+
+body[data-theme="dark"] .donut-chart-legend,
+body[data-theme="dark"] .trend-chart-labels,
+body[data-theme="dark"] .table-pagination,
+body[data-theme="dark"] .attendance-analytics-ranking-list h4 { color: #94a3b8; }
+
+body[data-theme="dark"] .attendance-analytics-histogram-bar b { color: #f1f5f9; }

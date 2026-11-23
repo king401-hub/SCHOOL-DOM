@@ -53,6 +53,7 @@ export const ADMIN_ROUTES = [
     children: [
       { path: "/attendance-analytics", label: "Overview" },
       { path: "/attendance-analytics/daily", label: "Daily Analytics" },
+      { path: "/attendance-analytics/term", label: "Termly Reports" },
     ]
   },
   {
@@ -119,6 +120,7 @@ export const ADMIN_ENDPOINTS = {
   "/performance-heatmap": "/api/app/performance-heatmap/",
   "/attendance-analytics": "/api/attendance-analytics/overview/",
   "/attendance-analytics/daily": "/api/attendance-analytics/daily/",
+  "/attendance-analytics/term": "/api/attendance-analytics/term/",
   "/finance": "/api/finance/admin/overview/",
   "/expenses": "/api/finance/admin/expenses/",
   "/sms-wallet": "/api/finance/admin/sms-wallet/",

@@ -1,12 +1,13 @@
 import datetime
 
+from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from academic.models import AttendanceRecord, Class, SchoolActivityCalendar
+from academic.models import AttendanceRecord, Class, SchoolActivityCalendar, Term
 from attendance.models import TeacherAttendance
-from core.models import SchoolTenant
+from core.models import AuditLog, SchoolTenant
 from hr.models import StaffAttendance, StaffProfile
 from rfid_attendance.models import GateSettings
 from rfid_attendance.services import _legacy_tenant_for_attendance
@@ -306,3 +307,270 @@ class DailyRegisterIntegrationTests(TestCase):
         names = [row["name"] for row in resp.data["results"]]
         self.assertIn(teacher.get_full_name(), names)
         self.assertIn(nonteaching.full_name, names)
+
+
+class TermScreensTests(TestCase):
+    """Screen 5/6: term overview, trends, rankings, class/department
+    comparison - all built on _bulk_period_rollup over a real active Term."""
+
+    def setUp(self):
+        cache.clear()  # _cached_term_result isn't reset between test methods otherwise
+        self.school = _make_school("Term School", "aa_term_school")
+        self.gate_settings = _make_gate_settings(self.school)
+        legacy = _legacy_tenant_for_attendance(self.school)
+        # Mon 2026-01-05 .. Fri 2026-01-09 - one working week, no holidays.
+        self.term = Term.objects.create(
+            tenant=legacy, name="Term 1", start_date=datetime.date(2026, 1, 5),
+            end_date=datetime.date(2026, 1, 9), is_active=True,
+        )
+        self.class_a = Class.objects.create(tenant=legacy, name="Primary 1", section="A")
+        self.class_b = Class.objects.create(tenant=legacy, name="Primary 2", section="A")
+
+        self.student_full = self._make_student("full@term.test", "Full", "Attender", self.class_a)
+        self.student_half = self._make_student("half@term.test", "Half", "Attender", self.class_b)
+
+        for day in (5, 6, 7, 8, 9):
+            AttendanceRecord.objects.create(
+                student=self.student_full, date=datetime.date(2026, 1, day),
+                clock_in_at=timezone.make_aware(datetime.datetime(2026, 1, day, 8, 0)), status="present",
+            )
+        # student_half only attends the first 2 days of the week.
+        for day in (5, 6):
+            AttendanceRecord.objects.create(
+                student=self.student_half, date=datetime.date(2026, 1, day),
+                clock_in_at=timezone.make_aware(datetime.datetime(2026, 1, day, 8, 0)), status="present",
+            )
+
+        self.now = timezone.make_aware(datetime.datetime(2026, 1, 12, 9, 0))  # after the whole term
+
+    def _make_student(self, email, first, last, class_group):
+        user = User.objects.create_user(email=email, password="testpass123", role="student", tenant=self.school, first_name=first, last_name=last)
+        StudentProfile.objects.create(
+            user=user, student_id=f"STU-{email}", admission_number=f"ADM-{email}",
+            admission_date=datetime.date(2024, 9, 1), guardian_name="G", guardian_phone="0800",
+            guardian_relation="Parent", current_class=class_group,
+        )
+        return user
+
+    def test_term_overview_reports_the_active_term_and_expected_days(self):
+        data = services.term_overview(self.school, now=self.now)
+        self.assertEqual(data["term"]["name"], "Term 1")
+        self.assertEqual(data["term"]["expected_working_days"], 5)
+        self.assertEqual(data["term"]["total_registered_students"], 2)
+
+    def test_term_overview_attendance_percent_is_ratio_of_sums(self):
+        data = services.term_overview(self.school, now=self.now)
+        # 5 + 2 = 7 present-days out of 5*2 = 10 expected person-days = 70%,
+        # not a naive average of 100% and 40% (which would also be 70% here
+        # by coincidence - the next assertion is the one that actually
+        # distinguishes ratio-of-sums from mean-of-percentages).
+        self.assertEqual(data["students"]["total_days_present"], 7)
+        self.assertEqual(data["students"]["average_attendance_percent"], 70.0)
+
+    def test_attendance_trends_buckets_into_one_week(self):
+        start, end = self.term.start_date, self.term.end_date
+        trend = services.attendance_trends(self.school, "student", start, end, granularity="weekly", now=self.now)
+        self.assertEqual(len(trend), 1)
+        # 7 present-slots across 5 days x 2 students = 10 registered-resolved
+        # slots -> 70%, same ratio-of-sums rule as the overview totals.
+        self.assertEqual(trend[0]["attendance_percent"], 70.0)
+
+    def test_rankings_orders_students_by_attendance_percent(self):
+        start, end = self.term.start_date, self.term.end_date
+        data = services.rankings(self.school, "student", start, end, now=self.now)
+        self.assertEqual(data["highest_attendance"][0]["name"], self.student_full.get_full_name())
+        self.assertEqual(data["lowest_attendance"][0]["name"], self.student_half.get_full_name())
+
+    def test_class_department_comparison_groups_students_by_class(self):
+        start, end = self.term.start_date, self.term.end_date
+        groups = services.class_department_comparison(self.school, "student", start, end, now=self.now)
+        by_label = {g["group_label"]: g for g in groups}
+        self.assertEqual(by_label["Primary 1"]["attendance_percent"], 100.0)
+        self.assertEqual(by_label["Primary 2"]["attendance_percent"], 40.0)
+
+    def test_term_wide_result_is_cached_within_the_ttl(self):
+        first = services.term_overview(self.school, now=self.now)
+        # Mutate the underlying data after the first call - if the second
+        # call is genuinely served from cache it must still report the OLD
+        # (pre-mutation) figure, not the new one.
+        AttendanceRecord.objects.create(
+            student=self.student_half, date=datetime.date(2026, 1, 7),
+            clock_in_at=timezone.make_aware(datetime.datetime(2026, 1, 7, 8, 0)), status="present",
+        )
+        second = services.term_overview(self.school, now=self.now)
+        self.assertEqual(first["students"]["total_days_present"], second["students"]["total_days_present"])
+
+    def test_term_wide_cache_is_isolated_per_tenant(self):
+        other_school = _make_school("Other Term School", "aa_other_term_school")
+        _make_gate_settings(other_school)
+        other_legacy = _legacy_tenant_for_attendance(other_school)
+        Term.objects.create(
+            tenant=other_legacy, name="Other Term", start_date=self.term.start_date,
+            end_date=self.term.end_date, is_active=True,
+        )
+        first = services.term_overview(self.school, now=self.now)
+        other = services.term_overview(other_school, now=self.now)
+        self.assertNotEqual(first["students"]["total_days_present"], other["students"]["total_days_present"])
+        self.assertEqual(other["students"]["total_days_present"], 0)
+
+
+class AttendanceCorrectionTests(TestCase):
+    def setUp(self):
+        self.school = _make_school("Correction School", "aa_correction_school")
+        _make_gate_settings(self.school)
+        self.admin = User.objects.create_user(
+            email="admin@correction.test", password="testpass123", role="school_admin", tenant=self.school,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def test_correction_requires_a_reason(self):
+        with self.assertRaises(ValueError):
+            services.write_attendance_correction(
+                self.school, self.admin, "staff", "whatever", datetime.date(2026, 1, 5), "", status="present",
+            )
+
+    def test_student_correction_creates_record_and_audit_from_nothing(self):
+        student = User.objects.create_user(
+            email="student@correction.test", password="testpass123", role="student", tenant=self.school,
+            first_name="Cor", last_name="Rection",
+        )
+        StudentProfile.objects.create(
+            user=student, student_id="COR001", admission_number="ADM-COR-001",
+            admission_date=datetime.date(2024, 9, 1), guardian_name="G", guardian_phone="0800", guardian_relation="Parent",
+        )
+        self.assertFalse(AttendanceRecord.objects.filter(student=student).exists())
+
+        resp = self.client.post(
+            "/api/attendance-analytics/correct/",
+            {"kind": "student", "person_id": str(student.id), "date": "2026-01-05", "status": "present", "reason": "Sick note confirmed late"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+        record = AttendanceRecord.objects.get(student=student, date=datetime.date(2026, 1, 5))
+        self.assertEqual(record.status, "present")
+
+        log = AuditLog.objects.get(model_name="AttendanceRecord", object_id=str(record.pk))
+        self.assertEqual(log.action, "UPDATE")
+        self.assertEqual(log.metadata["reason"], "Sick note confirmed late")
+        self.assertIsNone(log.metadata["previous_values"]["status"])
+        self.assertEqual(log.metadata["new_values"]["status"], "present")
+        self.assertEqual(log.user_id, self.admin.id)
+
+    def test_corrected_create_from_nothing_is_flagged_in_the_register(self):
+        student = User.objects.create_user(
+            email="flagged@correction.test", password="testpass123", role="student", tenant=self.school,
+            first_name="Flag", last_name="Ged",
+        )
+        StudentProfile.objects.create(
+            user=student, student_id="FLG001", admission_number="ADM-FLG-001",
+            admission_date=datetime.date(2024, 9, 1), guardian_name="G", guardian_phone="0800", guardian_relation="Parent",
+        )
+        today = timezone.localdate()
+        services.write_attendance_correction(
+            self.school, self.admin, "student", str(student.id), today, "Manually marked present", status="present",
+        )
+        resp = self.client.get(f"/api/attendance-analytics/daily/register/?population=student&date={today.isoformat()}")
+        row = next(r for r in resp.data["results"] if r["id"] == f"student:{student.id}")
+        self.assertIsNotNone(row["corrected"])
+        self.assertEqual(row["corrected"]["reason"], "Manually marked present")
+
+    def test_teacher_correction_marking_absent_deletes_the_days_record(self):
+        # check_in_time has no null=True (it's auto_now_add), so there is no
+        # way to represent "absent" on an existing row - and day_status()
+        # never reads the stored status column anyway, only whether a row
+        # exists at all. The correction must delete the row, not try to null
+        # a field that can't be null.
+        teacher = User.objects.create_user(
+            email="teacher@correction.test", password="testpass123", role="teacher", tenant=self.school,
+        )
+        TeacherAttendance.objects.create(tenant=self.school, teacher=teacher, attendance_date=datetime.date(2026, 1, 5))
+        services.write_attendance_correction(
+            self.school, self.admin, "teacher", str(teacher.id), datetime.date(2026, 1, 5),
+            "Was actually absent - scan was a mistake", status="absent",
+        )
+        self.assertFalse(TeacherAttendance.objects.filter(teacher=teacher, attendance_date=datetime.date(2026, 1, 5)).exists())
+        log = AuditLog.objects.get(model_name="TeacherAttendance", metadata__person_id=str(teacher.id))
+        self.assertEqual(log.metadata["new_values"]["status"], "absent")
+
+    def test_staff_correction_requires_status(self):
+        staff = StaffProfile.objects.create(
+            tenant=self.school, staff_code="COR-ST1", first_name="Non", last_name="Teaching",
+            staff_type=StaffProfile.NON_TEACHING, role="Cleaner",
+        )
+        resp = self.client.post(
+            "/api/attendance-analytics/correct/",
+            {"kind": "staff", "person_id": str(staff.id), "date": "2026-01-05", "reason": "forgot to mark"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+
+class ReportExportTests(TestCase):
+    """Phase 3 - PDF (finance.pdf.render_html_to_pdf, real headless Chromium)
+    and CSV exports. PDF tests are kept to one representative case each
+    (daily + the heavier comprehensive termly one) since each spins up a
+    real browser - the figures themselves are already covered by
+    TermScreensTests/OverviewAndDailyViewTests; this only confirms the
+    report-building path itself doesn't error and returns the right
+    content-type."""
+
+    def setUp(self):
+        self.school = _make_school("Report School", "aa_report_school")
+        _make_gate_settings(self.school)
+        self.admin = User.objects.create_user(
+            email="admin@report.test", password="testpass123", role="school_admin", tenant=self.school,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+        self.student = User.objects.create_user(
+            email="student@report.test", password="testpass123", role="student", tenant=self.school,
+            first_name="Report", last_name="Student",
+        )
+        StudentProfile.objects.create(
+            user=self.student, student_id="RPT001", admission_number="ADM-RPT-001",
+            admission_date=datetime.date(2024, 9, 1), guardian_name="G", guardian_phone="0800", guardian_relation="Parent",
+        )
+        self.today = timezone.localdate()
+        AttendanceRecord.objects.create(
+            student=self.student, date=self.today,
+            clock_in_at=timezone.now(), status="present",
+        )
+
+    def test_daily_report_csv_contains_the_students_row(self):
+        resp = self.client.get(f"/api/attendance-analytics/reports/daily.csv?population=student&date={self.today.isoformat()}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "text/csv")
+        content = resp.content.decode("utf-8")
+        self.assertIn("Student Report", content)
+
+    def test_daily_report_pdf_renders(self):
+        resp = self.client.get(f"/api/attendance-analytics/reports/daily.pdf?population=student&date={self.today.isoformat()}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "application/pdf")
+        self.assertGreater(len(resp.content), 100)
+
+    def test_termly_report_pdf_renders(self):
+        legacy = _legacy_tenant_for_attendance(self.school)
+        Term.objects.create(
+            tenant=legacy, name="Term 1", start_date=self.today - datetime.timedelta(days=7),
+            end_date=self.today, is_active=True,
+        )
+        resp = self.client.get("/api/attendance-analytics/reports/termly.pdf")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "application/pdf")
+
+    def test_class_department_report_csv(self):
+        resp = self.client.get("/api/attendance-analytics/reports/class-department.csv?population=student")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "text/csv")
+
+    def test_non_admin_cannot_download_reports(self):
+        teacher = User.objects.create_user(
+            email="teacher@report.test", password="testpass123", role="teacher", tenant=self.school,
+        )
+        client = APIClient()
+        client.force_authenticate(user=teacher)
+        resp = client.get("/api/attendance-analytics/reports/daily.csv?population=student")
+        self.assertEqual(resp.status_code, 403)

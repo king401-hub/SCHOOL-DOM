@@ -17579,6 +17579,108 @@ function DonutChart({ segments, total, size = 160, strokeWidth = 18, centerLabel
   );
 }
 
+async function downloadAttendanceReport(session, endpoint, filename) {
+  // Same small fetch+blob+anchor-click pattern AttendanceLogs.jsx's own
+  // (unexported, file-local) downloadAuthedFile already uses - duplicated
+  // here rather than importing across unrelated files for one helper.
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    headers: session?.access ? { Authorization: `Bearer ${session.access}` } : {},
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.message || "Download failed.");
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function AttendanceReportExportButtons({ session, pdfEndpoint, csvEndpoint, filenameBase }) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+
+  const handleDownload = async (kind, endpoint, extension) => {
+    setBusy(kind);
+    setError("");
+    try {
+      await downloadAttendanceReport(session, endpoint, `${filenameBase}.${extension}`);
+    } catch (err) {
+      setError(err.message || "Could not download the report.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  return (
+    <div className="attendance-analytics-export-row">
+      {pdfEndpoint ? (
+        <button type="button" className="table-action" disabled={busy === "pdf"} onClick={() => handleDownload("pdf", pdfEndpoint, "pdf")}>
+          {busy === "pdf" ? "Preparing PDF..." : "Export PDF"}
+        </button>
+      ) : null}
+      {csvEndpoint ? (
+        <button type="button" className="table-action" disabled={busy === "csv"} onClick={() => handleDownload("csv", csvEndpoint, "csv")}>
+          {busy === "csv" ? "Preparing CSV..." : "Export CSV"}
+        </button>
+      ) : null}
+      {error ? <span className="form-error">{error}</span> : null}
+    </div>
+  );
+}
+
+function TrendChart({ points, width = 480, height = 160, color = "#4ADE80" }) {
+  if (!points || points.length < 2) {
+    return <p className="panel-empty">Not enough data yet for a trend line.</p>;
+  }
+  const padding = 24;
+  const innerWidth = width - padding * 2;
+  const innerHeight = height - padding * 2;
+  const stepX = points.length > 1 ? innerWidth / (points.length - 1) : 0;
+  const coords = points.map((p, i) => {
+    const x = padding + i * stepX;
+    const y = padding + innerHeight * (1 - Math.min(100, Math.max(0, p.value)) / 100);
+    return [x, y];
+  });
+  const everyNth = Math.max(1, Math.ceil(points.length / 8));
+  return (
+    <div className="trend-chart-wrap">
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Attendance performance over time">
+        <polyline points={coords.map(([x, y]) => `${x},${y}`).join(" ")} fill="none" stroke={color} strokeWidth={2.5} />
+        {coords.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={2.5} fill={color} />)}
+      </svg>
+      <div className="trend-chart-labels">
+        {points.map((p, i) => (i % everyNth === 0 ? <span key={i}>{p.label}</span> : null))}
+      </div>
+    </div>
+  );
+}
+
+function cumulativeAttendanceTrend(historyResults) {
+  // historyResults is newest-first (student_history/staff_history both
+  // reverse their own rows) - walk oldest-to-newest to build a running
+  // attendance percentage, the clearest "performance over time" reading.
+  // Only present/absent days move the line - an in-progress or excused day
+  // isn't resolved yet, same as attendance_percent() itself only ever
+  // divides by resolved days.
+  const chronological = [...historyResults].reverse();
+  let present = 0;
+  let resolved = 0;
+  const points = [];
+  chronological.forEach((row) => {
+    if (row.status !== "present" && row.status !== "absent") return;
+    resolved += 1;
+    if (row.status === "present") present += 1;
+    points.push({ label: (row.date || "").slice(5), value: Math.round((present / resolved) * 1000) / 10 });
+  });
+  return points;
+}
+
 const ATTENDANCE_DONUT_COLORS = { onTime: "#4ADE80", late: "#FBBF24", absent: "#F87171", unresolved: "#CBD5E1" };
 
 function attendanceDonutSegments(stats) {
@@ -17698,6 +17800,8 @@ function AttendanceAnalyticsDrilldownPanel({ session, population, status, date, 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [profileTarget, setProfileTarget] = useState(null);
+  const [correctionTarget, setCorrectionTarget] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -17716,7 +17820,7 @@ function AttendanceAnalyticsDrilldownPanel({ session, population, status, date, 
       }
     })();
     return () => { cancelled = true; };
-  }, [session, population, status, date]);
+  }, [session, population, status, date, refreshKey]);
 
   if (profileTarget) {
     return population === "student"
@@ -17731,18 +17835,33 @@ function AttendanceAnalyticsDrilldownPanel({ session, population, status, date, 
         <button type="button" className="table-action" onClick={onClose}>Close</button>
       </div>
       <ScreenState loading={loading} error={error} />
-      {data ? <AttendanceRegisterTable rows={data.results} onViewProfile={setProfileTarget} /> : null}
+      {data ? (
+        <AttendanceRegisterTable
+          rows={data.results} onViewProfile={setProfileTarget}
+          onCorrect={(row) => {
+            const [kind, personId] = row.id.split(":");
+            setCorrectionTarget({ kind, personId, date });
+          }}
+        />
+      ) : null}
+      {correctionTarget ? (
+        <AttendanceCorrectionModal
+          session={session} {...correctionTarget}
+          onClose={() => setCorrectionTarget(null)}
+          onSaved={() => { setCorrectionTarget(null); setRefreshKey((k) => k + 1); }}
+        />
+      ) : null}
     </article>
   );
 }
 
-function AttendanceRegisterTable({ rows, onViewProfile }) {
+function AttendanceRegisterTable({ rows, onViewProfile, onCorrect }) {
   if (!rows || !rows.length) {
     return <p className="panel-empty">No records for this selection.</p>;
   }
   return (
     <div className="table-scroll">
-      <table className="admin-table">
+      <table className="data-table">
         <thead>
           <tr>
             <th>Name</th><th>ID</th><th>Class / Dept</th><th>First arrival</th><th>Last departure</th><th>Hours</th><th>Status</th><th />
@@ -17757,14 +17876,90 @@ function AttendanceRegisterTable({ rows, onViewProfile }) {
               <td>{row.first_arrival || "-"}</td>
               <td>{row.last_departure || "-"}</td>
               <td>{row.total_hours != null ? row.total_hours : "-"}</td>
-              <td><span className={`badge-status tone-${row.status}`}>{row.status}</span></td>
               <td>
-                <button type="button" className="table-action" onClick={() => onViewProfile(row.id)}>View Profile</button>
+                <span className={`badge-status tone-${row.status}`}>{row.status}</span>
+                {row.corrected ? (
+                  <span className="badge-pending" title={`${row.corrected.reason} - ${row.corrected.actor}`}>corrected</span>
+                ) : null}
+              </td>
+              <td>
+                {onViewProfile ? <button type="button" className="table-action" onClick={() => onViewProfile(row.id)}>View Profile</button> : null}
+                {onCorrect ? <button type="button" className="table-action" onClick={() => onCorrect(row)}>Correct</button> : null}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function AttendanceCorrectionModal({ session, kind, personId, date, onClose, onSaved }) {
+  const [status, setStatus] = useState("present");
+  const [clockIn, setClockIn] = useState("");
+  const [clockOut, setClockOut] = useState("");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const statusOptions = kind === "staff"
+    ? [["present", "Present"], ["absent", "Absent"], ["late", "Late"], ["half_day", "Half day"], ["excused", "Excused"]]
+    : [["present", "Present"], ["absent", "Absent"]];
+
+  const handleSave = async () => {
+    if (!reason.trim()) {
+      setError("A reason is required.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const payload = { kind, person_id: personId, date, reason: reason.trim(), status };
+      if (kind !== "staff" && status !== "absent" && clockIn) payload.clock_in_at = new Date(clockIn).toISOString();
+      if (kind !== "staff" && status !== "absent" && clockOut) payload.clock_out_at = new Date(clockOut).toISOString();
+      await requestJson(session, "POST", "/api/attendance-analytics/correct/", payload);
+      onSaved();
+    } catch (err) {
+      setError(err.message || "Could not save the correction.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <article className="app-panel edit-modal-card" role="dialog" aria-modal="true">
+        <div className="panel-head">
+          <h3>Correct attendance - {date}</h3>
+          <button type="button" className="table-action" onClick={onClose}>Close</button>
+        </div>
+        <label className="panel-field">
+          Status
+          <select value={status} onChange={(event) => setStatus(event.target.value)}>
+            {statusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        {kind !== "staff" && status !== "absent" ? (
+          <>
+            <label className="panel-field">
+              Clock in
+              <input type="datetime-local" value={clockIn} onChange={(event) => setClockIn(event.target.value)} />
+            </label>
+            <label className="panel-field">
+              Clock out
+              <input type="datetime-local" value={clockOut} onChange={(event) => setClockOut(event.target.value)} />
+            </label>
+          </>
+        ) : null}
+        <label className="panel-field">
+          Reason (required)
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} />
+        </label>
+        {error ? <p className="form-error">{error}</p> : null}
+        <button type="button" className="table-action" disabled={saving} onClick={handleSave}>
+          {saving ? "Saving..." : "Save correction"}
+        </button>
+      </article>
     </div>
   );
 }
@@ -17779,6 +17974,8 @@ function AttendanceAnalyticsDailyScreen({ session }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [profileTarget, setProfileTarget] = useState(null);
+  const [correctionTarget, setCorrectionTarget] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -17800,7 +17997,7 @@ function AttendanceAnalyticsDailyScreen({ session }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [session, population, date, statusFilter, page]);
+  }, [session, population, date, statusFilter, page, refreshKey]);
 
   if (profileTarget) {
     return population === "student"
@@ -17832,6 +18029,13 @@ function AttendanceAnalyticsDailyScreen({ session }) {
           <option value="in_progress">In progress</option>
         </select>
       </div>
+
+      <AttendanceReportExportButtons
+        session={session}
+        pdfEndpoint={`/api/attendance-analytics/reports/daily.pdf?population=${population}&date=${date}`}
+        csvEndpoint={`/api/attendance-analytics/reports/daily.csv?population=${population}&date=${date}`}
+        filenameBase={`attendance-daily-${population}-${date}`}
+      />
 
       <ScreenState loading={loading && !summary} error={error} />
 
@@ -17865,13 +18069,26 @@ function AttendanceAnalyticsDailyScreen({ session }) {
 
       {register ? (
         <article className="app-panel">
-          <AttendanceRegisterTable rows={register.results} onViewProfile={setProfileTarget} />
+          <AttendanceRegisterTable
+            rows={register.results} onViewProfile={setProfileTarget}
+            onCorrect={(row) => {
+              const [kind, personId] = row.id.split(":");
+              setCorrectionTarget({ kind, personId, date });
+            }}
+          />
           <div className="table-pagination">
             <button type="button" className="table-action" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button>
             <span>Page {register.page}</span>
             <button type="button" className="table-action" disabled={register.results.length < register.page_size} onClick={() => setPage((p) => p + 1)}>Next</button>
           </div>
         </article>
+      ) : null}
+      {correctionTarget ? (
+        <AttendanceCorrectionModal
+          session={session} {...correctionTarget}
+          onClose={() => setCorrectionTarget(null)}
+          onSaved={() => { setCorrectionTarget(null); setRefreshKey((k) => k + 1); }}
+        />
       ) : null}
     </section>
   );
@@ -17901,6 +18118,8 @@ function StaffAttendanceProfile({ session, personId, onBack }) {
   const [history, setHistory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [correctionDate, setCorrectionDate] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -17922,7 +18141,9 @@ function StaffAttendanceProfile({ session, personId, onBack }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [session, personId, period]);
+  }, [session, personId, period, refreshKey]);
+
+  const [kind, rawId] = personId.split(":");
 
   return (
     <section className="screen-grid">
@@ -17942,6 +18163,12 @@ function StaffAttendanceProfile({ session, personId, onBack }) {
           <button key={value} type="button" className={period === value ? "active" : ""} onClick={() => setPeriod(value)}>{label}</button>
         ))}
       </div>
+      <AttendanceReportExportButtons
+        session={session}
+        pdfEndpoint={`/api/attendance-analytics/reports/staff/${personId}.pdf?period=${period}`}
+        csvEndpoint={`/api/attendance-analytics/reports/staff/${personId}.csv?period=${period}`}
+        filenameBase={`attendance-staff-${rawId}-${period}`}
+      />
       <ScreenState loading={loading && !profile} error={error} />
       {profile ? (
         <>
@@ -17957,7 +18184,27 @@ function StaffAttendanceProfile({ session, personId, onBack }) {
           <AttendancePeriodStatsGrid stats={profile.stats} />
         </>
       ) : null}
-      {history ? <article className="app-panel"><AttendanceRegisterTable rows={history.results.map((r) => ({ ...r, name: r.date, identifier: "" }))} onViewProfile={() => {}} /></article> : null}
+      {history && history.results.length > 1 ? (
+        <article className="app-panel">
+          <h3>Attendance performance over time</h3>
+          <TrendChart points={cumulativeAttendanceTrend(history.results)} />
+        </article>
+      ) : null}
+      {history ? (
+        <article className="app-panel">
+          <AttendanceRegisterTable
+            rows={history.results.map((r) => ({ ...r, name: r.date, identifier: "" }))}
+            onCorrect={(row) => setCorrectionDate(row.date)}
+          />
+        </article>
+      ) : null}
+      {correctionDate ? (
+        <AttendanceCorrectionModal
+          session={session} kind={kind === "teacher" ? "teacher" : "staff"} personId={rawId} date={correctionDate}
+          onClose={() => setCorrectionDate(null)}
+          onSaved={() => { setCorrectionDate(null); setRefreshKey((k) => k + 1); }}
+        />
+      ) : null}
     </section>
   );
 }
@@ -17968,6 +18215,8 @@ function StudentAttendanceProfile({ session, studentId, onBack }) {
   const [history, setHistory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [correctionDate, setCorrectionDate] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -17989,7 +18238,7 @@ function StudentAttendanceProfile({ session, studentId, onBack }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [session, studentId, period]);
+  }, [session, studentId, period, refreshKey]);
 
   return (
     <section className="screen-grid">
@@ -18003,6 +18252,12 @@ function StudentAttendanceProfile({ session, studentId, onBack }) {
           <button key={value} type="button" className={period === value ? "active" : ""} onClick={() => setPeriod(value)}>{label}</button>
         ))}
       </div>
+      <AttendanceReportExportButtons
+        session={session}
+        pdfEndpoint={`/api/attendance-analytics/reports/students/${studentId}.pdf?period=${period}`}
+        csvEndpoint={`/api/attendance-analytics/reports/students/${studentId}.csv?period=${period}`}
+        filenameBase={`attendance-student-${studentId}-${period}`}
+      />
       <ScreenState loading={loading && !profile} error={error} />
       {profile ? (
         <>
@@ -18018,7 +18273,229 @@ function StudentAttendanceProfile({ session, studentId, onBack }) {
           <AttendancePeriodStatsGrid stats={profile.stats} />
         </>
       ) : null}
-      {history ? <article className="app-panel"><AttendanceRegisterTable rows={history.results.map((r) => ({ ...r, name: r.date, identifier: "" }))} onViewProfile={() => {}} /></article> : null}
+      {history && history.results.length > 1 ? (
+        <article className="app-panel">
+          <h3>Attendance performance over time</h3>
+          <TrendChart points={cumulativeAttendanceTrend(history.results)} />
+        </article>
+      ) : null}
+      {history ? (
+        <article className="app-panel">
+          <AttendanceRegisterTable
+            rows={history.results.map((r) => ({ ...r, name: r.date, identifier: "" }))}
+            onCorrect={(row) => setCorrectionDate(row.date)}
+          />
+        </article>
+      ) : null}
+      {correctionDate ? (
+        <AttendanceCorrectionModal
+          session={session} kind="student" personId={studentId} date={correctionDate}
+          onClose={() => setCorrectionDate(null)}
+          onSaved={() => { setCorrectionDate(null); setRefreshKey((k) => k + 1); }}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+const RANKING_LABELS = {
+  most_punctual: "Most Punctual",
+  highest_attendance: "Highest Attendance",
+  lowest_attendance: "Lowest Attendance",
+  highest_hours: "Most Hours Worked",
+  most_late_arrivals: "Most Late Arrivals",
+};
+
+// Which field on a ranking entry holds its ranked value, and how to render
+// it - keyed to the ranking's own name since _top() always names that field
+// after the thing it ranked by (see rankings() in attendance_analytics).
+const RANKING_VALUE = {
+  most_punctual: (p) => `${p.late_arrivals} late`,
+  highest_attendance: (p) => `${p.attendance_percent}%`,
+  lowest_attendance: (p) => `${p.attendance_percent}%`,
+  highest_hours: (p) => `${p.total_hours} hrs`,
+  most_late_arrivals: (p) => `${p.late_arrivals} late`,
+};
+
+function AttendanceAnalyticsTermScreen({ session }) {
+  const [population, setPopulation] = useState(session?.school?.attendance_analytics_scope === "staff_only" ? "staff" : "student");
+  const [granularity, setGranularity] = useState("weekly");
+  const [overview, setOverview] = useState(null);
+  const [trends, setTrends] = useState(null);
+  const [rankings, setRankings] = useState(null);
+  const [groups, setGroups] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [profileTarget, setProfileTarget] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    (async () => {
+      try {
+        const [overviewResult, trendsResult, rankingsResult, groupsResult] = await Promise.all([
+          requestJson(session, "GET", "/api/attendance-analytics/term/"),
+          requestJson(session, "GET", `/api/attendance-analytics/term/trends/?population=${population}&granularity=${granularity}`),
+          requestJson(session, "GET", `/api/attendance-analytics/term/rankings/?population=${population}`),
+          requestJson(session, "GET", `/api/attendance-analytics/class-department/?population=${population}`),
+        ]);
+        if (cancelled) return;
+        setOverview(overviewResult);
+        setTrends(trendsResult);
+        setRankings(rankingsResult);
+        setGroups(groupsResult);
+      } catch (err) {
+        if (!cancelled) setError(err.message || "Could not load termly analytics.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, population, granularity]);
+
+  if (profileTarget) {
+    return population === "student"
+      ? <StudentAttendanceProfile session={session} studentId={profileTarget} onBack={() => setProfileTarget(null)} />
+      // group_label is "Teaching" only for teachers (see _teacher_people) -
+      // rankings don't otherwise carry which of the two staff kinds an
+      // entry is, so this is the one place that distinction is inferred
+      // rather than given directly by the API.
+      : <StaffAttendanceProfile session={session} personId={profileTarget} onBack={() => setProfileTarget(null)} />;
+  }
+
+  const scope = session?.school?.attendance_analytics_scope || "both";
+
+  return (
+    <section className="screen-grid">
+      <div className="screen-hero">
+        <h2>Termly Reports</h2>
+        <p>Attendance performance across the whole term - trends, rankings, and class/department comparisons.</p>
+      </div>
+
+      <div className="attendance-analytics-filter-row">
+        {scope === "both" ? (
+          <div className="segmented-toggle">
+            <button type="button" className={population === "student" ? "active" : ""} onClick={() => setPopulation("student")}>Students</button>
+            <button type="button" className={population === "staff" ? "active" : ""} onClick={() => setPopulation("staff")}>Staff</button>
+          </div>
+        ) : null}
+        <div className="segmented-toggle">
+          <button type="button" className={granularity === "weekly" ? "active" : ""} onClick={() => setGranularity("weekly")}>Weekly</button>
+          <button type="button" className={granularity === "monthly" ? "active" : ""} onClick={() => setGranularity("monthly")}>Monthly</button>
+        </div>
+      </div>
+
+      <AttendanceReportExportButtons
+        session={session}
+        pdfEndpoint="/api/attendance-analytics/reports/termly.pdf"
+        filenameBase="attendance-termly-report"
+      />
+      <AttendanceReportExportButtons
+        session={session}
+        pdfEndpoint={`/api/attendance-analytics/reports/class-department.pdf?population=${population}`}
+        csvEndpoint={`/api/attendance-analytics/reports/class-department.csv?population=${population}`}
+        filenameBase={`attendance-${population === "student" ? "class" : "department"}-comparison`}
+      />
+
+      <ScreenState loading={loading && !overview} error={error} />
+
+      {overview ? (
+        <article className="app-panel">
+          <div className="panel-head">
+            <h3>{overview.term.name || "Current term"}</h3>
+            <span>{overview.term.start_date} to {overview.term.end_date} - {overview.term.expected_working_days} expected working days</span>
+          </div>
+          <div className="attendance-analytics-population-grid">
+            {overview.staff ? (
+              <article className="app-panel attendance-analytics-population-card">
+                <h4>Staff</h4>
+                <DonutChart
+                  segments={[{ key: "present", value: overview.staff.total_days_present, color: ATTENDANCE_DONUT_COLORS.onTime, label: "Present" }]}
+                  total={overview.staff.total_days_present + overview.staff.total_absences}
+                  centerLabel={`${overview.staff.average_attendance_percent}%`} centerSubLabel="attendance" showLegend={false}
+                />
+                <div className="metric-grid">
+                  <MetricCard label="Total staff" value={overview.staff.total_people} />
+                  <MetricCard label="Days present" value={overview.staff.total_days_present} />
+                  <MetricCard label="Absences" value={overview.staff.total_absences} />
+                  {overview.staff.total_hours != null ? <MetricCard label="Total hours" value={overview.staff.total_hours} /> : null}
+                </div>
+              </article>
+            ) : null}
+            {overview.students ? (
+              <article className="app-panel attendance-analytics-population-card">
+                <h4>Students</h4>
+                <DonutChart
+                  segments={[{ key: "present", value: overview.students.total_days_present, color: ATTENDANCE_DONUT_COLORS.onTime, label: "Present" }]}
+                  total={overview.students.total_days_present + overview.students.total_absences}
+                  centerLabel={`${overview.students.average_attendance_percent}%`} centerSubLabel="attendance" showLegend={false}
+                />
+                <div className="metric-grid">
+                  <MetricCard label="Total students" value={overview.students.total_people} />
+                  <MetricCard label="Days present" value={overview.students.total_days_present} />
+                  <MetricCard label="Absences" value={overview.students.total_absences} />
+                </div>
+              </article>
+            ) : null}
+          </div>
+        </article>
+      ) : null}
+
+      {trends ? (
+        <article className="app-panel">
+          <h3>Attendance trend</h3>
+          <TrendChart points={trends.trends.map((t) => ({ label: t.period_label.replace("Week of ", ""), value: t.attendance_percent }))} />
+        </article>
+      ) : null}
+
+      {rankings ? (
+        <article className="app-panel">
+          <h3>Rankings</h3>
+          <div className="attendance-analytics-rankings-grid">
+            {Object.entries(rankings.rankings).map(([key, list]) => (
+              <div key={key} className="attendance-analytics-ranking-list">
+                <h4>{RANKING_LABELS[key] || key}</h4>
+                {list.length ? (
+                  <ol>
+                    {list.map((p) => (
+                      <li key={p.id}>
+                        <button
+                          type="button" className="table-action"
+                          onClick={() => setProfileTarget(population === "student" ? p.id : `${p.group_label === "Teaching" ? "teacher" : "staff"}:${p.id}`)}
+                        >
+                          {p.name}
+                        </button>
+                        {" - "}{RANKING_VALUE[key] ? RANKING_VALUE[key](p) : ""}
+                      </li>
+                    ))}
+                  </ol>
+                ) : <p className="panel-empty">No data for this period.</p>}
+              </div>
+            ))}
+          </div>
+        </article>
+      ) : null}
+
+      {groups ? (
+        <article className="app-panel">
+          <h3>{population === "student" ? "Class comparison" : "Department comparison"}</h3>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr><th>{population === "student" ? "Class" : "Department"}</th><th>Total</th><th>Present</th><th>Attendance %</th></tr>
+              </thead>
+              <tbody>
+                {groups.groups.map((g) => (
+                  <tr key={g.group_label}>
+                    <td>{g.group_label}</td><td>{g.total_people}</td><td>{g.total_present}</td><td>{g.attendance_percent}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      ) : null}
     </section>
   );
 }
@@ -18031,6 +18508,7 @@ export {
   AdminPerformanceHeatmapScreen,
   AttendanceAnalyticsOverviewScreen,
   AttendanceAnalyticsDailyScreen,
+  AttendanceAnalyticsTermScreen,
   StaffAttendanceProfile,
   StudentAttendanceProfile,
   AdminFinanceScreen,
