@@ -88,7 +88,54 @@ async function openDatabase() {
   return db;
 }
 
+// sql.js keeps the whole database in memory - there is no incremental,
+// per-row disk write like a real file-backed SQLite engine has. Every call
+// here has to serialize the ENTIRE database (every exam, every student,
+// every session's answers, every activity log) and write that whole buffer
+// to disk. The exam screen autosaves once per SECOND for as long as the
+// student is writing (see src/App.jsx's saveStudentAnswers interval), and
+// that used to call fs.writeFileSync directly - a synchronous disk write of
+// the whole, ever-growing file, blocking Electron's main process (and with
+// it every window's native message loop) for however long the write takes.
+// On a slow lab PC - an old HDD, antivirus intercepting the write, a file
+// that's grown large after a full exam day of sessions/logs never cleared
+// out - that's exactly what Windows reports as "Not Responding", and what
+// eventually gets the process killed or crashes it outright. Queuing the
+// write asynchronously keeps db.export()'s (fast, in-memory) snapshot but
+// moves the slow part off the blocking path; persistInFlight/persistDirty
+// below serialize writes (never two at once) and coalesce any calls that
+// land while a write is already running into exactly one more at the end,
+// so a second of rapid autosave calls never queues more than two writes.
+let persistInFlight = false;
+let persistDirty = false;
+
 function persist() {
+  if (!db || !dbFilePath) return;
+  persistDirty = true;
+  if (persistInFlight) return;
+  runPersistWrite();
+}
+
+function runPersistWrite() {
+  persistInFlight = true;
+  persistDirty = false;
+  const buffer = Buffer.from(db.export());
+  fs.writeFile(dbFilePath, buffer, (error) => {
+    if (error) {
+      console.error("Failed to persist CBT database to disk:", error);
+    }
+    if (persistDirty) {
+      runPersistWrite();
+    } else {
+      persistInFlight = false;
+    }
+  });
+}
+
+// Only for app shutdown, where there's no next event-loop tick left to let
+// the async write above land - a one-time synchronous write is the right
+// trade there, not a recurring one.
+function persistSync() {
   if (!db || !dbFilePath) return;
   fs.writeFileSync(dbFilePath, Buffer.from(db.export()));
 }
@@ -591,6 +638,7 @@ module.exports = {
   markSyncFailure,
   markSyncSuccess,
   openDatabase,
+  persistSync,
   saveAnswers,
   saveLocalExam,
   saveOfflineSettings,

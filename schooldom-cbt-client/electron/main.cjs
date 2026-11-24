@@ -454,6 +454,19 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 
+// persist() now writes asynchronously (see db.cjs) so the per-second exam
+// autosave can't block the UI - but that means quitting right after the
+// last autosave could race a write still in flight. One final synchronous
+// flush here guarantees the last answers saved are the ones actually on
+// disk when the process exits.
+app.on("before-quit", () => {
+  try {
+    db.persistSync();
+  } catch (error) {
+    console.error("Failed to flush CBT database on quit:", error);
+  }
+});
+
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
