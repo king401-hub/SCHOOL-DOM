@@ -20,6 +20,18 @@ import javax.net.ssl.HttpsURLConnection
 object ImageLoader {
     private const val TIMEOUT_MS = 8_000
 
+    // The result screen only ever shows this at 110dp (see activity_home.xml's
+    // resultPhoto) - profile_picture uploads are never resized server-side
+    // (users.models.User has no save() override for it), so a photo
+    // straight off a phone camera decodes at full resolution (easily
+    // 3000x4000px) into tens of MB of raw ARGB_8888 pixels. Confirmed live:
+    // a photo that rendered fine in a browser never appeared on the kiosk at
+    // all - decodeStream's OutOfMemoryError on this fleet's low-RAM
+    // terminals was silently swallowed by the catch below. Downsampling
+    // before the real decode keeps the allocation proportional to what's
+    // actually drawn.
+    private const val TARGET_SIZE_PX = 300
+
     fun fetch(context: Context, url: String): Bitmap? {
         return try {
             val connection = URL(url).openConnection() as HttpURLConnection
@@ -28,12 +40,32 @@ object ImageLoader {
             }
             connection.connectTimeout = TIMEOUT_MS
             connection.readTimeout = TIMEOUT_MS
-            try {
+            val bytes = try {
                 if (connection.responseCode != HttpURLConnection.HTTP_OK) return null
-                connection.inputStream.use { BitmapFactory.decodeStream(it) }
+                connection.inputStream.use { it.readBytes() }
             } finally {
                 connection.disconnect()
             }
+            decodeSampled(bytes)
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    private fun decodeSampled(bytes: ByteArray): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        var sampleSize = 1
+        while (bounds.outWidth / (sampleSize * 2) >= TARGET_SIZE_PX &&
+            bounds.outHeight / (sampleSize * 2) >= TARGET_SIZE_PX
+        ) {
+            sampleSize *= 2
+        }
+        val opts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        return try {
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
         } catch (e: Throwable) {
             null
         }
