@@ -1691,24 +1691,31 @@ class SmsWalletTests(TestCase):
         mock_send.assert_called_once()
 
     @patch("finance.services._dispatch_wallet_sms")
-    def test_uncharged_send_still_goes_out_on_an_empty_or_locked_wallet(self, mock_send):
-        """A school with no credits must still be able to receive money and have
-        the payer confirmed - the receipt cannot be gated on their balance."""
+    def test_uncharged_send_is_still_blocked_on_an_empty_or_locked_wallet(self, mock_send):
+        """Unbilled or not, a dry/locked wallet blocks every message - no
+        exceptions, including a payment receipt. The school must top up
+        before anything texts out again."""
         wallet = get_or_create_sms_wallet(self.school)
         wallet.balance = 0
         wallet.is_locked = True
         wallet.save(update_fields=["balance", "is_locked", "updated_at"])
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
 
-        log = send_wallet_sms(
-            self.school, "2348012345678", "Payment received",
-            category=SmsMessageLog.RECEIPT, charge_wallet=False,
-        )
+        with self.assertRaises(SmsWalletLockedError):
+            send_wallet_sms(
+                self.school, "2348012345678", "Payment received",
+                category=SmsMessageLog.RECEIPT, charge_wallet=False,
+            )
+        mock_send.assert_not_called()
 
-        self.assertEqual(log.delivery_status, SmsMessageLog.SENT)
-        self.assertEqual(log.credits_charged, 0)
-        wallet.refresh_from_db()
-        self.assertEqual(wallet.balance, 0)
+        wallet.is_locked = False
+        wallet.save(update_fields=["is_locked", "updated_at"])
+        with self.assertRaises(InsufficientSmsCreditsError):
+            send_wallet_sms(
+                self.school, "2348012345678", "Payment received",
+                category=SmsMessageLog.RECEIPT, charge_wallet=False,
+            )
+        mock_send.assert_not_called()
 
     @patch("finance.services._dispatch_wallet_sms")
     def test_billed_sends_are_unaffected_by_the_uncharged_path(self, mock_send):
@@ -3030,11 +3037,12 @@ class CashPaymentTests(TestCase):
         self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)  # the payment itself is unaffected
 
     @patch("finance.services._dispatch_wallet_sms")
-    def test_an_auto_reconciled_payments_receipt_stays_free_even_on_an_empty_wallet(self, mock_send):
+    def test_an_auto_reconciled_payments_receipt_stays_free_but_still_blocked_on_an_empty_wallet(self, mock_send):
         """A payment nobody at the school touched (an incoming bank transfer
-        matched by webhook, no admin recording it) is the opposite case: the
-        SMS may be the parent's only proof of a payment made offline, so it
-        must still go out free, forced through even an empty wallet."""
+        matched by webhook, no admin recording it) is never billed for its
+        receipt SMS - but a dry/locked wallet blocks it exactly like any
+        other message, no exceptions. The school must top up before any
+        texts resume."""
         self.student.guardian_phone = "2348012345678"
         self.student.save(update_fields=["guardian_phone"])
         wallet = get_or_create_sms_wallet(self.school)
@@ -3050,10 +3058,20 @@ class CashPaymentTests(TestCase):
 
         result = send_payment_receipt_sms(payment)
 
+        self.assertFalse(result["sent"])
+        self.assertTrue(result["skipped"])
+        self.assertIn("Insufficient SMS credits", result["reason"])
+        mock_send.assert_not_called()
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 0)
+
+        wallet.balance = 50
+        wallet.save(update_fields=["balance", "updated_at"])
+        result = send_payment_receipt_sms(payment)
         self.assertTrue(result["sent"])
         mock_send.assert_called_once()
         wallet.refresh_from_db()
-        self.assertEqual(wallet.balance, 0)  # never billed
+        self.assertEqual(wallet.balance, 50)  # never billed, once it's actually sent
         self.assertEqual(SmsMessageLog.objects.get(category=SmsMessageLog.RECEIPT).credits_charged, 0)
 
     @patch("finance.services.send_ebulksms")

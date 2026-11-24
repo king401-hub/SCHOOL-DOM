@@ -15740,8 +15740,11 @@ def _send_wallet_billed_attendance_sms(school, student_profile, message):
 
     A premium SchoolGate school's termly fee already funds this text the same
     way it funds the gate terminal's own attendance SMS (see
-    rfid_attendance.views._send_gate_sms) - send_wallet_sms's charge_wallet=False
-    still sends and logs the message, just never debits the wallet for it."""
+    rfid_attendance.views._send_gate_sms) - charge_wallet=False still sends
+    and logs the message without debiting the wallet, and require_balance=False
+    alongside it means that school's wallet balance (which this text was never
+    meant to draw from) can't block it either; it's funded by the subscription,
+    not this per-message credit pool."""
     from finance.models import SmsMessageLog
     from finance.services import (
         InsufficientSmsCreditsError,
@@ -15762,6 +15765,7 @@ def _send_wallet_billed_attendance_sms(school, student_profile, message):
                 category=SmsMessageLog.ATTENDANCE,
                 narration="Attendance (web tap/scan)",
                 charge_wallet=charge_wallet,
+                require_balance=charge_wallet,
             )
         except (InsufficientSmsCreditsError, SmsWalletLockedError):
             pass

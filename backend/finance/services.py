@@ -599,8 +599,9 @@ def send_parent_virtual_account_sms(vac, student_names=None, actor=None):
     account - see virtual_account_sms_text. Never billed to the school's SMS
     wallet (same reasoning as send_payment_receipt_sms's unbilled branch:
     this is the account the parent needs in order to pay fees, not a message
-    the school chose to send) and never raises - a failed text must not
-    undo a successful provisioning."""
+    the school chose to send), but still blocked like any other message if
+    the wallet is dry or locked - see send_wallet_sms. Never raises - a
+    failed text must not undo a successful provisioning."""
     parent_user = vac.parent
     phone = (getattr(parent_user, "phone", "") or "").strip()
     if not phone:
@@ -617,6 +618,8 @@ def send_parent_virtual_account_sms(vac, student_names=None, actor=None):
             narration="Virtual account provisioned",
             charge_wallet=False,
         )
+    except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+        return {"sent": False, "skipped": True, "reason": str(exc)}
     except Exception:
         logger.exception("Virtual account SMS failed for parent %s", parent_user.email)
         return {"sent": False, "reason": "Virtual account SMS could not be sent."}
@@ -1183,6 +1186,7 @@ def send_wallet_sms(
     metadata=None,
     sender: str = "SchoolDom",
     charge_wallet: bool = True,
+    require_balance: bool = True,
 ) -> "SmsMessageLog":
     """
     Send via eBulkSMS, then charge the school's SMS wallet (SMS_CREDITS_PER_MESSAGE
@@ -1199,21 +1203,26 @@ def send_wallet_sms(
     Monitor attendance alerts are funded by the parent's own subscription and
     must never call this.
 
-    `charge_wallet=False` sends and logs without debiting anything, and without
-    the balance/lock pre-flight - so the message goes out even on an empty or
-    locked wallet. Reserved for messages a school must never be billed for and
-    must never fail to deliver: a payment receipt confirms money the school has
-    already received, so charging for it would bill them to be told they were
-    paid, and suppressing it on a flat wallet would leave the payer with no
-    confirmation. The SmsMessageLog row is still written (credits_charged=0) so
-    delivery is auditable exactly like a billed send.
+    `charge_wallet=False` sends and logs without debiting anything, but the
+    balance/lock pre-flight still applies regardless - a wallet that's dry or
+    locked blocks every message billed to it, with no exceptions, including
+    a payment receipt or a new virtual-account number: the school must top up
+    before anything texts out again. The SmsMessageLog row is still written
+    (credits_charged=0) so delivery is auditable exactly like a billed send.
+
+    `require_balance=False` is the one further exception, for a message this
+    wallet was never meant to gate at all - a premium SchoolGate school's
+    attendance text, funded by their termly subscription fee rather than this
+    per-message credit pool, where the wallet's balance is simply not the
+    relevant funding source. Not for "essential but free" messages like a
+    receipt; those still go through the balance/lock check above.
 
     Sent synchronously rather than via Celery: this codebase has no confirmed Celery
     worker running in production (users/signals.py falls back to sync for the same
     reason), so queuing SMS there risks messages silently never sending.
     """
     wallet = get_or_create_sms_wallet(tenant)
-    if charge_wallet:
+    if require_balance:
         if wallet.is_locked:
             raise SmsWalletLockedError("This school's SMS wallet is locked.")
         if wallet.balance < SMS_CREDITS_PER_MESSAGE:
@@ -7036,7 +7045,8 @@ def send_payment_receipt_sms(payment, receipt_data=None, receipt_url="") -> dict
     an incoming bank transfer or DVA/Paystack payment reconciled automatically
     by webhook - where the SMS is the only thing that carries the receipt link
     to a parent who paid offline and may have no email on file or never open
-    the portal. Never billed, never blocked by an empty wallet, for that case.
+    the portal. Never billed for that case, but still blocked like any other
+    message if the wallet is dry or locked - see send_wallet_sms.
 
     Pass an already-built `receipt_data`/`receipt_url` to text and email the
     *same* receipt; called bare it mints its own.
@@ -8254,8 +8264,8 @@ def process_virtual_account_payment(
                 parent_phone = (getattr(parent_user, "phone", "") or "").strip()
                 if parent_phone:
                     # Free to the school: this confirms money they have already been
-                    # paid, so it is never billed to their wallet and still goes out
-                    # when that wallet is empty or locked.
+                    # paid, so it is never billed to their wallet - but still blocked,
+                    # like every other message, if that wallet is empty or locked.
                     send_wallet_sms(
                         resolved_tenant,
                         parent_phone,
