@@ -212,7 +212,7 @@ class ActivationCreditBonusTests(TestCase):
             provider="paystack",
             created_by=self.admin,
         )
-        mock_verify.return_value = {"status": "success", "amount": str(ACTIVATION_CREDIT_PRICE * 100)}
+        mock_verify.return_value = {"status": "success", "amount": str(ACTIVATION_CREDIT_PRICE * 100 * 100)}  # kobo
 
         verified_pool = verify_activation_credit_purchase(tx.reference, actor=self.admin)
         tx.refresh_from_db()
@@ -317,7 +317,7 @@ class ActivationCreditBonusTests(TestCase):
                 "reference": tx.reference,
                 "channel": "card",
                 "status": "success",
-                "amount": str(tx.amount),
+                "amount": str(tx.amount * 100),  # kobo
                 "metadata": {"purpose": "activation_tokens"},
             },
         }

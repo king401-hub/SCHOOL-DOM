@@ -3132,7 +3132,14 @@ def verify_activation_credit_purchase(reference, actor=None, verification: Optio
 
     verification = verification or verify_payment_transaction(reference)
     status_value = str(verification.get("status") or "").lower()
-    amount_major = Decimal(str(verification.get("amount") or 0))
+    # Paystack reports `amount` in kobo; Flutterwave and Kuda (verify_kuda_transaction,
+    # verify_flutterwave_transaction) already report it in Naira. Treating every
+    # provider's figure as kobo divided the Paystack case correctly but left a
+    # genuine, full Flutterwave/Kuda payment looking 100x short of tx.amount below,
+    # tripping the "amount_mismatch" failure on a payment that actually cleared.
+    provider = _payment_provider_for_reference(reference)
+    raw_amount = Decimal(str(verification.get("amount") or 0))
+    amount_major = raw_amount / Decimal("100") if provider == "paystack" else raw_amount
     # Flutterwave's transaction-level status is "successful"; Paystack's is
     # "success" - this dispatches to whichever provider actually processed
     # the payment (verify_payment_transaction), so checking only one left
