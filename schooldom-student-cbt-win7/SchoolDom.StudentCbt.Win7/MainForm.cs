@@ -50,6 +50,11 @@ namespace SchoolDom.StudentCbt.Win7
         private DateTime? _offlineSince;
         private bool _pendingAutoSubmit;
         private int _lastSaveSecond = -1;
+        // Guards against TimerTick firing again (every second) while a
+        // previous SaveAnswers call is still in flight on the background
+        // task below - without it, a slow/degraded LAN link would pile up
+        // concurrent POSTs instead of just skipping a tick.
+        private bool _saveInFlight;
         private WebBrowser _questionWebView;
 
         // Server-anchored countdown: the admin LAN server's clock is the only source of truth
@@ -1360,16 +1365,47 @@ namespace SchoolDom.StudentCbt.Win7
             {
                 _lastSaveSecond = now.Second;
                 SaveAnswersLocally();
-                try
+                // _client.SaveAnswers is a blocking HttpWebRequest call that can take up
+                // to ~15s per attempt and retries twice on failure (LanClient.PostWithRetry)
+                // - calling it directly here used to block this timer's UI thread for as
+                // long as 45+ seconds on a slow or congested LAN, during which the whole
+                // window stops painting and responding to input (Windows shows "Not
+                // Responding"), and a long enough hang gets the process killed outright.
+                // Running it on a background task keeps every per-second tick instant;
+                // _saveInFlight skips a tick instead of letting slow ticks pile up
+                // concurrent requests against the same session.
+                if (!_saveInFlight)
                 {
-                    var saved = _client.SaveAnswers(Value(_session, "id", "Id"), _answers);
-                    if (saved.ContainsKey("session")) _session = saved["session"] as Dictionary<string, object> ?? _session;
-                    SyncServerTimer(saved);
-                    MarkLanConnected();
-                }
-                catch
-                {
-                    MarkLanDisconnected(now);
+                    _saveInFlight = true;
+                    var sessionId = Value(_session, "id", "Id");
+                    var answersSnapshot = new Dictionary<string, object>(_answers);
+                    var tickTime = now;
+                    // Task.Run itself needs .NET 4.5 and isn't available against this
+                    // project's TargetFrameworkVersion (v4.0) - the Task class and its
+                    // instance Start() method have been there since TPL's original 4.0
+                    // release, so this gets the same background-thread behavior.
+                    new Task(() =>
+                    {
+                        try
+                        {
+                            var saved = _client.SaveAnswers(sessionId, answersSnapshot);
+                            BeginInvoke((MethodInvoker)(() =>
+                            {
+                                _saveInFlight = false;
+                                if (saved.ContainsKey("session")) _session = saved["session"] as Dictionary<string, object> ?? _session;
+                                SyncServerTimer(saved);
+                                MarkLanConnected();
+                            }));
+                        }
+                        catch
+                        {
+                            BeginInvoke((MethodInvoker)(() =>
+                            {
+                                _saveInFlight = false;
+                                MarkLanDisconnected(tickTime);
+                            }));
+                        }
+                    }).Start();
                 }
             }
             if (_timeLabel != null) _timeLabel.Text = TimeText();
