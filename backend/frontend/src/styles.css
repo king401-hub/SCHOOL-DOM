@@ -30364,6 +30364,42 @@ body[data-theme="dark"] .segmented-toggle button:hover:not(.active) { background
   margin-bottom: 0.75rem;
 }
 
+/* .metric-grid's own @media (min-width: 900px) rule forces exactly 4 fixed
+   columns, sized for a card with the full viewport to itself - it never
+   anticipates sitting inside a narrower sibling, like one half of this
+   population-grid. At >=900px with both Staff and Students on screen, each
+   card gets roughly half the viewport but the 4-column rule still applies
+   on top of that, squeezing each column far below what a label like
+   "TOTAL STAFF" needs. Combined with .metric-label's overflow-wrap: anywhere,
+   that's what produced labels breaking mid-word ("TO"/"TAL"/"STA"/"FF")
+   instead of at the space - and it reproduces at any viewport width, not
+   just narrow ones, since the real constraint is this card's own size.
+   A selector scoped to this nesting (0,2,0) outranks the unscoped 4-column
+   rule (0,1,0) regardless of media query, so this wins everywhere and sizes
+   columns off the card's actual width instead of a fixed count. */
+.attendance-analytics-population-card .metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+}
+
+/* Below this, stack the two population cards outright too, rather than
+   leaning on auto-fit to land both the outer and inner grid on a readable
+   width at once. */
+@media (max-width: 768px) {
+  .attendance-analytics-population-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .attendance-analytics-population-card .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .attendance-analytics-population-card .metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 body[data-theme="dark"] .attendance-analytics-date-input,
 body[data-theme="dark"] .attendance-analytics-filter-row input,
 body[data-theme="dark"] .attendance-analytics-filter-row select {
