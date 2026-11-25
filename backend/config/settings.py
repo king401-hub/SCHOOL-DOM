@@ -574,6 +574,17 @@ MAIL_INBOX_ACCOUNTS = [
         'imap_port': MAIL_INBOX_IMAP_PORT,
     },
 ]
+# Forward mail received by Resend (support@/enquiry@/billing@schooldom.academy)
+# to a personal mailbox. Resend webhook -> /api/mail-inbox/resend-webhook/.
+# RESEND_WEBHOOK_SECRET is the webhook's "whsec_..." signing secret; blank
+# rejects every webhook. MAIL_FORWARD_TO is comma-separated; blank forwards
+# nothing. MAIL_FORWARD_FROM must be on a domain verified in Resend.
+RESEND_WEBHOOK_SECRET = os.environ.get('RESEND_WEBHOOK_SECRET', '')
+# Full-access Resend key, used only by the forwarder (reading received mail is
+# refused for a send-only key). Blank falls back to RESEND_API_KEY.
+RESEND_FORWARD_API_KEY = os.environ.get('RESEND_FORWARD_API_KEY', '')
+MAIL_FORWARD_TO = os.environ.get('MAIL_FORWARD_TO', '')
+MAIL_FORWARD_FROM = os.environ.get('MAIL_FORWARD_FROM', '')
 OTP_EMAIL_TOKEN_VALIDITY = int(os.environ.get('OTP_EMAIL_TOKEN_VALIDITY', '600'))
 OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1'))
 
