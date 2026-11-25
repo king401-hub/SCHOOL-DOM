@@ -138,7 +138,10 @@ ATTENDANCE_REPORT_ADMIN_ROLES = ("school_admin", "principal")
 
 def send_daily_attendance_report(*, school_code="", today=None, dry_run=False):
     """Send each school's admin(s) a WhatsApp summary of today's student and
-    staff attendance - present/absent/late counts only.
+    staff attendance - present/absent/late counts, plus a clock-in/clock-out
+    line for every teacher (the only population with real scan timestamps -
+    see the module docstring in attendance_analytics/services.py) and a
+    present/absent/late line for every other staff member.
 
     Sent via send_whatsapp_message, which uses Bahasha when it's configured
     (as it is in production) and only falls back to Termii when it isn't.
@@ -157,8 +160,12 @@ def send_daily_attendance_report(*, school_code="", today=None, dry_run=False):
     from django.utils import timezone
 
     from academic.models import AttendanceRecord
+    from attendance.models import TeacherAttendance
+    from attendance_analytics.services import is_late_arrival
     from finance.services import send_whatsapp_message
     from hr.models import StaffAttendance, StaffProfile
+    from rfid_attendance.services import _school_localtime
+    from rfid_attendance.views import get_or_create_gate_settings
     from users.models import User
 
     from core.models import SchoolTenant
@@ -182,7 +189,9 @@ def send_daily_attendance_report(*, school_code="", today=None, dry_run=False):
         staff_late = staff_qs.filter(status=StaffAttendance.LATE).count()
         staff_absent = max(total_staff - staff_present - staff_late, 0)
 
-        if total_students == 0 and total_staff == 0:
+        teachers = list(User.objects.filter(tenant=school, role="teacher", is_active=True))
+
+        if total_students == 0 and total_staff == 0 and not teachers:
             continue
 
         message = (
@@ -197,6 +206,51 @@ def send_daily_attendance_report(*, school_code="", today=None, dry_run=False):
             f"Absent: {staff_absent}\n"
             f"Late: {staff_late}"
         )
+
+        # Teachers are the only population with real clock timestamps (gate/
+        # facial-recognition scans land in attendance.TeacherAttendance, not
+        # hr.StaffAttendance - see attendance_analytics/services.py's module
+        # docstring). Every other staff member only ever has a manually-set
+        # status with no reliable time, so they get a status line instead of
+        # a fabricated clock-in/out.
+        if teachers:
+            gate_settings = get_or_create_gate_settings(school)
+            attendance_by_teacher_id = {
+                row.teacher_id: row
+                for row in TeacherAttendance.objects.filter(tenant=school, attendance_date=report_date, teacher_id__in=[t.id for t in teachers])
+            }
+            teacher_lines = []
+            for teacher in teachers:
+                name = teacher.get_full_name() or teacher.email
+                record = attendance_by_teacher_id.get(teacher.id)
+                if not record:
+                    teacher_lines.append(f"{name}: Absent")
+                    continue
+                clock_in = _school_localtime(school, record.check_in_time).strftime("%I:%M %p").lstrip("0")
+                clock_out = (
+                    _school_localtime(school, record.check_out_time).strftime("%I:%M %p").lstrip("0")
+                    if record.check_out_time else "not yet clocked out"
+                )
+                late_tag = " (late)" if is_late_arrival(school, record.check_in_time, gate_settings) else ""
+                teacher_lines.append(f"{name}{late_tag}: {clock_in} - {clock_out}")
+            message += "\n\nTeaching staff clock-in/out:\n" + "\n".join(teacher_lines)
+
+        # Everyone counted in the Staff totals above, except whoever already
+        # appeared in the teaching clock-in/out list (matched by their linked
+        # User account) - so every staff member shows up exactly once and the
+        # two sections together always add back up to "Staff (total X)".
+        status_labels = dict(StaffAttendance.STATUS_CHOICES)
+        teacher_user_ids = {t.id for t in teachers}
+        other_staff = list(
+            StaffProfile.objects.filter(tenant=school).exclude(employment_status=StaffProfile.EXITED).exclude(user_id__in=teacher_user_ids)
+        )
+        if other_staff:
+            status_by_staff_id = {row.staff_id: row.status for row in staff_qs}
+            other_lines = [
+                f"{staff.full_name}: {status_labels.get(status_by_staff_id.get(staff.id), 'Absent')}"
+                for staff in other_staff
+            ]
+            message += "\n\nOther staff:\n" + "\n".join(other_lines)
 
         rows = []
         for admin in User.objects.filter(tenant=school, role__in=ATTENDANCE_REPORT_ADMIN_ROLES, is_active=True):

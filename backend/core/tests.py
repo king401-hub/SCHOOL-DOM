@@ -1,5 +1,5 @@
 import re
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,6 +8,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from academic.models import AttendanceRecord
+from attendance.models import TeacherAttendance
 from core.models import SchoolGroup, SchoolTenant, primary_school_tenants
 from core.tasks import send_compliance_reminders, send_daily_attendance_report
 from hr.models import StaffAttendance, StaffProfile
@@ -341,3 +342,45 @@ class DailyAttendanceReportTests(TestCase):
 
         self.assertEqual(today_results[self.school.schema_name]["students"]["present"], 0)
         self.assertEqual(yesterday_results[self.school.schema_name]["students"]["present"], 1)
+
+    def _teacher(self, email, *, first_name=None, check_in_time=None, check_out_time=None):
+        label = first_name or email.split("@")[0].capitalize()
+        teacher = User.objects.create_user(
+            email=email, password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True, first_name=label, last_name="Teacher",
+        )
+        if check_in_time is not None:
+            attendance = TeacherAttendance.objects.create(tenant=self.school, teacher=teacher, attendance_date=self.today)
+            TeacherAttendance.objects.filter(pk=attendance.pk).update(check_in_time=check_in_time, check_out_time=check_out_time)
+        return teacher
+
+    @patch("finance.services.send_whatsapp_message")
+    def test_teacher_section_lists_clock_times_and_tags_late_arrivals(self, mock_send):
+        mock_send.return_value = {"status": "success", "message_id": "abc"}
+        on_time = timezone.make_aware(datetime.combine(self.today, time(7, 15)))
+        late = timezone.make_aware(datetime.combine(self.today, time(9, 0)))
+        self._teacher("ontime@rollcall.edu", check_in_time=on_time, check_out_time=timezone.make_aware(datetime.combine(self.today, time(15, 30))))
+        self._teacher("late@rollcall.edu", check_in_time=late)
+        self._teacher("noshow@rollcall.edu")  # no TeacherAttendance row at all
+
+        results = send_daily_attendance_report()
+
+        message = results[self.school.schema_name]["message"]
+        self.assertIn("Teaching staff clock-in/out:", message)
+        self.assertIn("Teacher Ontime: 7:15 AM - 3:30 PM", message)
+        self.assertIn("Teacher Late (late): 9:00 AM - not yet clocked out", message)
+        self.assertIn("Teacher Noshow: Absent", message)
+
+    @patch("finance.services.send_whatsapp_message")
+    def test_other_staff_excludes_people_already_shown_as_teachers(self, mock_send):
+        mock_send.return_value = {"status": "success", "message_id": "abc"}
+        teacher = self._teacher("dual@rollcall.edu", check_in_time=timezone.make_aware(datetime.combine(self.today, time(7, 15))))
+        StaffProfile.objects.create(tenant=self.school, staff_code="DUAL1", first_name="Dual", last_name="Role", user=teacher)
+        self._staff("ST1", StaffAttendance.PRESENT)
+
+        results = send_daily_attendance_report()
+
+        message = results[self.school.schema_name]["message"]
+        other_section = message.split("Other staff:")[1]
+        self.assertNotIn("Role Dual", other_section)
+        self.assertIn("ST1 Staff: Present", other_section)
