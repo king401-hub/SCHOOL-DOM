@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace SchoolDom.Cbt.Win7
@@ -19,6 +20,7 @@ namespace SchoolDom.Cbt.Win7
         private readonly LanServerService _lan;
         private Panel _root;
         private Label _statusLabel;
+        private bool _busyWithCloudAction;
 
         // ClassDropdown's own placeholder for the blank ClassName that means
         // "visible to every class" everywhere else in this codebase
@@ -1263,64 +1265,104 @@ namespace SchoolDom.Cbt.Win7
         // becomes a retryable warning instead of a wall, and Sync Now is right there for it.
         private void SignInThenSync(string signInStatus, Action signIn)
         {
-            try
+            if (_busyWithCloudAction) return;
+            _busyWithCloudAction = true;
+            SetStatus(signInStatus, Palette.Muted);
+            Cursor = Cursors.WaitCursor;
+            new Task(() =>
             {
-                SetStatus(signInStatus, Palette.Muted);
-                Cursor = Cursors.WaitCursor;
-                signIn();
-            }
-            catch (Exception ex)
-            {
-                Cursor = Cursors.Default;
-                SetStatus(ex.Message, Palette.Coral);
-                MessageBox.Show(ex.Message, "Sign In Failed");
-                return;
-            }
+                try
+                {
+                    signIn();
+                }
+                catch (Exception ex)
+                {
+                    BeginInvoke((MethodInvoker)(() =>
+                    {
+                        _busyWithCloudAction = false;
+                        Cursor = Cursors.Default;
+                        SetStatus(ex.Message, Palette.Coral);
+                        MessageBox.Show(ex.Message, "Sign In Failed");
+                    }));
+                    return;
+                }
 
-            string message;
-            try
-            {
-                message = _cloud.PullPackage("");
-            }
-            catch (CloudAuthExpiredException ex)
-            {
-                Cursor = Cursors.Default;
-                HandleCloudAuthExpired(ex);
-                return;
-            }
-            catch (Exception ex)
-            {
-                message = "Signed in, but could not sync school data yet: " + ex.Message + " Use Sync Now on the dashboard to try again.";
-            }
-            Cursor = Cursors.Default;
-            SetStatus(message, Palette.Green);
-            MessageBox.Show(message, "SchoolDom Sync");
-            ShowDashboard();
+                string message;
+                try
+                {
+                    message = _cloud.PullPackage("");
+                }
+                catch (CloudAuthExpiredException ex)
+                {
+                    BeginInvoke((MethodInvoker)(() =>
+                    {
+                        _busyWithCloudAction = false;
+                        Cursor = Cursors.Default;
+                        HandleCloudAuthExpired(ex);
+                    }));
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    message = "Signed in, but could not sync school data yet: " + ex.Message + " Use Sync Now on the dashboard to try again.";
+                }
+                BeginInvoke((MethodInvoker)(() =>
+                {
+                    _busyWithCloudAction = false;
+                    Cursor = Cursors.Default;
+                    SetStatus(message, Palette.Green);
+                    MessageBox.Show(message, "SchoolDom Sync");
+                    ShowDashboard();
+                }));
+            }).Start();
         }
 
+        /// <summary>
+        /// Runs a cloud call (Sync Now, Upload Results, ...) on a background thread so a
+        /// slow/unstable connection can't block the UI message loop - a call used to run
+        /// right here on the UI thread with up to a 30s network timeout, during which
+        /// Windows couldn't repaint the window at all ("Not Responding", blank/white).
+        /// </summary>
         private void RunWithStatus(string status, Func<string> action, Action onSuccess)
         {
-            try
+            if (_busyWithCloudAction) return;
+            _busyWithCloudAction = true;
+            SetStatus(status, Palette.Muted);
+            Cursor = Cursors.WaitCursor;
+            new Task(() =>
             {
-                SetStatus(status, Palette.Muted);
-                Cursor = Cursors.WaitCursor;
-                var message = action();
-                Cursor = Cursors.Default;
-                SetStatus(message, Palette.Green);
-                MessageBox.Show(message, "SchoolDom Sync");
-                onSuccess();
-            }
-            catch (CloudAuthExpiredException ex)
-            {
-                Cursor = Cursors.Default;
-                HandleCloudAuthExpired(ex);
-            }
-            catch (Exception ex)
-            {
-                Cursor = Cursors.Default;
-                SetStatus(ex.Message, Palette.Coral);
-                MessageBox.Show(ex.Message, "SchoolDom Sync Failed");
-            }
+                try
+                {
+                    var message = action();
+                    BeginInvoke((MethodInvoker)(() =>
+                    {
+                        _busyWithCloudAction = false;
+                        Cursor = Cursors.Default;
+                        SetStatus(message, Palette.Green);
+                        MessageBox.Show(message, "SchoolDom Sync");
+                        onSuccess();
+                    }));
+                }
+                catch (CloudAuthExpiredException ex)
+                {
+                    BeginInvoke((MethodInvoker)(() =>
+                    {
+                        _busyWithCloudAction = false;
+                        Cursor = Cursors.Default;
+                        HandleCloudAuthExpired(ex);
+                    }));
+                }
+                catch (Exception ex)
+                {
+                    BeginInvoke((MethodInvoker)(() =>
+                    {
+                        _busyWithCloudAction = false;
+                        Cursor = Cursors.Default;
+                        SetStatus(ex.Message, Palette.Coral);
+                        MessageBox.Show(ex.Message, "SchoolDom Sync Failed");
+                    }));
+                }
+            }).Start();
         }
 
         private void HandleCloudAuthExpired(CloudAuthExpiredException ex)
