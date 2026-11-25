@@ -42,7 +42,12 @@ def _recipients():
 
 
 def _api_key():
-    return (getattr(settings, "ANYMAIL", {}) or {}).get("RESEND_API_KEY", "")
+    """Reading received mail needs a full-access Resend key; the site's normal
+    sending key is usually send-only. RESEND_FORWARD_API_KEY keeps the two
+    apart, and falls back to the sending key if it is not set."""
+    return getattr(settings, "RESEND_FORWARD_API_KEY", "") or (
+        (getattr(settings, "ANYMAIL", {}) or {}).get("RESEND_API_KEY", "")
+    )
 
 
 def _headers():

@@ -123,6 +123,12 @@ class ForwardTests(SimpleTestCase):
         self.assertEqual(kwargs["headers"]["Idempotency-Key"], "fwd-em_1")
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer re_test")
 
+    @override_settings(RESEND_FORWARD_API_KEY="re_full")
+    def test_dedicated_forward_key_is_preferred(self):
+        _outcome, get, post = self._run()
+        self.assertEqual(get.call_args_list[0].kwargs["headers"]["Authorization"], "Bearer re_full")
+        self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer re_full")
+
     def test_send_failure_raises_for_retry(self):
         with self.assertRaises(forwarding.ForwardError):
             self._run(post_status=500)
