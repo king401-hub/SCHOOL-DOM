@@ -45,6 +45,7 @@ from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage, MessageGroup, Notification
 from tenants.models import Tenant
 from users.models import KidsMonitorSubscription, ParentProfile, ServiceAgreement, StudentActivityTitle, StudentEnrollment, StudentProfile, SupportTicket, TeacherProfile, User
+from rfid_attendance.models import CardAssignment
 from users.app_views import (
     ID_CARD_SIGNING_SALT,
     _class_broadsheet,
@@ -5874,6 +5875,47 @@ class AdminIdCardTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         principal_entry = next(p for p in response.data["people"] if p["email"] == "principal@admin-card.edu")
         self.assertEqual(principal_entry["display_type"], "Principal")
+
+    def test_student_card_availability_reflects_an_active_card_assignment(self):
+        with_card_user = User.objects.create_user(
+            email="withcard@admin-card.edu", password="StudentPass123", first_name="Has", last_name="Card",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        with_card = StudentProfile.objects.create(
+            user=with_card_user, student_id="CARD-001", admission_number="CARDADM-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            guardian_phone="08010000002",
+        )
+        without_card_user = User.objects.create_user(
+            email="nocard@admin-card.edu", password="StudentPass123", first_name="No", last_name="Card",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=without_card_user, student_id="CARD-002", admission_number="CARDADM-002",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            guardian_phone="08010000003",
+        )
+        CardAssignment.objects.create(tenant=self.school, holder=with_card_user, card_uid="UID-0001", status="active")
+        # A revoked assignment must not count as a currently available card.
+        revoked_user = User.objects.create_user(
+            email="revoked@admin-card.edu", password="StudentPass123", first_name="Was", last_name="Card",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=revoked_user, student_id="CARD-003", admission_number="CARDADM-003",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            guardian_phone="08010000004",
+        )
+        CardAssignment.objects.create(
+            tenant=self.school, holder=revoked_user, card_uid="UID-0002", status="revoked",
+        )
+
+        response = self.client.get("/api/app/id-cards/")
+        self.assertEqual(response.status_code, 200, response.data)
+        students_by_id = {p["unique_id"]: p for p in response.data["people"] if p["person_type"] == "student"}
+        self.assertTrue(students_by_id["CARD-001"]["physical_card_assigned"])
+        self.assertFalse(students_by_id["CARD-002"]["physical_card_assigned"])
+        self.assertFalse(students_by_id["CARD-003"]["physical_card_assigned"])
 
     def test_admin_from_another_school_cannot_be_resolved_through_this_tenants_id_card_lookup(self):
         other_school = SchoolTenant.objects.create(name="Other Card School", schema_name="other_card_school", is_active=True)

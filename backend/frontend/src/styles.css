@@ -25814,6 +25814,14 @@ body[data-theme="dark"] .heat-bar-track {
   border-top: 1px solid var(--id-card-line);
 }
 
+.id-card-flip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
 .id-card-flip-button {
   border: 0;
   border-radius: 8px;
@@ -26207,7 +26215,7 @@ body[data-theme="dark"] .qr-scanner-copy p {
     border-color: #94a3b8;
   }
 
-  .id-card-flip-button,
+  .id-card-flip-row,
   .id-card-actions {
     display: none;
   }
@@ -30214,6 +30222,8 @@ body[data-theme="dark"] .segmented-toggle button:hover:not(.active) { background
 .badge-status.tone-late { background: #fef3c7; color: #92400e; }
 .badge-status.tone-in_progress,
 .badge-status.tone-excused { background: #e2e8f0; color: #475569; }
+.badge-status.tone-card-available { background: #dcfce7; color: #166534; }
+.badge-status.tone-card-missing { background: #fee2e2; color: #991b1b; }
 
 .badge-pending {
   display: inline-block;

@@ -9381,7 +9381,7 @@ function IdCardFaces({ person, school, qrDataUrl, theme, flipped }) {
   );
 }
 
-export function IdCardPreview({ person, school, qrDataUrl, theme }) {
+export function IdCardPreview({ person, school, qrDataUrl, theme, showCardAvailability = false }) {
   const [isFlipped, setIsFlipped] = useState(false);
   if (!person) {
     return (
@@ -9392,12 +9392,22 @@ export function IdCardPreview({ person, school, qrDataUrl, theme }) {
     );
   }
 
+  const canShowCardAvailability =
+    showCardAvailability && person.person_type === "student" && typeof person.physical_card_assigned === "boolean";
+
   return (
     <div id="schooldom-id-card-document" className="id-card-print-area id-card-flip-stage">
       <IdCardFaces person={person} school={school} qrDataUrl={qrDataUrl} theme={theme} flipped={isFlipped} />
-      <button type="button" className="id-card-flip-button" onClick={() => setIsFlipped((value) => !value)}>
-        {isFlipped ? "Show Front" : "Show QR Back"}
-      </button>
+      <div className="id-card-flip-row">
+        <button type="button" className="id-card-flip-button" onClick={() => setIsFlipped((value) => !value)}>
+          {isFlipped ? "Show Front" : "Show QR Back"}
+        </button>
+        {canShowCardAvailability ? (
+          <span className={`badge-status ${person.physical_card_assigned ? "tone-card-available" : "tone-card-missing"}`}>
+            {person.physical_card_assigned ? "Physical card available" : "No physical card assigned"}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -9887,7 +9897,7 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
               </div>
               {actionSuccess ? <div className="token-usage-toast" role="status">{actionSuccess}</div> : null}
               {actionError ? <p className="form-feedback error">{actionError}</p> : null}
-              <IdCardPreview person={selectedPerson} school={cardSchool} qrDataUrl={qrDataUrl} theme={documentTheme} />
+              <IdCardPreview person={selectedPerson} school={cardSchool} qrDataUrl={qrDataUrl} theme={documentTheme} showCardAvailability />
               <div className="panel-form-actions id-card-actions">
                 <button type="button" className="table-action" onClick={handlePrint} disabled={!selectedPerson || qrLoading}>
                   {qrLoading ? <><Spinner size={12} /> Generating...</> : "Generate / Print Card"}

@@ -44,6 +44,7 @@ from attendance.utils import get_frontend_base_url
 from attendance.models import AttendanceQRCode
 from apps.app.views import admin_app_installer_path, offline_cbt_installer_path
 from users import id_card_pdf
+from rfid_attendance.models import CardAssignment
 
 from academic.models import (
     AcademicYear,
@@ -1695,7 +1696,7 @@ def _school_identity_payload(tenant, request=None):
     }
 
 
-def _id_card_student_payload(student_profile, request=None):
+def _id_card_student_payload(student_profile, request=None, card_assigned=False):
     payload = _student_payload(student_profile, request=request)
     return {
         "id": payload["id"],
@@ -1718,6 +1719,7 @@ def _id_card_student_payload(student_profile, request=None):
         "blood_group": payload["blood_group"],
         "address": payload["home_address"],
         "is_active": payload["is_active"],
+        "physical_card_assigned": bool(card_assigned),
     }
 
 
@@ -7402,6 +7404,9 @@ def id_cards_snapshot(request):
         .filter(user__tenant=user.tenant)
         .order_by("user__first_name", "user__last_name")[:500]
     )
+    card_assigned_user_ids = set(
+        CardAssignment.objects.filter(tenant=user.tenant, status="active").values_list("holder_id", flat=True)
+    )
     teachers = (
         TeacherProfile.objects.select_related("user")
         .prefetch_related("subjects", "assigned_classes")
@@ -7424,7 +7429,10 @@ def id_cards_snapshot(request):
     ]
 
     people = [
-        *[_id_card_student_payload(item, request=request) for item in students],
+        *[
+            _id_card_student_payload(item, request=request, card_assigned=item.user_id in card_assigned_user_ids)
+            for item in students
+        ],
         *[_id_card_teacher_payload(item, request=request) for item in teachers],
         *staff_people,
         *admin_people,
