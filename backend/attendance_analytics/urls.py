@@ -6,6 +6,7 @@ app_name = 'attendance_analytics'
 
 urlpatterns = [
     path('overview/', views.overview, name='overview'),
+    path('dashboard/', views.dashboard_overview, name='dashboard_overview'),
     path('daily/', views.daily_summary, name='daily_summary'),
     path('daily/register/', views.daily_register, name='daily_register'),
     path('staff/<str:person_id>/', views.staff_profile, name='staff_profile'),

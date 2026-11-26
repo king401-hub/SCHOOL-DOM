@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 from academic.models import AttendanceRecord, Class, SchoolActivityCalendar, Term
 from attendance.models import TeacherAttendance
 from core.models import AuditLog, SchoolTenant
-from hr.models import StaffAttendance, StaffProfile
+from hr.models import LeaveRequest, StaffAttendance, StaffProfile
 from rfid_attendance.models import GateSettings
 from rfid_attendance.services import _legacy_tenant_for_attendance
 from users.models import StudentProfile, User
@@ -274,6 +274,98 @@ class OverviewAndDailyViewTests(TestCase):
 
         daily_resp = self.client.get("/api/attendance-analytics/daily/?population=staff")
         self.assertEqual(daily_resp.status_code, 403)
+
+
+class DashboardOverviewTests(TestCase):
+    def setUp(self):
+        self.school = _make_school("Dashboard School", "aa_dashboard_school")
+        _make_gate_settings(self.school)
+        self.admin = User.objects.create_user(
+            email="admin@dashboardschool.test", password="testpass123", role="school_admin", tenant=self.school,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def test_dashboard_returns_kpis_composition_and_trend_for_both_populations(self):
+        today = timezone.localdate()
+
+        teacher = User.objects.create_user(
+            email="teacher@dashboardschool.test", password="testpass123", role="teacher", tenant=self.school,
+        )
+        attendance = TeacherAttendance.objects.create(tenant=self.school, teacher=teacher, attendance_date=today)
+        # TeacherAttendance.check_in_time/check_out_time are auto_now_add/plain
+        # DateTimeFields stamped on first save - .update() bypasses that so
+        # the test can control exactly what the overtime math sees.
+        TeacherAttendance.objects.filter(pk=attendance.pk).update(
+            check_in_time=timezone.make_aware(datetime.datetime.combine(today, datetime.time(8, 0))),
+            check_out_time=timezone.make_aware(datetime.datetime.combine(today, datetime.time(15, 30))),
+        )
+        StaffProfile.objects.create(
+            tenant=self.school, staff_code="NT001", first_name="Non", last_name="Teaching",
+            role="Security", staff_type=StaffProfile.NON_TEACHING,
+        )
+
+        student = User.objects.create_user(
+            email="student@dashboardschool.test", password="testpass123", role="student", tenant=self.school,
+            gender="F",
+        )
+        StudentProfile.objects.create(
+            user=student, student_id="DB001", admission_number="ADM-DB-001",
+            admission_date=datetime.date(2024, 9, 1), guardian_name="G", guardian_phone="0800", guardian_relation="Parent",
+        )
+        AttendanceRecord.objects.create(student=student, date=today, clock_in_at=timezone.now(), status="present")
+
+        resp = self.client.get("/api/attendance-analytics/dashboard/")
+        self.assertEqual(resp.status_code, 200)
+
+        # Gate settings: early_start 7:30 .. clockout_start 13:00 is the
+        # "expected shift" (5.5h). Clocked in 8:00, out 15:30 = 7.5h worked,
+        # so overtime is 2.0h.
+        self.assertEqual(resp.data["staff"]["overtime_hours"], 2.0)
+        self.assertEqual(resp.data["staff"]["pending_leave_count"], 0)
+
+        composition = {row["label"]: row for row in resp.data["staff_composition"]}
+        self.assertEqual(composition["Teaching"]["present"], 1)
+        self.assertEqual(composition["Non-teaching"]["total"], 1)
+
+        student_composition = {row["label"]: row for row in resp.data["student_composition"]}
+        self.assertEqual(student_composition["Female"]["present"], 1)
+        self.assertEqual(student_composition["Male"]["total"], 0)
+
+        self.assertGreaterEqual(len(resp.data["staff_trend"]), 1)
+        self.assertGreaterEqual(len(resp.data["student_trend"]), 1)
+        this_month_label = today.strftime("%b %Y")
+        staff_this_month = next(b for b in resp.data["staff_trend"] if b["period_label"] == this_month_label)
+        self.assertEqual(staff_this_month["on_time_count"], 1)
+
+    def test_pending_leave_request_is_counted_but_approved_and_rejected_are_not(self):
+        staff_user = User.objects.create_user(
+            email="leave@dashboardschool.test", password="testpass123", role="teacher", tenant=self.school,
+        )
+        staff_profile = StaffProfile.objects.create(
+            tenant=self.school, staff_code="T002", first_name="Leave", last_name="Taker",
+            role="Teacher", staff_type=StaffProfile.TEACHING, user=staff_user,
+        )
+        today = timezone.localdate()
+        LeaveRequest.objects.create(staff=staff_profile, start_date=today, end_date=today, status=LeaveRequest.PENDING)
+        LeaveRequest.objects.create(staff=staff_profile, start_date=today, end_date=today, status=LeaveRequest.APPROVED)
+        LeaveRequest.objects.create(staff=staff_profile, start_date=today, end_date=today, status=LeaveRequest.REJECTED)
+
+        resp = self.client.get("/api/attendance-analytics/dashboard/")
+        self.assertEqual(resp.data["staff"]["pending_leave_count"], 1)
+
+        this_month_label = today.strftime("%b %Y")
+        bucket = next(b for b in resp.data["staff_trend"] if b["period_label"] == this_month_label)
+        self.assertEqual(bucket["leave_count"], 1)  # only the approved request counts toward leave days
+
+    def test_non_admin_cannot_view_dashboard(self):
+        teacher = User.objects.create_user(
+            email="plainteacher@dashboardschool.test", password="testpass123", role="teacher", tenant=self.school,
+        )
+        client = APIClient()
+        client.force_authenticate(user=teacher)
+        resp = client.get("/api/attendance-analytics/dashboard/")
+        self.assertEqual(resp.status_code, 403)
 
 
 class DailyRegisterIntegrationTests(TestCase):

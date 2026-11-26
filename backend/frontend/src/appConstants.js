@@ -118,7 +118,7 @@ export const ADMIN_ROUTE_REDIRECTS = {
 export const ADMIN_ENDPOINTS = {
   "/dashboard": "/api/app/dashboard/",
   "/performance-heatmap": "/api/app/performance-heatmap/",
-  "/attendance-analytics": "/api/attendance-analytics/overview/",
+  "/attendance-analytics": "/api/attendance-analytics/dashboard/",
   "/attendance-analytics/daily": "/api/attendance-analytics/daily/",
   "/attendance-analytics/term": "/api/attendance-analytics/term/",
   "/finance": "/api/finance/admin/overview/",

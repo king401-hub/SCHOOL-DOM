@@ -34,7 +34,7 @@ from django.db.models import Q
 from academic.models import AttendanceRecord, Class, SchoolActivityCalendar, Term
 from attendance.models import TeacherAttendance
 from core.models import AuditLog
-from hr.models import StaffAttendance, StaffProfile
+from hr.models import LeaveRequest, StaffAttendance, StaffProfile
 from rfid_attendance.services import _legacy_tenant_for_attendance, _school_localtime
 from rfid_attendance.views import get_or_create_gate_settings
 from users.models import StudentProfile, User
@@ -626,6 +626,137 @@ def overview_summary(tenant, target_date, now=None):
     return result
 
 
+def _expected_shift_hours(gate_settings):
+    """The "standard school day" proxy used only for the overtime figure
+    below: from when clock-in opens to when clock-out opens. There is no
+    separate "shift length" setting anywhere in GateSettings, so this is the
+    closest already-configured boundary rather than a new hardcoded number."""
+    start = gate_settings.early_start
+    end = gate_settings.clockout_start
+    minutes = (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute)
+    return max(0.0, minutes / 60)
+
+
+def _staff_overtime_hours_for_day(tenant, target_date, *, gate_settings=None, now=None):
+    """Teaching staff only (same hours-and-lateness-is-teachers-only caveat
+    as everywhere else in this file - non-teaching staff are manually marked
+    with no clock timestamps to measure overtime from)."""
+    if gate_settings is None:
+        gate_settings = get_or_create_gate_settings(tenant)
+    expected = _expected_shift_hours(gate_settings)
+    teacher_ids = _teacher_ids(tenant)
+    records = fetch_teacher_day_records(tenant, teacher_ids, target_date, target_date)
+    by_person = _records_for_day(records, target_date, teacher_ids)
+    total_overtime = 0.0
+    for record in by_person.values():
+        record = record or {}
+        outcome = day_status(
+            tenant, target_date, record.get('clock_in_at'), record.get('clock_out_at'),
+            gate_settings=gate_settings, now=now,
+        )
+        if outcome['status'] == 'present' and outcome['hours']:
+            total_overtime += max(0.0, outcome['hours'] - expected)
+    return round(total_overtime, 2)
+
+
+def _staff_pending_leave_count(tenant):
+    return LeaveRequest.objects.filter(staff__tenant=tenant, status=LeaveRequest.PENDING).count()
+
+
+def _staff_leave_days_by_month(tenant, start_date, end_date):
+    """Approved leave days per calendar month, keyed by the same '%b %Y'
+    label _bucket_daily_stats already produces, so a caller can merge this
+    straight into a monthly attendance_trends series by period_label."""
+    counts = {}
+    requests = LeaveRequest.objects.filter(
+        staff__tenant=tenant, status=LeaveRequest.APPROVED,
+        start_date__lte=end_date, end_date__gte=start_date,
+    ).values_list('start_date', 'end_date')
+    for req_start, req_end in requests:
+        day = max(req_start, start_date)
+        last = min(req_end, end_date)
+        while day <= last:
+            label = day.strftime('%b %Y')
+            counts[label] = counts.get(label, 0) + 1
+            day += datetime.timedelta(days=1)
+    return counts
+
+
+def _staff_composition_for_day(tenant, target_date, *, gate_settings=None, now=None):
+    """Teaching vs non-teaching present/total for one day - the dashboard's
+    "who's actually in today" bar, since a school has no WFO/WFH-style split
+    to report instead."""
+    teacher_ids = _teacher_ids(tenant)
+    teacher_records = fetch_teacher_day_records(tenant, teacher_ids, target_date, target_date)
+    teacher_by_person = _records_for_day(teacher_records, target_date, teacher_ids)
+    teacher_stats = compute_bulk_day_stats(tenant, target_date, teacher_by_person, gate_settings=gate_settings, now=now)
+
+    staff_ids = _nonteaching_staff_ids(tenant)
+    staff_records = fetch_nonteaching_staff_day_records(staff_ids, target_date, target_date)
+    staff_by_person = _records_for_day(staff_records, target_date, staff_ids)
+    nonteaching_stats = compute_bulk_day_stats(tenant, target_date, staff_by_person, gate_settings=gate_settings, now=now, manual=True)
+
+    return [
+        {'label': 'Teaching', 'present': teacher_stats['total_present'], 'total': teacher_stats['total_registered']},
+        {'label': 'Non-teaching', 'present': nonteaching_stats['total_present'], 'total': nonteaching_stats['total_registered']},
+    ]
+
+
+def _student_composition_for_day(tenant, target_date, *, gate_settings=None, now=None):
+    """Male vs female present/total for one day - same role as
+    _staff_composition_for_day, for the population a school actually has a
+    meaningful two-way split for."""
+    pairs = list(StudentProfile.objects.filter(user__tenant=tenant).values_list('user_id', 'user__gender'))
+    male_ids = [uid for uid, gender in pairs if gender == 'M']
+    female_ids = [uid for uid, gender in pairs if gender == 'F']
+    records = fetch_student_day_records(male_ids + female_ids, target_date, target_date)
+    male_stats = compute_bulk_day_stats(tenant, target_date, _records_for_day(records, target_date, male_ids), gate_settings=gate_settings, now=now)
+    female_stats = compute_bulk_day_stats(tenant, target_date, _records_for_day(records, target_date, female_ids), gate_settings=gate_settings, now=now)
+    return [
+        {'label': 'Male', 'present': male_stats['total_present'], 'total': male_stats['total_registered']},
+        {'label': 'Female', 'present': female_stats['total_present'], 'total': female_stats['total_registered']},
+    ]
+
+
+def _six_month_start(target_date):
+    year, month = target_date.year, target_date.month - 5
+    while month <= 0:
+        month += 12
+        year -= 1
+    return datetime.date(year, month, 1)
+
+
+def dashboard_overview(tenant, target_date, *, now=None):
+    """The redesigned Overview screen's data: everything overview_summary
+    already provides, plus the extra KPIs/charts that screen's new layout
+    needs (overtime, pending leave, a two-way composition split, and a
+    trailing-6-month trend) - all built from the same calculation engine as
+    every other screen, never a separate parallel computation."""
+    gate_settings = get_or_create_gate_settings(tenant)
+    base = overview_summary(tenant, target_date, now=now)
+    result = {'date': base['date'], 'day_in_progress': base['day_in_progress']}
+    trend_start = _six_month_start(target_date)
+
+    if 'staff' in base:
+        staff_stats = dict(base['staff'])
+        staff_stats['overtime_hours'] = _staff_overtime_hours_for_day(tenant, target_date, gate_settings=gate_settings, now=now)
+        staff_stats['pending_leave_count'] = _staff_pending_leave_count(tenant)
+        result['staff'] = staff_stats
+        result['staff_composition'] = _staff_composition_for_day(tenant, target_date, gate_settings=gate_settings, now=now)
+        staff_trend = attendance_trends(tenant, 'staff', trend_start, target_date, granularity='monthly', now=now)
+        leave_by_month = _staff_leave_days_by_month(tenant, trend_start, target_date)
+        for bucket in staff_trend:
+            bucket['leave_count'] = leave_by_month.get(bucket['period_label'], 0)
+        result['staff_trend'] = staff_trend
+
+    if 'students' in base:
+        result['students'] = base['students']
+        result['student_composition'] = _student_composition_for_day(tenant, target_date, gate_settings=gate_settings, now=now)
+        result['student_trend'] = attendance_trends(tenant, 'student', trend_start, target_date, granularity='monthly', now=now)
+
+    return result
+
+
 def daily_summary(tenant, population, target_date, *, bucket_minutes=15, now=None):
     gate_settings = get_or_create_gate_settings(tenant)
     if population == 'student':
@@ -740,19 +871,26 @@ def _bucket_daily_stats(daily, granularity):
             bucket_key = day - datetime.timedelta(days=day.weekday())
             label = f"Week of {bucket_key.strftime('%b %d')}"
         if bucket_key not in buckets:
-            buckets[bucket_key] = {'period_label': label, 'total_present': 0, 'total_resolved': 0, 'late_count': 0, 'absent_count': 0}
+            buckets[bucket_key] = {
+                'period_label': label, 'total_present': 0, 'total_resolved': 0,
+                'on_time_count': 0, 'late_count': 0, 'absent_count': 0, 'early_departure_count': 0,
+            }
             order.append(bucket_key)
         bucket = buckets[bucket_key]
         bucket['total_present'] += day_stats['total_present']
         bucket['total_resolved'] += day_stats['total_registered'] - day_stats['unresolved']
+        bucket['on_time_count'] += day_stats['present_on_time']
         bucket['late_count'] += day_stats['present_late']
         bucket['absent_count'] += day_stats['total_absent']
+        bucket['early_departure_count'] += day_stats['early_departures'] or 0
     return [
         {
             'period_label': buckets[key]['period_label'],
             'attendance_percent': attendance_percent(buckets[key]['total_present'], buckets[key]['total_resolved']),
+            'on_time_count': buckets[key]['on_time_count'],
             'late_count': buckets[key]['late_count'],
             'absent_count': buckets[key]['absent_count'],
+            'early_departure_count': buckets[key]['early_departure_count'],
         }
         for key in order
     ]

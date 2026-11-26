@@ -17634,7 +17634,7 @@ function AttendanceReportExportButtons({ session, pdfEndpoint, csvEndpoint, file
   );
 }
 
-function TrendChart({ points, width = 480, height = 160, color = "#4ADE80" }) {
+function TrendChart({ points, width = 480, height = 160, color = "#4ADE80", area = false }) {
   if (!points || points.length < 2) {
     return <p className="panel-empty">Not enough data yet for a trend line.</p>;
   }
@@ -17648,15 +17648,92 @@ function TrendChart({ points, width = 480, height = 160, color = "#4ADE80" }) {
     return [x, y];
   });
   const everyNth = Math.max(1, Math.ceil(points.length / 8));
+  const areaPoints = area
+    ? `${padding},${padding + innerHeight} ${coords.map(([x, y]) => `${x},${y}`).join(" ")} ${padding + innerWidth},${padding + innerHeight}`
+    : null;
   return (
     <div className="trend-chart-wrap">
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Attendance performance over time">
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="Attendance performance over time">
+        {area ? <polygon points={areaPoints} fill={color} fillOpacity={0.18} stroke="none" /> : null}
         <polyline points={coords.map(([x, y]) => `${x},${y}`).join(" ")} fill="none" stroke={color} strokeWidth={2.5} />
         {coords.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={2.5} fill={color} />)}
       </svg>
       <div className="trend-chart-labels">
         {points.map((p, i) => (i % everyNth === 0 ? <span key={i}>{p.label}</span> : null))}
       </div>
+    </div>
+  );
+}
+
+// Two-way present/total comparison (e.g. Teaching vs Non-teaching, Male vs
+// Female) - the closest real equivalent this school data has to a generic
+// HR dashboard's "Working Location" WFO/WFH split.
+function CompositionBarChart({ bars, color = "#2563eb" }) {
+  if (!bars || bars.every((bar) => !bar.total)) {
+    return <p className="panel-empty">No one registered in this group yet.</p>;
+  }
+  const max = Math.max(1, ...bars.map((bar) => bar.total));
+  return (
+    <div className="attendance-analytics-hbar-chart">
+      {bars.map((bar) => {
+        const pct = bar.total ? Math.round((bar.present / bar.total) * 100) : 0;
+        const widthPct = (bar.total / max) * 100;
+        return (
+          <div className="attendance-analytics-hbar-row" key={bar.label}>
+            <span className="attendance-analytics-hbar-label">{bar.label}</span>
+            <div className="attendance-analytics-hbar-track">
+              <div className="attendance-analytics-hbar-fill" style={{ width: `${widthPct}%`, background: color }}>
+                <span className="attendance-analytics-hbar-value">{bar.total}</span>
+              </div>
+            </div>
+            <span className="attendance-analytics-hbar-pct">{pct}% present</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Monthly stacked bar: the "Attendance Statistics" chart. Each bucket comes
+// straight from services.attendance_trends (plus a merged-in leave_count for
+// staff) - every category here is a real, already-tracked figure, nothing
+// invented for the sake of matching the reference dashboard's shape.
+function StackedBarChart({ buckets, series, width = 480, height = 240 }) {
+  if (!buckets || buckets.length === 0) {
+    return <p className="panel-empty">Not enough data yet for this chart.</p>;
+  }
+  const padding = { top: 10, right: 10, bottom: 28, left: 10 };
+  const innerWidth = width - padding.left - padding.right;
+  const innerHeight = height - padding.top - padding.bottom;
+  const maxTotal = Math.max(1, ...buckets.map((bucket) => series.reduce((sum, s) => sum + (bucket[s.key] || 0), 0)));
+  const slot = innerWidth / buckets.length;
+  const barWidth = Math.min(40, slot * 0.55);
+  return (
+    <div className="stacked-bar-chart-wrap">
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="Attendance statistics by month">
+        {buckets.map((bucket, i) => {
+          const x = padding.left + i * slot + (slot - barWidth) / 2;
+          let yCursor = padding.top + innerHeight;
+          return (
+            <g key={bucket.period_label}>
+              {series.map((s) => {
+                const value = bucket[s.key] || 0;
+                const barHeight = (value / maxTotal) * innerHeight;
+                yCursor -= barHeight;
+                return <rect key={s.key} x={x} y={yCursor} width={barWidth} height={barHeight} fill={s.color} />;
+              })}
+              <text x={x + barWidth / 2} y={height - 8} textAnchor="middle" style={{ fontSize: 10, fill: "#64748b" }}>
+                {bucket.period_label.split(" ")[0]}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <ul className="donut-chart-legend stacked-bar-chart-legend">
+        {series.map((s) => (
+          <li key={s.key}><span className="donut-chart-legend-swatch" style={{ background: s.color }} />{s.label}</li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -17692,37 +17769,106 @@ function attendanceDonutSegments(stats) {
   ];
 }
 
-function PopulationOverviewCard({ title, stats, onDrilldown }) {
-  if (!stats) return null;
+// A single "Login" KPI card showing two numbers side by side (late vs
+// on-time/early arrivals) rather than one value - the HR-dashboard-style
+// combo card the redesigned Overview screen's reference image uses.
+function LoginTimingCard({ lateCount, earlyCount, onClick }) {
+  const interactiveProps = onClick
+    ? {
+        role: "button",
+        tabIndex: 0,
+        onClick,
+        onKeyDown: (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onClick(event);
+          }
+        },
+      }
+    : {};
   return (
-    <article className="app-panel attendance-analytics-population-card">
+    <article className={`metric-card tone-blue attendance-analytics-combo-card${onClick ? " metric-card-clickable" : ""}`} {...interactiveProps}>
+      <div className="metric-card-head">
+        <span className="metric-icon metric-icon-blue"><DashboardIcon name="clock" className="inline-icon" /></span>
+        <p className="metric-label">Login</p>
+      </div>
+      <div className="attendance-analytics-combo-values">
+        <div className="attendance-analytics-combo-item">
+          <span className="attendance-analytics-combo-value">{lateCount ?? 0}</span>
+          <span className="attendance-analytics-combo-sublabel">Late</span>
+        </div>
+        <div className="attendance-analytics-combo-item">
+          <span className="attendance-analytics-combo-value">{earlyCount ?? 0}</span>
+          <span className="attendance-analytics-combo-sublabel">Early</span>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+const STAFF_STACKED_SERIES = [
+  { key: "on_time_count", label: "On time", color: ATTENDANCE_DONUT_COLORS.onTime },
+  { key: "late_count", label: "Late", color: ATTENDANCE_DONUT_COLORS.late },
+  { key: "leave_count", label: "Leave", color: "#7C3AED" },
+  { key: "early_departure_count", label: "Early departure", color: "#38BDF8" },
+  { key: "absent_count", label: "Absent", color: ATTENDANCE_DONUT_COLORS.absent },
+];
+const STUDENT_STACKED_SERIES = STAFF_STACKED_SERIES.filter((series) => series.key !== "leave_count");
+
+function trendToAttendancePoints(trend) {
+  return (trend || []).map((bucket) => ({ label: bucket.period_label.split(" ")[0], value: bucket.attendance_percent }));
+}
+
+function trendToAbsenteeismPoints(trend) {
+  // Exact, not approximated: _bucket_daily_stats's attendance_percent is
+  // present/resolved and total_absent is the only other share of resolved,
+  // so 100 - attendance_percent IS the absenteeism rate, never a separate
+  // parallel calculation that could quietly disagree with it.
+  return (trend || []).map((bucket) => ({
+    label: bucket.period_label.split(" ")[0],
+    value: Math.max(0, Math.round((100 - bucket.attendance_percent) * 10) / 10),
+  }));
+}
+
+function PopulationDashboardSection({ title, stats, composition, compositionColor, trend, stackedSeries, kpis, onViewRegister }) {
+  if (!stats) return null;
+  const months = trend?.length || 0;
+  return (
+    <section className="app-panel attendance-analytics-dashboard-section">
       <div className="panel-head">
         <h3>{title}</h3>
         {stats.day_in_progress ? <span className="badge-pending">Day in progress</span> : null}
       </div>
-      <DonutChart
-        segments={attendanceDonutSegments(stats)}
-        total={stats.total_registered}
-        centerLabel={`${stats.attendance_percent}%`}
-        centerSubLabel="present"
-        onSegmentClick={onDrilldown}
-      />
-      <div className="metric-grid">
-        <MetricCard label="Registered" value={stats.total_registered} onClick={onDrilldown ? () => onDrilldown(null) : undefined} />
-        <MetricCard label="Present" value={stats.total_present} onClick={onDrilldown ? () => onDrilldown(null) : undefined} />
-        <MetricCard label="Absent" value={stats.total_absent} onClick={onDrilldown ? () => onDrilldown("absent") : undefined} />
-        <MetricCard label="Late arrivals" value={stats.late_arrivals ?? stats.present_late ?? 0} onClick={onDrilldown ? () => onDrilldown("late") : undefined} />
-        {stats.early_departures != null ? <MetricCard label="Early departures" value={stats.early_departures} /> : null}
-        {stats.not_yet_clocked_out != null ? <MetricCard label="Not yet clocked out" value={stats.not_yet_clocked_out} /> : null}
-        {stats.total_hours != null ? <MetricCard label="Total hours" value={stats.total_hours} /> : null}
-        {stats.average_hours_per_person != null ? <MetricCard label="Avg hours/person" value={stats.average_hours_per_person} /> : null}
-        {stats.average_arrival_time ? <MetricCard label="Avg arrival" value={stats.average_arrival_time} /> : null}
-        {stats.average_departure_time ? <MetricCard label="Avg departure" value={stats.average_departure_time} /> : null}
-      </div>
-      {stats.hours_and_lateness_cover_teachers_only ? (
-        <p className="panel-empty">Hours/lateness figures reflect teaching staff only - non-teaching staff attendance is manually marked with no clock data to derive them from.</p>
+
+      <div className="metric-grid attendance-analytics-kpi-grid">{kpis}</div>
+      {onViewRegister ? (
+        <button type="button" className="table-action attendance-analytics-register-link" onClick={onViewRegister}>
+          View today's full register
+        </button>
       ) : null}
-    </article>
+      {stats.hours_and_lateness_cover_teachers_only ? (
+        <p className="panel-empty">Hours/lateness/overtime figures reflect teaching staff only - non-teaching staff attendance is manually marked with no clock data to derive them from.</p>
+      ) : null}
+
+      <div className="attendance-analytics-chart-grid">
+        <article className="app-panel attendance-analytics-chart-card">
+          <div className="panel-head"><h4>Attendance by group</h4></div>
+          <CompositionBarChart bars={composition} color={compositionColor} />
+        </article>
+        <article className="app-panel attendance-analytics-chart-card">
+          <div className="panel-head"><h4>Overall attendance</h4><span className="panel-head-hint">Last {months} months</span></div>
+          <TrendChart points={trendToAttendancePoints(trend)} color="#2563eb" />
+        </article>
+        <article className="app-panel attendance-analytics-chart-card">
+          <div className="panel-head"><h4>Attendance statistics</h4><span className="panel-head-hint">Last {months} months</span></div>
+          <StackedBarChart buckets={trend} series={stackedSeries} />
+        </article>
+        <article className="app-panel attendance-analytics-chart-card">
+          <div className="panel-head"><h4>Absenteeism rate</h4><span className="panel-head-hint">Last {months} months</span></div>
+          <TrendChart points={trendToAbsenteeismPoints(trend)} color="#F87171" area />
+        </article>
+      </div>
+    </section>
   );
 }
 
@@ -17732,6 +17878,8 @@ function AttendanceAnalyticsOverviewScreen({ session }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [drilldown, setDrilldown] = useState(null); // {population, status} | null
+  const [refreshedAt, setRefreshedAt] = useState(null);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -17739,8 +17887,11 @@ function AttendanceAnalyticsOverviewScreen({ session }) {
     setError("");
     (async () => {
       try {
-        const result = await requestJson(session, "GET", `/api/attendance-analytics/overview/?date=${date}`);
-        if (!cancelled) setData(result);
+        const result = await requestJson(session, "GET", `/api/attendance-analytics/dashboard/?date=${date}`);
+        if (!cancelled) {
+          setData(result);
+          setRefreshedAt(new Date());
+        }
       } catch (err) {
         if (!cancelled) setError(err.message || "Could not load attendance overview.");
       } finally {
@@ -17748,37 +17899,88 @@ function AttendanceAnalyticsOverviewScreen({ session }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [session, date]);
+  }, [session, date, refreshTick]);
 
   return (
     <section className="screen-grid">
       <div className="screen-hero">
         <div className="screen-hero-title-row">
           <h2>Attendance Analytics</h2>
-          <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="attendance-analytics-date-input" />
+          <div className="attendance-analytics-hero-controls">
+            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="attendance-analytics-date-input" />
+            <button type="button" className="table-action" onClick={() => setRefreshTick((n) => n + 1)}>
+              Refresh
+            </button>
+          </div>
         </div>
-        <p>How many people reported to school today, and how attendance is performing.</p>
+        <p>
+          How many people reported to school today, and how attendance is performing.
+          {refreshedAt ? ` Data refreshed at ${refreshedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : ""}
+        </p>
       </div>
 
-      <ScreenState loading={loading && !data} error={error} onRetry={() => setDate((d) => d)} />
+      <ScreenState loading={loading && !data} error={error} onRetry={() => setRefreshTick((n) => n + 1)} />
 
-      {data ? (
-        <div className="attendance-analytics-population-grid">
-          {data.staff ? (
-            <PopulationOverviewCard
-              title="Staff Attendance"
-              stats={data.staff}
-              onDrilldown={(status) => setDrilldown({ population: "staff", status })}
-            />
-          ) : null}
-          {data.students ? (
-            <PopulationOverviewCard
-              title="Student Attendance"
-              stats={data.students}
-              onDrilldown={(status) => setDrilldown({ population: "student", status })}
-            />
-          ) : null}
-        </div>
+      {data?.staff ? (
+        <PopulationDashboardSection
+          title="Staff Attendance"
+          stats={data.staff}
+          composition={data.staff_composition}
+          compositionColor="#2563eb"
+          trend={data.staff_trend}
+          stackedSeries={STAFF_STACKED_SERIES}
+          onViewRegister={() => setDrilldown({ population: "staff", status: null })}
+          kpis={[
+            <LoginTimingCard
+              key="login"
+              lateCount={data.staff.present_late}
+              earlyCount={data.staff.present_on_time}
+              onClick={() => setDrilldown({ population: "staff", status: "late" })}
+            />,
+            <MetricCard key="overtime" label="Overtime hours" value={data.staff.overtime_hours ?? 0} icon="clock" tone="violet" />,
+            <MetricCard key="leave" label="Unapproved leave" value={data.staff.pending_leave_count ?? 0} icon="requests" tone="amber" />,
+            <MetricCard
+              key="attendance"
+              label="Attendance %"
+              value={`${data.staff.attendance_percent}%`}
+              icon="attendance"
+              tone="green"
+              onClick={() => setDrilldown({ population: "staff", status: "absent" })}
+            />,
+            <MetricCard key="hours" label="Total worked hours" value={data.staff.total_hours ?? "—"} icon="clock" tone="teal" />,
+          ]}
+        />
+      ) : null}
+
+      {data?.students ? (
+        <PopulationDashboardSection
+          title="Student Attendance"
+          stats={data.students}
+          composition={data.student_composition}
+          compositionColor="#7c3aed"
+          trend={data.student_trend}
+          stackedSeries={STUDENT_STACKED_SERIES}
+          onViewRegister={() => setDrilldown({ population: "student", status: null })}
+          kpis={[
+            <LoginTimingCard
+              key="login"
+              lateCount={data.students.present_late}
+              earlyCount={data.students.present_on_time}
+              onClick={() => setDrilldown({ population: "student", status: "late" })}
+            />,
+            <MetricCard
+              key="attendance"
+              label="Attendance %"
+              value={`${data.students.attendance_percent}%`}
+              icon="attendance"
+              tone="green"
+              onClick={() => setDrilldown({ population: "student", status: "absent" })}
+            />,
+            <MetricCard key="hours" label="Total hours present" value={data.students.total_hours ?? "—"} icon="clock" tone="teal" />,
+            <MetricCard key="notout" label="Not yet clocked out" value={data.students.not_yet_clocked_out ?? 0} icon="clock" tone="indigo" />,
+            <MetricCard key="pending" label="Excused / pending" value={data.students.unresolved ?? 0} icon="requests" tone="amber" />,
+          ]}
+        />
       ) : null}
 
       {drilldown ? (

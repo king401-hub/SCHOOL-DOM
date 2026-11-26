@@ -95,6 +95,17 @@ def overview(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def dashboard_overview(request):
+    tenant, error = _admin_tenant_or_error(request)
+    if error:
+        return error
+    target_date = _parse_date(request.query_params.get('date'), services.school_today(tenant))
+    data = services.dashboard_overview(tenant, target_date)
+    return Response({'success': True, **data})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def daily_summary(request):
     tenant, error = _admin_tenant_or_error(request)
     if error:

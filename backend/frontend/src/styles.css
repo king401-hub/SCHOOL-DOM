@@ -30400,6 +30400,166 @@ body[data-theme="dark"] .segmented-toggle button:hover:not(.active) { background
   }
 }
 
+/* ── Redesigned Overview screen (HR-style dashboard) ─────────────────────── */
+
+.attendance-analytics-hero-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.attendance-analytics-dashboard-section {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.attendance-analytics-dashboard-section + .attendance-analytics-dashboard-section {
+  margin-top: 0.5rem;
+}
+
+/* Same override logic as .attendance-analytics-population-card .metric-grid
+   above: beats .metric-grid's own forced 4-column rule at >=900px so five
+   KPI cards can flow naturally instead of being squeezed into 4 columns. */
+.attendance-analytics-kpi-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+}
+
+.attendance-analytics-register-link {
+  justify-self: start;
+}
+
+.attendance-analytics-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 760px) {
+  .attendance-analytics-chart-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.attendance-analytics-chart-card h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.attendance-analytics-chart-card .panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.panel-head-hint {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+/* Login KPI combo card - one card, two numbers (Late / Early) side by side,
+   matching the reference dashboard's "Login" card instead of splitting it
+   into two separate MetricCards. */
+.attendance-analytics-combo-values {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.55rem;
+}
+
+.attendance-analytics-combo-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.attendance-analytics-combo-value {
+  font-size: clamp(1.3rem, 3vw, 1.6rem);
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.attendance-analytics-combo-sublabel {
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+}
+
+body[data-theme="dark"] .attendance-analytics-combo-value { color: #f1f5f9; }
+body[data-theme="dark"] .attendance-analytics-combo-sublabel { color: #64748b; }
+body[data-theme="dark"] .panel-head-hint { color: #475569; }
+
+/* Composition horizontal bar chart (Teaching vs Non-teaching, Male vs
+   Female) - the school-data equivalent of a generic HR dashboard's
+   WFO/WFH split. */
+.attendance-analytics-hbar-chart {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.attendance-analytics-hbar-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 70px;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.attendance-analytics-hbar-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.attendance-analytics-hbar-track {
+  background: #f1f5f9;
+  border-radius: 999px;
+  height: 22px;
+  overflow: hidden;
+}
+
+.attendance-analytics-hbar-fill {
+  height: 100%;
+  min-width: 2.2rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 0.5rem;
+  transition: width 240ms ease;
+}
+
+.attendance-analytics-hbar-value {
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.attendance-analytics-hbar-pct {
+  font-size: 0.74rem;
+  color: #64748b;
+  text-align: right;
+}
+
+body[data-theme="dark"] .attendance-analytics-hbar-label { color: #cbd5e1; }
+body[data-theme="dark"] .attendance-analytics-hbar-track { background: #1e293b; }
+body[data-theme="dark"] .attendance-analytics-hbar-pct { color: #94a3b8; }
+
+.stacked-bar-chart-wrap {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+}
+
+@media (max-width: 480px) {
+  .attendance-analytics-hbar-row {
+    grid-template-columns: 70px 1fr 56px;
+  }
+}
+
 body[data-theme="dark"] .attendance-analytics-date-input,
 body[data-theme="dark"] .attendance-analytics-filter-row input,
 body[data-theme="dark"] .attendance-analytics-filter-row select {
