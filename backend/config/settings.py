@@ -706,6 +706,15 @@ WHATSAPP_AI_HOURLY_LIMIT = int(os.getenv('WHATSAPP_AI_HOURLY_LIMIT', '10'))
 WHATSAPP_REPORT_CARD_PDF = os.getenv('WHATSAPP_REPORT_CARD_PDF', 'false').lower() == 'true'
 # Name of the body variable holding the school name in the menu template (blank = none).
 BAHASHA_MENU_TEMPLATE_SCHOOL_PARAM = os.getenv('BAHASHA_MENU_TEMPLATE_SCHOOL_PARAM', '')
+# Approved template for the daily WhatsApp attendance report (core.tasks.
+# send_daily_attendance_report) - a business-initiated message sent on a
+# schedule, so it always needs a template regardless of whether the admin's
+# 24-hour window happens to be open. One body variable carries the whole
+# report text, so the report's own formatting can keep changing without ever
+# needing re-approval from Meta. Blank = send as plain free-form text instead
+# (only reaches an admin whose window is currently open).
+BAHASHA_DAILY_REPORT_TEMPLATE = os.getenv('BAHASHA_DAILY_REPORT_TEMPLATE', '')
+BAHASHA_DAILY_REPORT_TEMPLATE_LANGUAGE = os.getenv('BAHASHA_DAILY_REPORT_TEMPLATE_LANGUAGE', 'en_US')
 BAHASHA_WEBHOOK_VERIFY_TOKEN = os.getenv('BAHASHA_WEBHOOK_VERIFY_TOKEN', '')
 # Bahasha documents no webhook signature, so this shared secret (sent as
 # ?token= on the registered webhook URL) is the only authenticity gate.

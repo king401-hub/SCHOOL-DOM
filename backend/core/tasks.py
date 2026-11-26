@@ -162,6 +162,7 @@ def send_daily_attendance_report(*, school_code="", today=None, dry_run=False, o
     against a number you actually control, without touching anyone's real
     settings. Only makes sense combined with school_code (one school).
     """
+    from django.conf import settings as django_settings
     from django.utils import timezone
 
     from academic.models import AttendanceRecord
@@ -258,13 +259,31 @@ def send_daily_attendance_report(*, school_code="", today=None, dry_run=False, o
             ]
             message += "\n\nOther staff:\n" + "\n".join(other_lines)
 
+        # This message is always business-initiated (sent on a schedule, not
+        # in reply to anything), so WhatsApp requires an approved template for
+        # it regardless of whether a given admin's 24-hour window happens to
+        # be open. One body variable carries the whole report text, so this
+        # template never needs re-approval as the report's own content
+        # changes. Blank setting = plain free-form text (today's behavior,
+        # window-dependent) until a template is approved.
+        template_name = getattr(django_settings, "BAHASHA_DAILY_REPORT_TEMPLATE", "")
+        template = (
+            {
+                "name": template_name,
+                "language": getattr(django_settings, "BAHASHA_DAILY_REPORT_TEMPLATE_LANGUAGE", "en_US"),
+                "variables": {"body": {"1": message}},
+            }
+            if template_name else None
+        )
+        send_kwargs = {"template": template} if template else {}
+
         rows = []
         if override_phone:
             if dry_run:
                 rows.append({"admin": None, "outcome": "dry_run", "phone": override_phone})
             else:
                 try:
-                    send_result = send_whatsapp_message(override_phone, message)
+                    send_result = send_whatsapp_message(override_phone, message, **send_kwargs)
                 except RuntimeError as exc:
                     rows.append({"admin": None, "outcome": f"failed: {exc}", "phone": override_phone})
                 else:
@@ -282,7 +301,7 @@ def send_daily_attendance_report(*, school_code="", today=None, dry_run=False, o
                     rows.append({"admin": admin, "outcome": "dry_run", "phone": phone})
                     continue
                 try:
-                    send_result = send_whatsapp_message(phone, message)
+                    send_result = send_whatsapp_message(phone, message, **send_kwargs)
                 except RuntimeError as exc:
                     rows.append({"admin": admin, "outcome": f"failed: {exc}", "phone": phone})
                     continue

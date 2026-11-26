@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from django.conf import settings
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from academic.models import AttendanceRecord
@@ -316,6 +316,23 @@ class DailyAttendanceReportTests(TestCase):
         self.assertEqual(row["phone"], "+2349024988296")
         self.assertEqual(row["outcome"], "sent")
         mock_send.assert_called_once_with("+2349024988296", results[self.school.schema_name]["message"])
+
+    @override_settings(BAHASHA_DAILY_REPORT_TEMPLATE="schooldom_daily_attendance_report", BAHASHA_DAILY_REPORT_TEMPLATE_LANGUAGE="en_US")
+    @patch("finance.services.send_whatsapp_message")
+    def test_uses_the_approved_template_when_one_is_configured(self, mock_send):
+        # This message is always business-initiated (sent on a schedule), so
+        # it needs a template regardless of whether the admin's 24-hour
+        # window is open - see finance/docs/whatsapp-bahasha.md.
+        mock_send.return_value = {"status": "success", "message_id": "abc"}
+        self._student("present@rollcall.edu", "present")
+
+        results = send_daily_attendance_report()
+
+        message = results[self.school.schema_name]["message"]
+        mock_send.assert_called_once_with(
+            "+2348012345678", message,
+            template={"name": "schooldom_daily_attendance_report", "language": "en_US", "variables": {"body": {"1": message}}},
+        )
 
     @patch("finance.services.send_whatsapp_message")
     def test_school_with_no_students_or_staff_is_excluded(self, mock_send):
