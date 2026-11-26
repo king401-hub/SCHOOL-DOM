@@ -25,6 +25,27 @@ namespace SchoolDom.Cbt.Win7
             return Serializer.DeserializeObject(json) as Dictionary<string, object> ?? new Dictionary<string, object>();
         }
 
+        // JavaScriptSerializer.DeserializeObject renders a JSON array as object[] - this
+        // normalizes that (plus any other IEnumerable shape) into a plain List<object> so
+        // callers can index into it without a cast at every call site.
+        public static List<object> List(object value)
+        {
+            var result = new List<object>();
+            if (value == null) return result;
+            var array = value as object[];
+            if (array != null)
+            {
+                result.AddRange(array);
+                return result;
+            }
+            var enumerable = value is string ? null : value as System.Collections.IEnumerable;
+            if (enumerable != null)
+            {
+                foreach (var item in enumerable) result.Add(item);
+            }
+            return result;
+        }
+
         public static string Sha256(string value)
         {
             using (var sha = SHA256.Create())

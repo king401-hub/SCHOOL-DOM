@@ -165,6 +165,18 @@ namespace SchoolDom.Cbt.Win7
         public string EndsAt { get; set; }
         public string SubmittedAt { get; set; }
         public string SyncStatus { get; set; }
+        // How many times a cloud upload attempt for this session has come back without
+        // the server confirming it as synced (network failure, or the server's own
+        // per-item response marking it unsuccessful) - reset to 0 the moment it is
+        // confirmed synced. Used only for admin-facing diagnostics (ShowResultList); the
+        // retry loop itself doesn't back off on this, it just tries again next tick.
+        public int SyncAttempts { get; set; }
+        // The most recent reason this session failed to sync, straight from the cloud's
+        // per-item response (e.g. "Student was not found.") or the network exception
+        // message - shown in ShowResultList so an admin stuck with a permanently-pending
+        // result (e.g. the exam was deleted on the cloud) can see why instead of just
+        // watching attempts climb forever.
+        public string LastSyncError { get; set; }
         public int FocusLossCount { get; set; }
         public Dictionary<string, object> Answers { get; set; }
         public List<ActivityLogRecord> AuditLogs { get; set; }
@@ -175,6 +187,8 @@ namespace SchoolDom.Cbt.Win7
         {
             Status = "in_progress";
             SyncStatus = "pending";
+            SyncAttempts = 0;
+            LastSyncError = "";
             Answers = new Dictionary<string, object>();
             AuditLogs = new List<ActivityLogRecord>();
             ManualScores = new Dictionary<string, double>();

@@ -28,6 +28,19 @@ namespace SchoolDom.Cbt.Win7
         private const int NetworkWatchIntervalMs = 15000;
 
         private readonly LocalStore _store;
+
+        /// <summary>
+        /// Invoked right after a session is marked submitted and saved, so the admin app
+        /// can kick off a background cloud upload attempt immediately instead of waiting
+        /// for the next periodic retry tick or a manual click - see MainForm wiring this to
+        /// CloudSyncService.TriggerResultSyncSoon(). Runs inline on the same ThreadPool
+        /// thread that is about to send the student their "submitted" response, so it must
+        /// never block; TriggerResultSyncSoon only ever starts a background Task and
+        /// returns immediately, and this call is wrapped in try/catch so a problem here can
+        /// never fail the student's actual submit.
+        /// </summary>
+        public Action OnResultSubmitted;
+
         private TcpListener _listener;
         private UdpClient _discovery;
         private Thread _serverThread;
@@ -633,8 +646,14 @@ namespace SchoolDom.Cbt.Win7
                     SyncStatus = "pending"
                 };
                 session.AuditLogs.Add(new ActivityLogRecord { Type = "session_started", Message = "Student started exam on LAN.", CreatedAt = JsonUtil.IsoNow() });
-                _store.State.Sessions.Add(session);
-                _store.Save();
+                // Locked because this is a structural change (Add) to the same Sessions
+                // list the background result-sync loop enumerates on another thread - see
+                // LocalStore.Lock. Held only across the Add+Save, never near network I/O.
+                lock (_store.Lock)
+                {
+                    _store.State.Sessions.Add(session);
+                    _store.Save();
+                }
             }
             else if (string.IsNullOrWhiteSpace(session.StudentName) || string.Equals(session.StudentName, session.StudentId, StringComparison.OrdinalIgnoreCase))
             {
@@ -675,6 +694,11 @@ namespace SchoolDom.Cbt.Win7
             var reason = IsSessionExpired(session) ? "Time expired — auto-submitted on LAN." : "Student submitted exam on LAN.";
             session.AuditLogs.Add(new ActivityLogRecord { Type = "session_submitted", Message = reason, CreatedAt = JsonUtil.IsoNow() });
             _store.Save();
+            var handler = OnResultSubmitted;
+            if (handler != null)
+            {
+                try { handler(); } catch { /* must never fail the student's submit - see summary on OnResultSubmitted */ }
+            }
             var submitResult = new Dictionary<string, object> { { "success", true }, { "session", session } };
             AddTimerFields(submitResult, session);
             return submitResult;

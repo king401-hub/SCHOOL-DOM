@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SchoolDom.Cbt.Win7
 {
@@ -15,6 +18,14 @@ namespace SchoolDom.Cbt.Win7
     {
         private readonly LocalStore _store;
         private readonly PackageService _packages;
+
+        // How often the background loop retries any still-unsynced submitted results.
+        // Short enough that a transient network blip (the whole reason this needs a
+        // retry loop) clears within a minute; cheap enough to run forever, since an
+        // empty-pending tick costs nothing but a local list scan.
+        private const int ResultSyncIntervalMs = 60000;
+        private System.Threading.Timer _resultSyncTimer;
+        private volatile bool _resultSyncInFlight;
 
         public CloudSyncService(LocalStore store, PackageService packages)
         {
@@ -102,41 +113,193 @@ namespace SchoolDom.Cbt.Win7
             return result;
         }
 
+        /// <summary>
+        /// Uploads every submitted-but-not-yet-confirmed-synced session in one batch and
+        /// applies the cloud's PER-ITEM response back to exactly those sessions - a session
+        /// is only ever marked "synced" when the server's own response for that specific
+        /// item said so. The previous implementation uploaded the same batch but then
+        /// blanket-marked every submitted session as synced regardless of what the server
+        /// actually reported per item, which could silently mark a result "synced" that the
+        /// server had in fact rejected (e.g. a validation error on just that one item).
+        ///
+        /// Safe to call repeatedly / on a timer: the backend dedupes by session id
+        /// (ExamAttempt.device_id, see _ingest_cbt_offline_result), so resending a session
+        /// that already made it through just gets back "already synced" - never a
+        /// duplicate. Throws on a hard failure (no login, network/timeout, bad response) so
+        /// the "Upload Results"/"Upload Now" buttons can show the admin a real message;
+        /// TryUploadResultsInBackground is the non-throwing wrapper for the unattended path.
+        /// </summary>
         public string UploadResults()
         {
             RequireToken();
-            var json = _packages.ExportResultsJson(markExported: false);
-            _store.State.LastUploadAttemptAt = JsonUtil.IsoNow();
-            _store.Save();
+            List<SessionRecord> pending;
+            lock (_store.Lock)
+            {
+                pending = _store.State.Sessions.Where(s => s.Status == "submitted" && s.SyncStatus != "synced").ToList();
+            }
+            if (pending.Count == 0)
+            {
+                lock (_store.Lock)
+                {
+                    _store.State.HasPendingUpload = false;
+                    _store.Save();
+                }
+                return "Nothing to upload. All results are already synced.";
+            }
+
+            var json = _packages.BuildResultsPackageJson(pending);
+            lock (_store.Lock)
+            {
+                _store.State.LastUploadAttemptAt = JsonUtil.IsoNow();
+                _store.Save();
+            }
+
+            string response;
             try
             {
-                var response = RequestAuthenticated("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/package/results/import/", json);
-                var data = JsonUtil.DeserializeObject(response);
-                var imported = data.ContainsKey("imported") ? Convert.ToString(data["imported"]) : "0";
-                var failed = data.ContainsKey("failed") ? Convert.ToString(data["failed"]) : "0";
-                _packages.MarkSubmittedResultsSynced();
-                _store.State.HasPendingUpload = false;
-                _store.State.LastSyncAt = JsonUtil.IsoNow();
-                _store.Save();
-                return "Uploaded results. Imported: " + imported + ". Failed: " + failed + ".";
+                response = RequestAuthenticated("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/package/results/import/", json);
             }
             catch
             {
-                // Mark pending so the next launch or manual retry can try again
-                _store.State.HasPendingUpload = true;
-                _store.Save();
+                // Nothing to undo here - a network/timeout failure never partially applied
+                // anything server-side, so every session in `pending` is left exactly as it
+                // was for the next tick or manual retry to pick back up.
+                lock (_store.Lock)
+                {
+                    _store.State.HasPendingUpload = true;
+                    _store.Save();
+                }
                 throw;
             }
+
+            var data = JsonUtil.DeserializeObject(response);
+            var processed = JsonUtil.List(data.ContainsKey("processed") ? data["processed"] : null);
+            int synced, failed;
+            lock (_store.Lock)
+            {
+                ApplyProcessedResults(pending, processed, out synced, out failed);
+                _store.State.HasPendingUpload = _store.State.Sessions.Any(s => s.Status == "submitted" && s.SyncStatus != "synced");
+                _store.State.LastSyncAt = JsonUtil.IsoNow();
+                _store.Save();
+            }
+
+            return failed == 0
+                ? "Uploaded " + synced + " result(s) to the cloud."
+                : "Uploaded " + synced + " result(s); " + failed + " could not be confirmed yet and will retry automatically.";
+        }
+
+        /// <summary>
+        /// Matches the cloud's per-item "processed" response (same order as the "results"
+        /// list that was sent, since the backend loop appends in request order) back to the
+        /// sessions that were uploaded, marking only confirmed items synced. If the counts
+        /// don't line up 1:1 - which should never happen, but a malformed/truncated response
+        /// is exactly the kind of thing a retry loop must not misinterpret - nothing is
+        /// marked synced and every session's attempt count still goes up, so the next retry
+        /// tries the whole batch again (harmless: the server dedupes by session id). Pure/
+        /// static so it can be unit-tested without any network or store dependency.
+        /// </summary>
+        internal static void ApplyProcessedResults(List<SessionRecord> pending, List<object> processed, out int synced, out int failed)
+        {
+            synced = 0;
+            failed = 0;
+            if (processed.Count != pending.Count)
+            {
+                foreach (var session in pending) session.SyncAttempts += 1;
+                failed = pending.Count;
+                return;
+            }
+            for (var i = 0; i < pending.Count; i++)
+            {
+                var item = processed[i] as Dictionary<string, object>;
+                var success = item != null && item.ContainsKey("success") && Convert.ToBoolean(item["success"]);
+                if (success)
+                {
+                    pending[i].SyncStatus = "synced";
+                    pending[i].SyncAttempts = 0;
+                    pending[i].LastSyncError = "";
+                    synced++;
+                }
+                else
+                {
+                    pending[i].SyncAttempts += 1;
+                    pending[i].LastSyncError = ExtractProcessedMessage(item);
+                    failed++;
+                }
+            }
+        }
+
+        private static string ExtractProcessedMessage(Dictionary<string, object> item)
+        {
+            if (item == null) return "Upload failed.";
+            if (item.ContainsKey("message"))
+            {
+                var message = JsonUtil.Text(item["message"]);
+                if (!string.IsNullOrWhiteSpace(message)) return message;
+            }
+            var data = item.ContainsKey("data") ? item["data"] as Dictionary<string, object> : null;
+            if (data != null && data.ContainsKey("message"))
+            {
+                var message = JsonUtil.Text(data["message"]);
+                if (!string.IsNullOrWhiteSpace(message)) return message;
+            }
+            return "Upload failed.";
         }
 
         /// <summary>
         /// Retry a previously failed upload. Called automatically on startup when
-        /// HasPendingUpload is true and the admin is logged in.
+        /// HasPendingUpload is true and the admin is logged in (see MainForm/
+        /// StartAutoResultSync) - kept as a thin alias so the existing "Upload Now" banner
+        /// button keeps working unchanged.
         /// </summary>
         public string RetryPendingUpload()
         {
             if (!_store.State.HasPendingUpload) return null;
             return UploadResults();
+        }
+
+        /// <summary>
+        /// Starts the background retry loop: an immediate first attempt a few seconds after
+        /// login/launch, then every ResultSyncIntervalMs for as long as the app runs. This
+        /// is what actually makes a failed or never-attempted upload retry on its own -
+        /// without it, a result only ever gets (re)uploaded when an admin notices the
+        /// "Pending" banner and clicks something. Safe to call once; a second call no-ops.
+        /// </summary>
+        public void StartAutoResultSync()
+        {
+            if (_resultSyncTimer != null) return;
+            _resultSyncTimer = new System.Threading.Timer(_ => TryUploadResultsInBackground(), null, 5000, ResultSyncIntervalMs);
+        }
+
+        /// <summary>
+        /// Fires one upload attempt right now on a background thread and returns
+        /// immediately - called from LanServerService.OnResultSubmitted so a student's
+        /// submission starts heading to the cloud within seconds under normal
+        /// connectivity, instead of waiting for the next periodic tick. Never blocks the
+        /// caller (which, for that call site, is the ThreadPool thread about to respond to
+        /// the student) on any network I/O.
+        /// </summary>
+        public void TriggerResultSyncSoon()
+        {
+            new Task(() => TryUploadResultsInBackground()).Start();
+        }
+
+        /// <summary>
+        /// Attempts to upload every pending result, swallowing every failure instead of
+        /// throwing - this runs unattended (timer tick or a just-submitted-exam trigger), so
+        /// there is no UI to show an exception to; the dashboard's "Pending" banner and each
+        /// session's SyncStatus/LastSyncError already reflect whatever is still unsynced
+        /// afterwards. The in-flight guard collapses overlapping calls (a timer tick landing
+        /// at the same moment as a submission trigger) into a single attempt rather than two
+        /// concurrent uploads of the same batch.
+        /// </summary>
+        public void TryUploadResultsInBackground()
+        {
+            if (_resultSyncInFlight) return;
+            if (string.IsNullOrWhiteSpace(_store.State.AccessToken)) return;
+            _resultSyncInFlight = true;
+            try { UploadResults(); }
+            catch { /* unattended - see summary above */ }
+            finally { _resultSyncInFlight = false; }
         }
 
         public Dictionary<string, object> RegenerateExamPin(string examId)

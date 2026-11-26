@@ -210,11 +210,14 @@ namespace SchoolDom.Cbt.Win7
 
         public string DeleteSession(string sessionId)
         {
-            var session = _store.State.Sessions.FirstOrDefault(s => s.Id == sessionId);
-            if (session == null) return "Result was already removed locally.";
-            _store.State.Sessions.Remove(session);
-            _store.Save();
-            return "Local result removed. Student can retake this exam on the LAN app.";
+            lock (_store.Lock)
+            {
+                var session = _store.State.Sessions.FirstOrDefault(s => s.Id == sessionId);
+                if (session == null) return "Result was already removed locally.";
+                _store.State.Sessions.Remove(session);
+                _store.Save();
+                return "Local result removed. Student can retake this exam on the LAN app.";
+            }
         }
 
         private static string Csv(IEnumerable<string> values)
@@ -271,13 +274,47 @@ namespace SchoolDom.Cbt.Win7
             return JsonUtil.Serialize(package);
         }
 
-        public void MarkSubmittedResultsSynced()
+        /// <summary>
+        /// Builds the same "schooldom_cbt_results" package shape as ExportResultsJson, but
+        /// for exactly the sessions passed in (CloudSyncService.UploadResults picks those -
+        /// submitted and not yet confirmed synced) and without ExportResultsJson's
+        /// markExported side effect, which belongs only to the separate "Export Results"
+        /// file-based workflow. Pure/no store mutation, so it's safe to call outside any
+        /// lock and off the UI thread.
+        /// </summary>
+        public string BuildResultsPackageJson(List<SessionRecord> sessions)
         {
-            foreach (var session in _store.State.Sessions.Where(s => s.Status == "submitted"))
+            var results = new List<object>();
+            foreach (var session in sessions)
             {
-                session.SyncStatus = "synced";
+                var envelope = BuildEnvelope(session);
+                results.Add(new Dictionary<string, object>
+                {
+                    { "package_item_id", "sync_" + session.Id },
+                    { "entity_id", session.Id },
+                    { "attempts", session.SyncAttempts },
+                    { "last_error", session.LastSyncError ?? "" },
+                    { "created_at", session.SubmittedAt ?? session.StartedAt },
+                    { "payload", envelope["payload"] },
+                    { "sync_envelope", envelope }
+                });
             }
-            _store.Save();
+
+            var package = new Dictionary<string, object>
+            {
+                { "package_type", "schooldom_cbt_results" },
+                { "package_version", 1 },
+                { "generated_at", JsonUtil.IsoNow() },
+                { "results", results },
+                { "summary", new Dictionary<string, object>
+                    {
+                        { "pending_results", results.Count },
+                        { "package_id", _store.State.ActivePackageId ?? "" },
+                        { "device_id", _store.State.DeviceId ?? "" }
+                    }
+                }
+            };
+            return JsonUtil.Serialize(package);
         }
 
         public static bool IsWrittenType(string type)

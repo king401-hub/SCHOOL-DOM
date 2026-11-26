@@ -14,6 +14,16 @@ namespace SchoolDom.Cbt.Win7
         private static readonly byte[] _entropy = Encoding.UTF8.GetBytes("SchoolDom.CBTWin7.LocalStore.v1");
         public AppState State { get; private set; }
 
+        // Guards structural changes to State.Sessions (Add/Remove) against the background
+        // result-sync loop enumerating that same list on another thread - without this, a
+        // student starting an exam (LanServerService.StartSession) at the exact moment the
+        // sync loop snapshots pending results can throw "Collection was modified". Callers
+        // must only hold this briefly (snapshot/mutate + Save, never across a network call),
+        // so it can never make a student wait on a slow cloud request. Save() itself takes
+        // this too, so two threads can never interleave writes to the same state file.
+        public object Lock { get { return _lock; } }
+        private readonly object _lock = new object();
+
         public LocalStore()
         {
             var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SchoolDom", "CBTWin7");
@@ -60,10 +70,13 @@ namespace SchoolDom.Cbt.Win7
 
         public void Save()
         {
-            var json = JsonUtil.Serialize(State);
-            var jsonBytes = Encoding.UTF8.GetBytes(json);
-            var encrypted = ProtectedData.Protect(jsonBytes, _entropy, DataProtectionScope.CurrentUser);
-            File.WriteAllBytes(_storePath, encrypted);
+            lock (_lock)
+            {
+                var json = JsonUtil.Serialize(State);
+                var jsonBytes = Encoding.UTF8.GetBytes(json);
+                var encrypted = ProtectedData.Protect(jsonBytes, _entropy, DataProtectionScope.CurrentUser);
+                File.WriteAllBytes(_storePath, encrypted);
+            }
         }
 
         private void EnsureDefaults()

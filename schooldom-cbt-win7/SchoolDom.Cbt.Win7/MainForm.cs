@@ -34,6 +34,13 @@ namespace SchoolDom.Cbt.Win7
             _packages = new PackageService(_store);
             _cloud = new CloudSyncService(_store, _packages);
             _lan = new LanServerService(_store);
+            // Every exam submission kicks off an immediate background upload attempt
+            // (TriggerResultSyncSoon never blocks the LAN thread handling the student's
+            // submit), and StartAutoResultSync keeps retrying on its own afterwards so a
+            // transient connection failure - or just closing this dialog before clicking
+            // Upload - can never leave a result stuck on "Pending" indefinitely.
+            _lan.OnResultSubmitted = _cloud.TriggerResultSyncSoon;
+            _cloud.StartAutoResultSync();
 
             Text = "SchoolDom Admin Sync Win7 v" + Application.ProductVersion;
             Width = 1280;
@@ -196,13 +203,17 @@ namespace SchoolDom.Cbt.Win7
             var status = TextLabel("Cloud: " + (_store.State.CloudUrl ?? "") + "\r\nLast sync: " + Display(_store.State.LastSyncAt) + "\r\nNetwork Token: " + discoveryToken, 650, 18, 9, false, 330, Palette.Muted);
             content.Controls.Add(status);
 
-            if (_store.State.HasPendingUpload)
+            var pendingSessions = _store.State.Sessions.Where(x => x.Status == "submitted" && x.SyncStatus != "synced").ToList();
+            if (_store.State.HasPendingUpload && pendingSessions.Count > 0)
             {
+                var worstError = pendingSessions.Where(x => !string.IsNullOrWhiteSpace(x.LastSyncError)).Select(x => x.LastSyncError).FirstOrDefault();
+                var bannerLine = pendingSessions.Count + " result(s) syncing to the cloud automatically - this app retries on its own, no action needed."
+                    + (string.IsNullOrWhiteSpace(worstError) ? "" : " Last issue: " + worstError);
                 var warningBanner = new Panel { Left = 34, Top = 88, Width = 940, Height = 36, BackColor = Color.FromArgb(255, 243, 205) };
                 warningBanner.Anchor = AnchorStyles.Top | AnchorStyles.Left;
                 var warningText = new Label
                 {
-                    Text = "Results pending upload. Click Upload Results to send them to the cloud.",
+                    Text = bannerLine,
                     Left = 12,
                     Top = 8,
                     Width = 780,
@@ -214,7 +225,7 @@ namespace SchoolDom.Cbt.Win7
                 warningBanner.Controls.Add(warningText);
                 var retryBtn = new Button
                 {
-                    Text = "Upload Now",
+                    Text = "Sync Now",
                     Left = 800,
                     Top = 6,
                     Width = 110,
@@ -232,7 +243,7 @@ namespace SchoolDom.Cbt.Win7
             content.Controls.Add(Metric("Published Exams", _store.State.Exams.Count.ToString(), 34, 112, Palette.Blue));
             content.Controls.Add(Metric("Students Cached", _store.State.Students.Count.ToString(), 290, 112, Palette.Green));
             content.Controls.Add(Metric("Local Sessions", _store.State.Sessions.Count.ToString(), 546, 112, Palette.Gold));
-            content.Controls.Add(Metric("Submitted Results", _store.State.Sessions.Count(x => x.Status == "submitted").ToString(), 34, 202, Palette.Coral));
+            content.Controls.Add(Metric("Submitted Results", _store.State.Sessions.Count(x => x.Status == "submitted").ToString() + " (" + pendingSessions.Count + " pending)", 34, 202, Palette.Coral));
             var lanServerStatusLabel = !_lan.IsRunning ? "Off" : !string.IsNullOrWhiteSpace(_lan.NetworkWarning) ? "Warning" : "On";
             var lanServerStatusColor = !_lan.IsRunning ? Palette.Coral : !string.IsNullOrWhiteSpace(_lan.NetworkWarning) ? Palette.Gold : Palette.Green;
             content.Controls.Add(Metric("LAN Server", lanServerStatusLabel, 290, 202, lanServerStatusColor));
@@ -914,7 +925,7 @@ namespace SchoolDom.Cbt.Win7
                 list.Columns.Add("Student", 220);
                 list.Columns.Add("Student ID", 120);
                 list.Columns.Add("Exam", 220);
-                list.Columns.Add("Status", 90);
+                list.Columns.Add("Cloud Sync", 150);
                 list.Columns.Add("Score", 110);
                 list.Columns.Add("Submitted", 150);
                 foreach (var session in _store.State.Sessions.Where(s => string.Equals(s.Status, "submitted", StringComparison.OrdinalIgnoreCase)).OrderByDescending(s => s.SubmittedAt ?? s.StartedAt))
@@ -924,7 +935,7 @@ namespace SchoolDom.Cbt.Win7
                     var item = new ListViewItem(DisplayStudentName(session, student));
                     item.SubItems.Add(session.StudentId ?? "");
                     item.SubItems.Add(exam == null ? session.ExamId : exam.Title);
-                    item.SubItems.Add(session.Status ?? "");
+                    item.SubItems.Add(SyncStatusLabel(session));
                     item.SubItems.Add(PackageService.ComputeScore(session, exam).Display);
                     item.SubItems.Add(Display(session.SubmittedAt ?? session.StartedAt));
                     item.Tag = session;
@@ -1891,6 +1902,17 @@ namespace SchoolDom.Cbt.Win7
         private string Display(string value)
         {
             return string.IsNullOrWhiteSpace(value) ? "Not available" : value;
+        }
+
+        private static string SyncStatusLabel(SessionRecord session)
+        {
+            if (session != null && string.Equals(session.SyncStatus, "synced", StringComparison.OrdinalIgnoreCase)) return "Synced";
+            if (session != null && session.SyncAttempts > 0)
+            {
+                var note = string.IsNullOrWhiteSpace(session.LastSyncError) ? "" : " - " + session.LastSyncError;
+                return "Retrying (" + session.SyncAttempts + ")" + note;
+            }
+            return "Pending";
         }
 
         private string DisplayLicenseDate(string isoValue)
