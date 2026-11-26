@@ -241,6 +241,29 @@ class OverviewAndDailyViewTests(TestCase):
         daily_resp = self.client.get("/api/attendance-analytics/daily/?population=student")
         self.assertEqual(daily_resp.status_code, 403)
 
+    def test_overview_and_daily_serialize_with_a_real_registered_student(self):
+        # Regression test: compute_bulk_day_stats used to return a
+        # 'per_person' dict keyed by the student's User.id (a UUID). An empty
+        # school (no registered students, as in every other test here) never
+        # exercises that dict, so DRF's JSON renderer only ever saw {} - it
+        # 500s as soon as there is at least one real (UUID-keyed) entry,
+        # because a dict key is never run through the JSON encoder's custom
+        # type handling the way a value is.
+        student = User.objects.create_user(
+            email="student@viewschool.test", password="testpass123", role="student", tenant=self.school,
+        )
+        StudentProfile.objects.create(
+            user=student, student_id="VS001", admission_number="ADM-VS-001",
+            admission_date=datetime.date(2024, 9, 1), guardian_name="G", guardian_phone="0800", guardian_relation="Parent",
+        )
+        AttendanceRecord.objects.create(student=student, date=timezone.localdate(), clock_in_at=timezone.now(), status="present")
+
+        overview_resp = self.client.get("/api/attendance-analytics/overview/")
+        self.assertEqual(overview_resp.status_code, 200)
+
+        daily_resp = self.client.get("/api/attendance-analytics/daily/?population=student")
+        self.assertEqual(daily_resp.status_code, 200)
+
     def test_student_only_scope_omits_staff_key_and_403s_staff_daily(self):
         self.school.attendance_analytics_scope = SchoolTenant.SCOPE_STUDENT_ONLY
         self.school.save(update_fields=["attendance_analytics_scope"])

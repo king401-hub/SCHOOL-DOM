@@ -351,14 +351,13 @@ def compute_bulk_day_stats(tenant, day, day_records_by_person, *, gate_settings=
     today = school_today(tenant, now)
     day_in_progress = (day == today and not cutoff)
 
-    per_person = {}
     present_on_time = present_late = absent = unresolved = 0
     not_yet_clocked_out = early_departures = 0
     total_hours = 0.0
     days_with_hours = 0
     arrival_times, departure_times = [], []
 
-    for person_id, record in day_records_by_person.items():
+    for record in day_records_by_person.values():
         record = record or {}
         if manual:
             result = day_status_from_manual_status(record.get('status'), day, cutoff)
@@ -367,7 +366,6 @@ def compute_bulk_day_stats(tenant, day, day_records_by_person, *, gate_settings=
                 tenant, day, record.get('clock_in_at'), record.get('clock_out_at'),
                 gate_settings=gate_settings, now=now,
             )
-        per_person[person_id] = result
         status = result['status']
         if status == 'present':
             if not manual and result['is_late']:
@@ -394,7 +392,6 @@ def compute_bulk_day_stats(tenant, day, day_records_by_person, *, gate_settings=
     total = len(day_records_by_person)
     resolved_total = total - unresolved
     return {
-        'per_person': per_person,
         'total_registered': total,
         'total_present': present_on_time + present_late,
         'present_on_time': present_on_time,
