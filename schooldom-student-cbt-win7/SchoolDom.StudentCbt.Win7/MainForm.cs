@@ -1335,22 +1335,55 @@ namespace SchoolDom.StudentCbt.Win7
             _dialogOpen = false;
             if (confirm != DialogResult.Yes) return;
             _submitting = true;
-            try
-            {
-                var submitted = _client.Submit(Value(_session, "id", "Id"), _answers);
-                if (!Convert.ToBoolean(submitted.ContainsKey("success") ? submitted["success"] : false))
+            SubmitInBackground(
+                onSuccess: () => FinishSubmitted("Exam submitted successfully.", "Submitted"),
+                onFailure: message =>
                 {
-                    throw new InvalidOperationException(JsonUtil.Text(submitted.ContainsKey("message") ? submitted["message"] : "The LAN server rejected the submission."));
-                }
-                FinishSubmitted("Exam submitted successfully.", "Submitted");
-            }
-            catch (Exception ex)
+                    _submitting = false;
+                    _dialogOpen = true;
+                    MessageBox.Show(this, message, "Submit failed");
+                    _dialogOpen = false;
+                });
+        }
+
+        /// <summary>
+        /// Runs _client.Submit on a background Task and marshals the outcome back via
+        /// BeginInvoke - _client.Submit is a blocking HttpWebRequest call that can take up
+        /// to ~45s on a slow/offline LAN (LanClient.PostWithRetry: 3 attempts x 15s timeout
+        /// each, plus backoff sleeps between them). All three callers here used to run it
+        /// directly on the UI thread (the manual Submit button, "offline 15s -> auto-submit",
+        /// and "time's up -> auto-submit" - the latter two inside TimerTick, which fires once
+        /// a second while an exam is open and had no guard against re-entering on every
+        /// following tick), so one stuck attempt froze the whole window - Windows shows "Not
+        /// Responding" and the exam content stops painting - for up to 45+ seconds, and could
+        /// stay frozen indefinitely once a connection blip crossed the retry threshold, since
+        /// each tick just queued up another blocking attempt right after the last one. Callers
+        /// set/clear the shared _submitting guard themselves since each needs it at a
+        /// different point (before the confirm dialog vs. before starting a background
+        /// attempt). onSuccess/onFailure run on the UI thread, so they can touch controls or
+        /// show dialogs directly.
+        /// </summary>
+        private void SubmitInBackground(Action onSuccess, Action<string> onFailure)
+        {
+            var sessionId = Value(_session, "id", "Id");
+            var answersSnapshot = new Dictionary<string, object>(_answers);
+            new Task(() =>
             {
-                _submitting = false;
-                _dialogOpen = true;
-                MessageBox.Show(this, ex.Message, "Submit failed");
-                _dialogOpen = false;
-            }
+                try
+                {
+                    var submitted = _client.Submit(sessionId, answersSnapshot);
+                    var ok = Convert.ToBoolean(submitted.ContainsKey("success") ? submitted["success"] : false);
+                    BeginInvoke((MethodInvoker)(() =>
+                    {
+                        if (ok) onSuccess();
+                        else onFailure(JsonUtil.Text(submitted.ContainsKey("message") ? submitted["message"] : "The LAN server rejected the submission."));
+                    }));
+                }
+                catch (Exception ex)
+                {
+                    BeginInvoke((MethodInvoker)(() => onFailure(ex.Message)));
+                }
+            }).Start();
         }
 
         private void TimerTick(object sender, EventArgs e)
@@ -1418,38 +1451,33 @@ namespace SchoolDom.StudentCbt.Win7
             {
                 _pendingAutoSubmit = true;
                 UpdateLanLabel("LAN: Disconnected - submitting when available", Palette.Coral);
-                try
+                if (!_submitting)
                 {
-                    var submitted = _client.Submit(Value(_session, "id", "Id"), _answers);
-                    if (Convert.ToBoolean(submitted.ContainsKey("success") ? submitted["success"] : false))
-                    {
-                        FinishSubmitted("LAN was lost for 15 seconds. The exam has been submitted.", "Connection lost");
-                    }
-                }
-                catch
-                {
-                    UpdateLanLabel("LAN: Waiting to reconnect", Palette.Coral);
+                    _submitting = true;
+                    SubmitInBackground(
+                        onSuccess: () => FinishSubmitted("LAN was lost for 15 seconds. The exam has been submitted.", "Connection lost"),
+                        onFailure: _ =>
+                        {
+                            _submitting = false;
+                            UpdateLanLabel("LAN: Waiting to reconnect", Palette.Coral);
+                        });
                 }
             }
         }
 
         private void AutoSubmit(string message, string title)
         {
-            try
-            {
-                var submitted = _client.Submit(Value(_session, "id", "Id"), _answers);
-                if (Convert.ToBoolean(submitted.ContainsKey("success") ? submitted["success"] : false))
+            if (_submitting) return;
+            _submitting = true;
+            SubmitInBackground(
+                onSuccess: () => FinishSubmitted(message, title),
+                onFailure: _ =>
                 {
-                    FinishSubmitted(message, title);
-                    return;
-                }
-            }
-            catch
-            {
-                MarkLanDisconnected(DateTime.UtcNow);
-                _pendingAutoSubmit = true;
-                UpdateLanLabel("LAN: Time up - submitting when available", Palette.Coral);
-            }
+                    _submitting = false;
+                    MarkLanDisconnected(DateTime.UtcNow);
+                    _pendingAutoSubmit = true;
+                    UpdateLanLabel("LAN: Time up - submitting when available", Palette.Coral);
+                });
         }
 
         private void FinishSubmitted(string message, string title)
@@ -1493,7 +1521,7 @@ namespace SchoolDom.StudentCbt.Win7
         {
             if (!_examMode || _session == null) return;
             if (_calculatorOpen || _dialogOpen) return;
-            try { _client.FocusLoss(Value(_session, "id", "Id")); } catch { }
+            ReportFocusLossInBackground();
             BeginInvoke(new Action(() =>
             {
                 TopMost = true;
@@ -1520,8 +1548,25 @@ namespace SchoolDom.StudentCbt.Win7
             {
                 e.Handled = true;
                 e.SuppressKeyPress = true;
-                try { _client.FocusLoss(Value(_session, "id", "Id")); } catch { }
+                ReportFocusLossInBackground();
             }
+        }
+
+        /// <summary>
+        /// Fire-and-forget: _client.FocusLoss already swallows its own errors ("Focus loss is
+        /// non-critical"), but the try/catch around the old direct call still let the
+        /// underlying blocking HttpWebRequest run to completion (up to ~45s on a slow/offline
+        /// LAN, same as SubmitInBackground above) ON THE UI THREAD before the catch could do
+        /// anything - catching an exception doesn't make the call non-blocking. Focus loss
+        /// fires on ordinary, frequent events (alt-tab, a popup stealing focus, Esc/Alt/Win),
+        /// so this was likely the single most common freeze trigger: any brief LAN slowness
+        /// during a completely routine focus change froze the whole exam window.
+        /// </summary>
+        private void ReportFocusLossInBackground()
+        {
+            if (_session == null) return;
+            var sessionId = Value(_session, "id", "Id");
+            new Task(() => { try { _client.FocusLoss(sessionId); } catch { } }).Start();
         }
 
         private void MainFormClosing(object sender, FormClosingEventArgs e)
