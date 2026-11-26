@@ -461,6 +461,15 @@ export async function requestJson(session, method, endpoint, payload = null, opt
       throw error;
     }
 
+    if (response?.status === 401) {
+      clearStoredSession();
+      const error = new Error("Your session has expired. Please sign in again.");
+      error.status = 401;
+      error.statusCode = 401;
+      error.authExpired = true;
+      throw error;
+    }
+
     const error = new Error(formatApiError(data, `Request failed (${response?.status || "network"}).`));
     error.status = response?.status;
     error.statusCode = response?.status;
