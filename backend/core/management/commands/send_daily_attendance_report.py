@@ -15,6 +15,9 @@ admin(s), without needing Celery.
 --school limits either mode to one school's code (its schema_name).
 --date overrides which day's attendance to report (default: today) - useful
 for testing against, or re-sending, a day that already has real data.
+--show-message prints the exact WhatsApp text for each school (teacher
+clock-in/out lines and all) instead of just the counts summary - use this
+to review the message before trusting --commit, e.g. with --school.
 """
 from django.core.management.base import BaseCommand, CommandError
 from django.utils.dateparse import parse_date
@@ -29,6 +32,7 @@ class Command(BaseCommand):
         parser.add_argument("--school", default="", help="Limit to one school's code (its schema_name). Every active school if omitted.")
         parser.add_argument("--date", default="", help="YYYY-MM-DD to report on. Defaults to today.")
         parser.add_argument("--commit", action="store_true", help="Actually send the WhatsApp message. Without this it only prints what would be sent.")
+        parser.add_argument("--show-message", action="store_true", help="Print the exact WhatsApp message text for each school, not just the counts summary.")
 
     def handle(self, *args, **options):
         report_date = None
@@ -53,6 +57,11 @@ class Command(BaseCommand):
                 f"\n{schema_name}: students present={s['present']} absent={s['absent']} late={s['late']} "
                 f"(of {s['total']}) | staff present={st['present']} absent={st['absent']} late={st['late']} (of {st['total']})"
             )
+            if options["show_message"]:
+                self.stdout.write("  --- message ---")
+                for line in result["message"].splitlines():
+                    self.stdout.write(f"  {line}")
+                self.stdout.write("  ---------------")
             for row in result["rows"]:
                 name = row["admin"].get_full_name() or row["admin"].email
                 if row["outcome"] == "dry_run":
