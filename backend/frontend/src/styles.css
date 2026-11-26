@@ -30560,6 +30560,16 @@ body[data-theme="dark"] .attendance-analytics-hbar-pct { color: #94a3b8; }
   }
 }
 
+.attendance-analytics-drilldown-group + .attendance-analytics-drilldown-group {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+body[data-theme="dark"] .attendance-analytics-drilldown-group + .attendance-analytics-drilldown-group {
+  border-top-color: #1e293b;
+}
+
 body[data-theme="dark"] .attendance-analytics-date-input,
 body[data-theme="dark"] .attendance-analytics-filter-row input,
 body[data-theme="dark"] .attendance-analytics-filter-row select {

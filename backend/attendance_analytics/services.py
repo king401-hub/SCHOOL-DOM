@@ -1081,7 +1081,21 @@ def daily_register(tenant, population, target_date, *, status_filter=None, class
             ))
 
     if status_filter:
-        rows = [r for r in rows if r['status'] == status_filter]
+        # 'late'/'early'/'not_yet_clocked_out' aren't values of a row's own
+        # 'status' (only present/absent/in_progress/excused are) - they're
+        # the Login/Not-yet-clocked-out KPI cards' groupings, derived from
+        # the same is_late/clocked_out flags day_status() already computed
+        # per person, exposed on each row for exactly this purpose. Manual
+        # (non-teaching) rows have is_late=clocked_out=None and so never
+        # match these, consistent with hours/lateness covering teachers only.
+        if status_filter == 'late':
+            rows = [r for r in rows if r['status'] == 'present' and r['is_late'] is True]
+        elif status_filter == 'early':
+            rows = [r for r in rows if r['status'] == 'present' and r['is_late'] is False]
+        elif status_filter == 'not_yet_clocked_out':
+            rows = [r for r in rows if r['status'] == 'present' and r['clocked_out'] is False]
+        else:
+            rows = [r for r in rows if r['status'] == status_filter]
 
     count = len(rows)
     start = (page - 1) * page_size
@@ -1099,6 +1113,7 @@ def _register_row(*, row_id, name, identifier, group_label, record, result, tena
         'id': row_id, 'name': name, 'identifier': identifier, 'group_label': group_label,
         'first_arrival': first_arrival, 'last_departure': last_departure,
         'total_hours': result.get('hours'), 'status': result['status'],
+        'is_late': result.get('is_late'), 'clocked_out': result.get('clocked_out'),
         'corrected': corrected,
     }
 

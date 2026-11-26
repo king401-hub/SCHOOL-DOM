@@ -423,6 +423,40 @@ class DailyRegisterIntegrationTests(TestCase):
         self.assertIn(teacher.get_full_name(), names)
         self.assertIn(nonteaching.full_name, names)
 
+    def test_status_filter_splits_late_early_and_not_yet_clocked_out(self):
+        today = timezone.localdate()
+
+        def make_student(email, first_name, clock_in, clock_out=None):
+            user = User.objects.create_user(
+                email=email, password="testpass123", role="student", tenant=self.school,
+                first_name=first_name, last_name="Student",
+            )
+            StudentProfile.objects.create(
+                user=user, student_id=f"REG-{first_name}", admission_number=f"ADM-{first_name}",
+                admission_date=datetime.date(2024, 9, 1), guardian_name="Guardian",
+                guardian_phone="08010000000", guardian_relation="Parent", current_class=self.school_class,
+            )
+            AttendanceRecord.objects.create(
+                student=user, class_group=self.school_class, date=today, status="present",
+                clock_in_at=timezone.make_aware(datetime.datetime.combine(today, clock_in)),
+                clock_out_at=timezone.make_aware(datetime.datetime.combine(today, clock_out)) if clock_out else None,
+            )
+            return user
+
+        # Gate settings (see _make_gate_settings): early 7:30-8:30, clockout 13:00-16:00.
+        late_student = make_student("late@registerschool.test", "Late", datetime.time(9, 0), datetime.time(14, 0))
+        early_student = make_student("early@registerschool.test", "Early", datetime.time(8, 0), datetime.time(14, 0))
+        not_out_student = make_student("notout@registerschool.test", "NotOut", datetime.time(8, 0))
+
+        def names_for(status):
+            resp = self.client.get(f"/api/attendance-analytics/daily/register/?population=student&status={status}")
+            self.assertEqual(resp.status_code, 200)
+            return {row["name"] for row in resp.data["results"]}
+
+        self.assertEqual(names_for("late"), {late_student.get_full_name()})
+        self.assertEqual(names_for("early"), {early_student.get_full_name(), not_out_student.get_full_name()})
+        self.assertEqual(names_for("not_yet_clocked_out"), {not_out_student.get_full_name()})
+
 
 class TermScreensTests(TestCase):
     """Screen 5/6: term overview, trends, rankings, class/department

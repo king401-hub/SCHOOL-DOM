@@ -17935,7 +17935,7 @@ function AttendanceAnalyticsOverviewScreen({ session }) {
               key="login"
               lateCount={data.staff.present_late}
               earlyCount={data.staff.present_on_time}
-              onClick={() => setDrilldown({ population: "staff", status: "late" })}
+              onClick={() => setDrilldown({ population: "staff", status: "login" })}
             />,
             <MetricCard key="overtime" label="Overtime hours" value={data.staff.overtime_hours ?? 0} icon="clock" tone="violet" />,
             <MetricCard key="leave" label="Unapproved leave" value={data.staff.pending_leave_count ?? 0} icon="requests" tone="amber" />,
@@ -17966,7 +17966,7 @@ function AttendanceAnalyticsOverviewScreen({ session }) {
               key="login"
               lateCount={data.students.present_late}
               earlyCount={data.students.present_on_time}
-              onClick={() => setDrilldown({ population: "student", status: "late" })}
+              onClick={() => setDrilldown({ population: "student", status: "login" })}
             />,
             <MetricCard
               key="attendance"
@@ -17977,7 +17977,14 @@ function AttendanceAnalyticsOverviewScreen({ session }) {
               onClick={() => setDrilldown({ population: "student", status: "absent" })}
             />,
             <MetricCard key="hours" label="Total hours present" value={data.students.total_hours ?? "—"} icon="clock" tone="teal" />,
-            <MetricCard key="notout" label="Not yet clocked out" value={data.students.not_yet_clocked_out ?? 0} icon="clock" tone="indigo" />,
+            <MetricCard
+              key="notout"
+              label="Not yet clocked out"
+              value={data.students.not_yet_clocked_out ?? 0}
+              icon="clock"
+              tone="indigo"
+              onClick={() => setDrilldown({ population: "student", status: "not_yet_clocked_out" })}
+            />,
             <MetricCard key="pending" label="Excused / pending" value={data.students.unresolved ?? 0} icon="requests" tone="amber" />,
           ]}
         />
@@ -17997,7 +18004,17 @@ function AttendanceAnalyticsOverviewScreen({ session }) {
   );
 }
 
+const DRILLDOWN_TITLES = {
+  late: "Late records",
+  early: "Early / on-time records",
+  absent: "Absent records",
+  excused: "Excused records",
+  not_yet_clocked_out: "Not yet clocked out",
+  login: "Login timing",
+};
+
 function AttendanceAnalyticsDrilldownPanel({ session, population, status, date, onClose, onViewProfile }) {
+  const isLoginView = status === "login";
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -18009,12 +18026,20 @@ function AttendanceAnalyticsDrilldownPanel({ session, population, status, date, 
     let cancelled = false;
     setLoading(true);
     setError("");
+    const fetchRegister = (statusValue) => {
+      const params = new URLSearchParams({ population, date });
+      if (statusValue) params.set("status", statusValue);
+      return requestJson(session, "GET", `/api/attendance-analytics/daily/register/?${params.toString()}`);
+    };
     (async () => {
       try {
-        const params = new URLSearchParams({ population, date });
-        if (status) params.set("status", status);
-        const result = await requestJson(session, "GET", `/api/attendance-analytics/daily/register/?${params.toString()}`);
-        if (!cancelled) setData(result);
+        if (isLoginView) {
+          const [late, early] = await Promise.all([fetchRegister("late"), fetchRegister("early")]);
+          if (!cancelled) setData({ late: late.results, early: early.results });
+        } else {
+          const result = await fetchRegister(status);
+          if (!cancelled) setData(result);
+        }
       } catch (err) {
         if (!cancelled) setError(err.message || "Could not load attendance records.");
       } finally {
@@ -18022,7 +18047,7 @@ function AttendanceAnalyticsDrilldownPanel({ session, population, status, date, 
       }
     })();
     return () => { cancelled = true; };
-  }, [session, population, status, date, refreshKey]);
+  }, [session, population, status, date, refreshKey, isLoginView]);
 
   if (profileTarget) {
     return population === "student"
@@ -18030,20 +18055,46 @@ function AttendanceAnalyticsDrilldownPanel({ session, population, status, date, 
       : <StaffAttendanceProfile session={session} personId={profileTarget} onBack={() => setProfileTarget(null)} />;
   }
 
+  const handleCorrect = (row) => {
+    const [kind, personId] = row.id.split(":");
+    setCorrectionTarget({ kind, personId, date });
+  };
+  const title = status ? (DRILLDOWN_TITLES[status] || `${status[0].toUpperCase()}${status.slice(1)} records`) : "All records";
+
   return (
     <article className="app-panel">
       <div className="panel-head">
-        <h3>{status ? `${status[0].toUpperCase()}${status.slice(1)} records` : "All records"} - {date}</h3>
+        <h3>{title} - {date}</h3>
         <button type="button" className="table-action" onClick={onClose}>Close</button>
       </div>
       <ScreenState loading={loading} error={error} />
-      {data ? (
+      {data && isLoginView ? (
+        <>
+          <section className="attendance-analytics-drilldown-group">
+            <div className="panel-head">
+              <h4>Late arrivals</h4>
+              <span className="panel-head-hint">{data.late.length}</span>
+            </div>
+            <AttendanceRegisterTable
+              rows={data.late} onViewProfile={setProfileTarget} onCorrect={handleCorrect}
+              emptyMessage="No one arrived late for this selection."
+            />
+          </section>
+          <section className="attendance-analytics-drilldown-group">
+            <div className="panel-head">
+              <h4>Early / on-time arrivals</h4>
+              <span className="panel-head-hint">{data.early.length}</span>
+            </div>
+            <AttendanceRegisterTable
+              rows={data.early} onViewProfile={setProfileTarget} onCorrect={handleCorrect}
+              emptyMessage="No one arrived early or on time for this selection."
+            />
+          </section>
+        </>
+      ) : data ? (
         <AttendanceRegisterTable
-          rows={data.results} onViewProfile={setProfileTarget}
-          onCorrect={(row) => {
-            const [kind, personId] = row.id.split(":");
-            setCorrectionTarget({ kind, personId, date });
-          }}
+          rows={data.results} onViewProfile={setProfileTarget} onCorrect={handleCorrect}
+          emptyMessage={status === "not_yet_clocked_out" ? "Everyone present has already clocked out." : undefined}
         />
       ) : null}
       {correctionTarget ? (
@@ -18057,9 +18108,9 @@ function AttendanceAnalyticsDrilldownPanel({ session, population, status, date, 
   );
 }
 
-function AttendanceRegisterTable({ rows, onViewProfile, onCorrect }) {
+function AttendanceRegisterTable({ rows, onViewProfile, onCorrect, emptyMessage = "No records for this selection." }) {
   if (!rows || !rows.length) {
-    return <p className="panel-empty">No records for this selection.</p>;
+    return <p className="panel-empty">{emptyMessage}</p>;
   }
   return (
     <div className="table-scroll">
