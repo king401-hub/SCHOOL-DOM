@@ -136,7 +136,7 @@ def send_compliance_reminders():
 ATTENDANCE_REPORT_ADMIN_ROLES = ("school_admin", "principal")
 
 
-def send_daily_attendance_report(*, school_code="", today=None, dry_run=False):
+def send_daily_attendance_report(*, school_code="", today=None, dry_run=False, override_phone=""):
     """Send each school's admin(s) a WhatsApp summary of today's student and
     staff attendance - present/absent/late counts, plus a clock-in/clock-out
     line for every teacher (the only population with real scan timestamps -
@@ -156,6 +156,11 @@ def send_daily_attendance_report(*, school_code="", today=None, dry_run=False):
     number" setting.
 
     Runs once daily via cron, not Celery - see [[project-no-celery-in-production]].
+
+    override_phone sends/previews the message to that one number instead of
+    every school_admin/principal's own phone - for manually testing content
+    against a number you actually control, without touching anyone's real
+    settings. Only makes sense combined with school_code (one school).
     """
     from django.utils import timezone
 
@@ -171,6 +176,7 @@ def send_daily_attendance_report(*, school_code="", today=None, dry_run=False):
     from core.models import SchoolTenant
 
     report_date = today or timezone.localdate()
+    override_phone = override_phone.strip()
     schools = SchoolTenant.objects.filter(is_active=True)
     if school_code:
         schools = schools.filter(schema_name__iexact=school_code)
@@ -253,23 +259,37 @@ def send_daily_attendance_report(*, school_code="", today=None, dry_run=False):
             message += "\n\nOther staff:\n" + "\n".join(other_lines)
 
         rows = []
-        for admin in User.objects.filter(tenant=school, role__in=ATTENDANCE_REPORT_ADMIN_ROLES, is_active=True):
-            phone = (admin.phone or "").strip()
-            if not phone:
-                rows.append({"admin": admin, "outcome": "skipped_no_phone"})
-                continue
+        if override_phone:
             if dry_run:
-                rows.append({"admin": admin, "outcome": "dry_run", "phone": phone})
-                continue
-            try:
-                send_result = send_whatsapp_message(phone, message)
-            except RuntimeError as exc:
-                rows.append({"admin": admin, "outcome": f"failed: {exc}", "phone": phone})
-                continue
-            if send_result.get("status") == "success":
-                rows.append({"admin": admin, "outcome": "sent", "phone": phone})
+                rows.append({"admin": None, "outcome": "dry_run", "phone": override_phone})
             else:
-                rows.append({"admin": admin, "outcome": f"failed: {send_result.get('reason', 'unknown error')}", "phone": phone})
+                try:
+                    send_result = send_whatsapp_message(override_phone, message)
+                except RuntimeError as exc:
+                    rows.append({"admin": None, "outcome": f"failed: {exc}", "phone": override_phone})
+                else:
+                    if send_result.get("status") == "success":
+                        rows.append({"admin": None, "outcome": "sent", "phone": override_phone})
+                    else:
+                        rows.append({"admin": None, "outcome": f"failed: {send_result.get('reason', 'unknown error')}", "phone": override_phone})
+        else:
+            for admin in User.objects.filter(tenant=school, role__in=ATTENDANCE_REPORT_ADMIN_ROLES, is_active=True):
+                phone = (admin.phone or "").strip()
+                if not phone:
+                    rows.append({"admin": admin, "outcome": "skipped_no_phone"})
+                    continue
+                if dry_run:
+                    rows.append({"admin": admin, "outcome": "dry_run", "phone": phone})
+                    continue
+                try:
+                    send_result = send_whatsapp_message(phone, message)
+                except RuntimeError as exc:
+                    rows.append({"admin": admin, "outcome": f"failed: {exc}", "phone": phone})
+                    continue
+                if send_result.get("status") == "success":
+                    rows.append({"admin": admin, "outcome": "sent", "phone": phone})
+                else:
+                    rows.append({"admin": admin, "outcome": f"failed: {send_result.get('reason', 'unknown error')}", "phone": phone})
 
         results[school.schema_name] = {
             "message": message,

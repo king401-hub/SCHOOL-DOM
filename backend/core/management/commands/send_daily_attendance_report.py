@@ -18,6 +18,9 @@ for testing against, or re-sending, a day that already has real data.
 --show-message prints the exact WhatsApp text for each school (teacher
 clock-in/out lines and all) instead of just the counts summary - use this
 to review the message before trusting --commit, e.g. with --school.
+--phone sends/previews to that one number instead of each school_admin's
+own phone - for testing against a number you control without touching any
+admin's real phone setting. Only makes sense together with --school.
 """
 from django.core.management.base import BaseCommand, CommandError
 from django.utils.dateparse import parse_date
@@ -33,6 +36,7 @@ class Command(BaseCommand):
         parser.add_argument("--date", default="", help="YYYY-MM-DD to report on. Defaults to today.")
         parser.add_argument("--commit", action="store_true", help="Actually send the WhatsApp message. Without this it only prints what would be sent.")
         parser.add_argument("--show-message", action="store_true", help="Print the exact WhatsApp message text for each school, not just the counts summary.")
+        parser.add_argument("--phone", default="", help="Send/preview to this one number instead of each school_admin's own phone. Use with --school.")
 
     def handle(self, *args, **options):
         report_date = None
@@ -43,6 +47,7 @@ class Command(BaseCommand):
 
         results = send_daily_attendance_report(
             school_code=options["school"].strip(), today=report_date, dry_run=not options["commit"],
+            override_phone=options["phone"].strip(),
         )
         if not results:
             self.stdout.write(
@@ -63,7 +68,7 @@ class Command(BaseCommand):
                     self.stdout.write(f"  {line}")
                 self.stdout.write("  ---------------")
             for row in result["rows"]:
-                name = row["admin"].get_full_name() or row["admin"].email
+                name = (row["admin"].get_full_name() or row["admin"].email) if row["admin"] else "test number"
                 if row["outcome"] == "dry_run":
                     self.stdout.write(f"  {name} ({row['phone']}): would send")
                 elif row["outcome"] == "sent":

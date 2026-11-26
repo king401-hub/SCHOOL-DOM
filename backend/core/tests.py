@@ -305,6 +305,19 @@ class DailyAttendanceReportTests(TestCase):
         self.assertEqual(row["outcome"], "failed: Customer service window is closed, no message was sent in the last 24 hours.")
 
     @patch("finance.services.send_whatsapp_message")
+    def test_override_phone_sends_to_that_number_instead_of_the_admins(self, mock_send):
+        mock_send.return_value = {"status": "success", "message_id": "abc"}
+        self._student("present@rollcall.edu", "present")
+
+        results = send_daily_attendance_report(school_code="roll_call_school", override_phone="+2349024988296")
+
+        row = results[self.school.schema_name]["rows"][0]
+        self.assertIsNone(row["admin"])
+        self.assertEqual(row["phone"], "+2349024988296")
+        self.assertEqual(row["outcome"], "sent")
+        mock_send.assert_called_once_with("+2349024988296", results[self.school.schema_name]["message"])
+
+    @patch("finance.services.send_whatsapp_message")
     def test_school_with_no_students_or_staff_is_excluded(self, mock_send):
         results = send_daily_attendance_report()
 
