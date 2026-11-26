@@ -70,6 +70,7 @@ import {
   formatApiError,
   requestJson,
   SCHOOL_DATA_MUTATED_EVENT,
+  AUTH_EXPIRED_EVENT,
   fetchDashboardSnapshot,
   postJson,
   copyToClipboard,
@@ -11525,6 +11526,35 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
     setSession(null);
     navigate("/signin", { replace: true });
   }, [navigate]);
+
+  // Some screens' own fetch calls only show the error text and never call
+  // onSignOut themselves (see AppShared.requestJson/refreshAccessToken), which used
+  // to leave a student stuck on a dead-end error screen: storage was cleared, but
+  // this component's in-memory `session` state was not, so the screen couldn't
+  // recover and visiting /signin just bounced back to /dashboard (see the route
+  // guard above). Listening for the shared AUTH_EXPIRED_EVENT here means ANY
+  // request anywhere that gives up on the session forces a real sign-out, whether
+  // or not the screen that triggered it knows to ask for one. sessionRef/handledRef
+  // avoid acting twice when several requests 401 in the same moment (a dashboard
+  // commonly fires a few in parallel) - one alert, one sign-out, not a stack of them.
+  const sessionRef = useRef(session);
+  const authExpiredHandledRef = useRef(false);
+  useEffect(() => {
+    sessionRef.current = session;
+    if (session) authExpiredHandledRef.current = false;
+  }, [session]);
+  useEffect(() => {
+    const handleAuthExpired = (event) => {
+      if (authExpiredHandledRef.current || !sessionRef.current) return;
+      authExpiredHandledRef.current = true;
+      if (event?.detail?.message) {
+        window.alert(event.detail.message);
+      }
+      handleSignOut();
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+  }, [handleSignOut]);
 
   const handleStandaloneMessageSend = useCallback(
     async (recipientValue, subject, body, attachments = []) => {

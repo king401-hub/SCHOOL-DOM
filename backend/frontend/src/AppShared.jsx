@@ -217,6 +217,26 @@ export function clearStoredSession() {
   window.localStorage.removeItem("refresh_token");
 }
 
+// Fired the moment ANY request gives up on the current session (no refresh token,
+// refresh itself rejected, or a 401 that survived a refresh+retry) - App's root
+// component listens for this and forces a real sign-out (clears storage, resets its
+// in-memory session state, and navigates to /signin). Without this, clearing storage
+// alone left the dashboard holding a stale "logged in" React state: the screen that
+// hit the 401 was stuck with no logout action (most screens only show the error text,
+// they don't call onSignOut themselves), and visiting /signin bounced straight back to
+// /dashboard because the app still believed a session existed - a student could get
+// fully locked out with no way back to the login form. Dispatching here, in the one
+// shared place every such failure already passes through, fixes every caller at once
+// instead of requiring each screen to opt in.
+export const AUTH_EXPIRED_EVENT = "schooldom:auth-expired";
+
+export function forceSignOutExpired(message) {
+  clearStoredSession();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT, { detail: { message } }));
+  }
+}
+
 export function writeStoredSession(session) {
   if (!session) {
     clearStoredSession();
@@ -269,7 +289,9 @@ export function readStoredTheme() {
 
 export async function refreshAccessToken(session) {
   if (!session?.refresh) {
-    const error = new Error("Session expired. Please sign in again.");
+    const message = "Session expired. Please sign in again.";
+    forceSignOutExpired(message);
+    const error = new Error(message);
     error.status = 401;
     error.statusCode = 401;
     error.authExpired = true;
@@ -289,8 +311,9 @@ export async function refreshAccessToken(session) {
 
   const data = await response.json().catch(() => null);
   if (!response?.ok || !data?.access) {
-    clearStoredSession();
-    const error = new Error(data?.message || "Session expired. Please sign in again.");
+    const message = data?.message || "Session expired. Please sign in again.";
+    forceSignOutExpired(message);
+    const error = new Error(message);
     error.status = response?.status || 401;
     error.statusCode = response?.status || 401;
     error.authExpired = true;
@@ -405,11 +428,12 @@ export async function requestJson(session, method, endpoint, payload = null, opt
     if (session?.access) {
       headers.Authorization = `Bearer ${session.access}`;
     } else {
-      const error = new Error("Session expired. Please sign in again.");
+      const message = "Session expired. Please sign in again.";
+      forceSignOutExpired(message);
+      const error = new Error(message);
       error.status = 401;
       error.statusCode = 401;
       error.authExpired = true;
-      clearStoredSession();
       throw error;
     }
 
@@ -462,8 +486,9 @@ export async function requestJson(session, method, endpoint, payload = null, opt
     }
 
     if (response?.status === 401) {
-      clearStoredSession();
-      const error = new Error("Your session has expired. Please sign in again.");
+      const message = "Your session has expired. Please sign in again.";
+      forceSignOutExpired(message);
+      const error = new Error(message);
       error.status = 401;
       error.statusCode = 401;
       error.authExpired = true;
