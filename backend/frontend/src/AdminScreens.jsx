@@ -18026,6 +18026,13 @@ function AttendanceAnalyticsDrilldownPanel({ session, population, status, date, 
     let cancelled = false;
     setLoading(true);
     setError("");
+    // Clicking a different KPI card while this panel is already open (it's
+    // an inline panel, not a blocking modal, so the cards above stay
+    // clickable) swaps `status`/`isLoginView` without unmounting this
+    // component - reset `data` immediately so a render can never read the
+    // previous fetch's shape (e.g. {results} vs {late, early}) against the
+    // new one while the new request is in flight.
+    setData(null);
     const fetchRegister = (statusValue) => {
       const params = new URLSearchParams({ population, date });
       if (statusValue) params.set("status", statusValue);
@@ -18035,7 +18042,7 @@ function AttendanceAnalyticsDrilldownPanel({ session, population, status, date, 
       try {
         if (isLoginView) {
           const [late, early] = await Promise.all([fetchRegister("late"), fetchRegister("early")]);
-          if (!cancelled) setData({ late: late.results, early: early.results });
+          if (!cancelled) setData({ late: late?.results || [], early: early?.results || [] });
         } else {
           const result = await fetchRegister(status);
           if (!cancelled) setData(result);
@@ -18073,27 +18080,27 @@ function AttendanceAnalyticsDrilldownPanel({ session, population, status, date, 
           <section className="attendance-analytics-drilldown-group">
             <div className="panel-head">
               <h4>Late arrivals</h4>
-              <span className="panel-head-hint">{data.late.length}</span>
+              <span className="panel-head-hint">{(data.late || []).length}</span>
             </div>
             <AttendanceRegisterTable
-              rows={data.late} onViewProfile={setProfileTarget} onCorrect={handleCorrect}
+              rows={data.late || []} onViewProfile={setProfileTarget} onCorrect={handleCorrect}
               emptyMessage="No one arrived late for this selection."
             />
           </section>
           <section className="attendance-analytics-drilldown-group">
             <div className="panel-head">
               <h4>Early / on-time arrivals</h4>
-              <span className="panel-head-hint">{data.early.length}</span>
+              <span className="panel-head-hint">{(data.early || []).length}</span>
             </div>
             <AttendanceRegisterTable
-              rows={data.early} onViewProfile={setProfileTarget} onCorrect={handleCorrect}
+              rows={data.early || []} onViewProfile={setProfileTarget} onCorrect={handleCorrect}
               emptyMessage="No one arrived early or on time for this selection."
             />
           </section>
         </>
       ) : data ? (
         <AttendanceRegisterTable
-          rows={data.results} onViewProfile={setProfileTarget} onCorrect={handleCorrect}
+          rows={data.results || []} onViewProfile={setProfileTarget} onCorrect={handleCorrect}
           emptyMessage={status === "not_yet_clocked_out" ? "Everyone present has already clocked out." : undefined}
         />
       ) : null}
