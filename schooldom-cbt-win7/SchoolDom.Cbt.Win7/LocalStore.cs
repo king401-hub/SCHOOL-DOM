@@ -24,9 +24,15 @@ namespace SchoolDom.Cbt.Win7
         public object Lock { get { return _lock; } }
         private readonly object _lock = new object();
 
-        public LocalStore()
+        public LocalStore() : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SchoolDom", "CBTWin7"))
         {
-            var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SchoolDom", "CBTWin7");
+        }
+
+        // Lets test code point at an isolated temp folder instead of this PC's real,
+        // persisted admin app data - never used by the shipped app itself (which always
+        // goes through the parameterless constructor above).
+        internal LocalStore(string folder)
+        {
             Directory.CreateDirectory(folder);
             _storePath = Path.Combine(folder, "store.bin");
             Load();

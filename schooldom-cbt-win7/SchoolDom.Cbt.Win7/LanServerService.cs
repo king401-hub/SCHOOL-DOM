@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -371,6 +372,10 @@ namespace SchoolDom.Cbt.Win7
                             var sessionId = Uri.UnescapeDataString(path.Substring("/api/sessions/".Length, path.Length - "/api/sessions/".Length - "/focus-loss".Length));
                             WriteJson(stream, 200, LogFocusLoss(sessionId, bodyText));
                         }
+                        else if (method == "GET" && path == StudentAppDownloadPath)
+                        {
+                            WriteStudentAppFile(stream);
+                        }
                         else
                         {
                             WriteJson(stream, 404, new Dictionary<string, object> { { "success", false }, { "message", "Not found." } });
@@ -482,7 +487,47 @@ namespace SchoolDom.Cbt.Win7
                 // PIN, so a Student CBT terminal can adopt it without ever learning the PIN
                 // itself (it still needs a human to type the matching PIN to pass the gate).
                 { "settings_pin_hash", _store.State.StudentSettingsPinHash ?? "" },
+                // Lets a Student CBT terminal already on this LAN discover an update from the
+                // same /health call it already makes at startup (BeginDiscovery), instead of a
+                // separate request. Blank version means "nothing to offer" - see
+                // StudentAppVersion(). student_app_download_path never changes; it's only
+                // here so the client doesn't need to hardcode the route.
+                { "student_app_version", StudentAppVersion() },
+                { "student_app_download_path", StudentAppDownloadPath },
             };
+        }
+
+        private const string StudentAppDownloadPath = "/api/student-app/download";
+        private const string StudentAppExeFileName = "SchoolDomStudentCBT-Win7.exe";
+
+        // Same file MainForm.InstallStudentApp already bundles/launches from this app's own
+        // install directory - reused here so there is exactly one place that decides which
+        // file "the student app" means, not two that could drift apart.
+        private static string StudentAppBundledPath()
+        {
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, StudentAppExeFileName);
+        }
+
+        private static bool IsValidStudentAppFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return false;
+            // Same 512KB floor as MainForm.IsValidInstaller - cheap guard against offering a
+            // zero-byte or truncated placeholder as a real update.
+            return new FileInfo(path).Length >= 512 * 1024;
+        }
+
+        private static string StudentAppVersion()
+        {
+            try
+            {
+                var path = StudentAppBundledPath();
+                if (!IsValidStudentAppFile(path)) return "";
+                return FileVersionInfo.GetVersionInfo(path).FileVersion ?? "";
+            }
+            catch
+            {
+                return "";
+            }
         }
 
         // Login never starts a session by itself, even when exactly one exam matches -
@@ -732,18 +777,34 @@ namespace SchoolDom.Cbt.Win7
             response["server_time"] = JsonUtil.IsoNow();
         }
 
-        private Dictionary<string, object> BeginExam(string sessionId)
+        // Idempotent by design: the FIRST call (ExamBeganAt still blank) is what pushes
+        // EndsAt out past however long the student spent reading the untimed Instructions
+        // screen, so that reading time doesn't eat into exam time. Every call after that -
+        // which is exactly what happens on a resume after the student app crashes, freezes,
+        // or is closed and reopened, since it walks the same StartSession -> Instructions ->
+        // "Start Exam" -> BeginExam path as a fresh start - must NOT touch EndsAt again, or
+        // every resume would silently hand the student a brand-new full-duration deadline
+        // (and restarting the app would become a way to claim extra time). A resume also
+        // skips the "exam record must still exist" check below on purpose: a session that
+        // already began is valid to keep going on even if the exam was unpublished/deleted
+        // in between, since nothing here needs to recompute from it.
+        // internal (not private) so a same-assembly test can exercise its idempotency
+        // directly, same reasoning as CloudSyncService.ApplyProcessedResults.
+        internal Dictionary<string, object> BeginExam(string sessionId)
         {
             var session = FindSession(sessionId);
             if (session == null) return new Dictionary<string, object> { { "success", false }, { "message", "Session not found." } };
             if (session.Status == "submitted") return new Dictionary<string, object> { { "success", false }, { "message", "This exam has already been submitted." } };
-            var exam = _store.State.Exams.FirstOrDefault(item => item.Id == session.ExamId);
-            if (exam == null) return new Dictionary<string, object> { { "success", false }, { "message", "Exam record not found." } };
-            var began = DateTime.UtcNow;
-            session.ExamBeganAt = began.ToString("o");
-            session.EndsAt = began.AddSeconds(Math.Max(60, exam.DurationSeconds)).ToString("o");
-            session.AuditLogs.Add(new ActivityLogRecord { Type = "exam_began", Message = "Student entered exam mode on LAN.", CreatedAt = JsonUtil.IsoNow() });
-            _store.Save();
+            if (string.IsNullOrWhiteSpace(session.ExamBeganAt))
+            {
+                var exam = _store.State.Exams.FirstOrDefault(item => item.Id == session.ExamId);
+                if (exam == null) return new Dictionary<string, object> { { "success", false }, { "message", "Exam record not found." } };
+                var began = DateTime.UtcNow;
+                session.ExamBeganAt = began.ToString("o");
+                session.EndsAt = began.AddSeconds(Math.Max(60, exam.DurationSeconds)).ToString("o");
+                session.AuditLogs.Add(new ActivityLogRecord { Type = "exam_began", Message = "Student entered exam mode on LAN.", CreatedAt = JsonUtil.IsoNow() });
+                _store.Save();
+            }
             var beginResult = new Dictionary<string, object> { { "success", true }, { "session", session } };
             AddTimerFields(beginResult, session);
             return beginResult;
@@ -857,6 +918,35 @@ namespace SchoolDom.Cbt.Win7
             var headerBytes = Encoding.ASCII.GetBytes(header);
             stream.Write(headerBytes, 0, headerBytes.Length);
             stream.Write(body, 0, body.Length);
+        }
+
+        /// <summary>
+        /// Streams the bundled Student CBT exe (same file StudentAppVersion() reads) as a raw
+        /// binary response, for a Student CBT terminal's self-update to download. A 404 here
+        /// (file missing/too small) can't normally happen in practice - the client only ever
+        /// calls this after /health reported a non-blank student_app_version, which already
+        /// confirmed the same file is present and valid - but a stream-only server like this
+        /// one has to answer something for every request regardless of how it got here.
+        /// </summary>
+        private static void WriteStudentAppFile(NetworkStream stream)
+        {
+            var path = StudentAppBundledPath();
+            if (!IsValidStudentAppFile(path))
+            {
+                WriteJson(stream, 404, new Dictionary<string, object> { { "success", false }, { "message", "No student app build is available on this admin PC." } });
+                return;
+            }
+            var bytes = File.ReadAllBytes(path);
+            var header =
+                "HTTP/1.1 200 OK\r\n" +
+                "Content-Type: application/octet-stream\r\n" +
+                "Content-Disposition: attachment; filename=\"" + StudentAppExeFileName + "\"\r\n" +
+                "Access-Control-Allow-Origin: *\r\n" +
+                "Content-Length: " + bytes.Length + "\r\n" +
+                "Connection: close\r\n\r\n";
+            var headerBytes = Encoding.ASCII.GetBytes(header);
+            stream.Write(headerBytes, 0, headerBytes.Length);
+            stream.Write(bytes, 0, bytes.Length);
         }
 
         // Name/description substrings that mark an adapter as virtual/software rather than a

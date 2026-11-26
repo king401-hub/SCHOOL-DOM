@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
@@ -180,6 +181,7 @@ namespace SchoolDom.StudentCbt.Win7
                     {
                         _client.BaseUrl = _localSettings.LastLanServerUrl;
                         health = _client.Health();
+                        TryApplyLanUpdate(health);
                         return health;
                     }
                     catch
@@ -192,6 +194,7 @@ namespace SchoolDom.StudentCbt.Win7
                 // getting the student to the login screen; a settings-PIN sync hiccup here
                 // just means this terminal keeps whatever PIN it already has.
                 try { health = _client.Health(); } catch { }
+                TryApplyLanUpdate(health);
                 return health;
             })
             .ContinueWith(t =>
@@ -226,6 +229,99 @@ namespace SchoolDom.StudentCbt.Win7
             if (string.IsNullOrWhiteSpace(serverHash)) return;
             if (string.Equals(serverHash, _localSettings.SettingsPinHash, StringComparison.OrdinalIgnoreCase)) return;
             _localSettings.SettingsPinHash = serverHash;
+        }
+
+        /// <summary>
+        /// One-shot check against the same /health response BeginDiscovery already fetched -
+        /// no extra round-trip for the check itself. Runs on BeginDiscovery's own background
+        /// thread (never the UI thread), strictly before the login screen ever appears, and
+        /// never again after that - this is the one and only moment it's safe to replace this
+        /// terminal's own exe. If the admin's bundled build (LanServerService.StudentAppVersion
+        /// on the admin side) is newer than this one, downloads it and relaunches into it
+        /// instead of ever reaching the login screen this launch. Every failure (no update
+        /// offered, bad download, can't write the new file, no permission in this install
+        /// location) is swallowed and this launch just proceeds on its current version - there
+        /// is no admin standing at an unattended exam-hall kiosk to show an error to, and the
+        /// existing manual "Install Student App" flow on the admin side still works as a
+        /// fallback regardless of whether this ever succeeds.
+        /// </summary>
+        private void TryApplyLanUpdate(Dictionary<string, object> health)
+        {
+            try
+            {
+                if (health == null) return;
+                var latestVersion = JsonUtil.Text(health.ContainsKey("student_app_version") ? health["student_app_version"] : null);
+                var downloadPath = JsonUtil.Text(health.ContainsKey("student_app_download_path") ? health["student_app_download_path"] : null);
+                if (string.IsNullOrWhiteSpace(latestVersion) || string.IsNullOrWhiteSpace(downloadPath)) return;
+                if (!IsNewerVersion(latestVersion, Application.ProductVersion)) return;
+
+                var tempDir = Path.Combine(Path.GetTempPath(), "SchoolDomStudentCbtUpdate");
+                Directory.CreateDirectory(tempDir);
+                var downloadedPath = Path.Combine(tempDir, "SchoolDomStudentCBT-Win7." + latestVersion + ".exe");
+                _client.DownloadFile(downloadPath, downloadedPath);
+                if (!IsValidExe(downloadedPath)) return;
+
+                // A portable exe can't overwrite itself while running (the same file-lock
+                // "Access is denied" the admin installer hit earlier - see MoveFile failures
+                // in Inno Setup). A tiny helper script that waits for this process to exit,
+                // copies the new build over this one's own path, and relaunches it sidesteps
+                // that entirely - this process just needs to be gone before the copy runs.
+                var currentExePath = Application.ExecutablePath;
+                var scriptPath = Path.Combine(tempDir, "apply-update.cmd");
+                var scriptContent =
+                    "@echo off\r\n" +
+                    "ping -n 2 127.0.0.1 >nul\r\n" +
+                    "copy /y \"" + downloadedPath + "\" \"" + currentExePath + "\" >nul\r\n" +
+                    "start \"\" \"" + currentExePath + "\"\r\n" +
+                    "del \"%~f0\"\r\n";
+                File.WriteAllText(scriptPath, scriptContent);
+
+                Process.Start(new ProcessStartInfo("cmd.exe", "/c \"" + scriptPath + "\"")
+                {
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                    CreateNoWindow = true,
+                    UseShellExecute = true
+                });
+                Environment.Exit(0);
+            }
+            catch
+            {
+                // Best-effort - see summary above.
+            }
+        }
+
+        private static bool IsNewerVersion(string latest, string current)
+        {
+            try
+            {
+                return new Version(NormalizeVersionString(latest)) > new Version(NormalizeVersionString(current));
+            }
+            catch
+            {
+                return string.Compare(latest ?? "", current ?? "", StringComparison.OrdinalIgnoreCase) > 0;
+            }
+        }
+
+        private static string NormalizeVersionString(string value)
+        {
+            var parts = ((value ?? "0.0.0").TrimStart('v', 'V').Trim()).Split('.');
+            var major = parts.Length > 0 ? parts[0] : "0";
+            var minor = parts.Length > 1 ? parts[1] : "0";
+            var patch = parts.Length > 2 ? parts[2] : "0";
+            return major + "." + minor + "." + patch;
+        }
+
+        // Same 512KB-and-MZ-header check the admin app's own InstallStudentApp uses to trust
+        // a downloaded student build before launching it.
+        private static bool IsValidExe(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return false;
+            if (new FileInfo(path).Length < 512 * 1024) return false;
+            using (var stream = File.OpenRead(path))
+            {
+                if (stream.Length < 2) return false;
+                return stream.ReadByte() == 'M' && stream.ReadByte() == 'Z';
+            }
         }
 
         private void ShowDiscoveryFailed(string message)
@@ -1053,7 +1149,14 @@ namespace SchoolDom.StudentCbt.Win7
             var calcTop = SecondaryButton("Calculator", Math.Max(520, headerWidth - 350), 20, 126);
             calcTop.Click += (s, e) => ShowCalculator();
             header.Controls.Add(calcTop);
-            _lanLabel = null;
+            // Was previously always null (and UpdateLanLabel's null-guard made every call a
+            // silent no-op) - a disconnected student now keeps working with no forced
+            // submission (see TimerTick), so they need some visible sign that's actually
+            // happening rather than wondering whether anything is wrong. Starts as a neutral
+            // "Connected" placeholder; the very next autosave tick (at most ~1s away) corrects
+            // it via MarkLanConnected/MarkLanDisconnected if that's not actually true right now.
+            _lanLabel = Label("LAN: Connected", 22, 46, 9, false, Math.Max(420, headerWidth - 560), Palette.SoftText);
+            header.Controls.Add(_lanLabel);
             _timeLabel = Label(TimeText(), Math.Max(748, headerWidth - 210), 28, 12, true, 200, Color.White);
             header.Controls.Add(_timeLabel);
             _root.Controls.Add(header);
@@ -1231,13 +1334,29 @@ namespace SchoolDom.StudentCbt.Win7
         private static string BuildQuestionHtml(string passageTitle, string passageText, string passageImage, string questionText, string questionImage)
         {
             var sb = new StringBuilder();
-            sb.Append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>");
+            sb.Append("<!DOCTYPE html><html><head><meta charset='utf-8'>");
+            // Without this, the WebBrowser control defaults to legacy IE7 emulation
+            // regardless of which real IE version is installed - this just asks it to use
+            // the best document mode available instead, which is what lets the table/
+            // inline-block layout below (matrices, stacked fractions) render correctly.
+            sb.Append("<meta http-equiv='X-UA-Compatible' content='IE=edge'>");
+            sb.Append("<style>");
             sb.Append("body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#162233;margin:4px 0;padding:0;line-height:1.6;}");
             sb.Append("p{margin:0 0 8px 0;}ul,ol{margin:0 0 8px 0;padding-left:20px;}");
             sb.Append("table{border-collapse:collapse;width:100%;margin:0 0 8px 0;}td,th{border:1px solid #ccd;padding:4px 8px;}");
             sb.Append(".passage{background:#f0f4fb;border-left:3px solid #1860b4;padding:10px 14px;margin:0 0 14px 0;}");
             sb.Append(".ptitle{font-weight:bold;color:#1860b4;margin:0 0 6px 0;font-size:12px;}");
             sb.Append("img{max-width:100%;height:auto;}");
+            // Math notation - a matrix built as its own small table (overriding the generic
+            // table rule above via the higher-specificity .matrix class) and a fraction as a
+            // numerator block over a denominator block, both inline so they sit within a
+            // normal line of question text.
+            sb.Append("table.matrix{display:inline-table;border-collapse:collapse;margin:0 4px;vertical-align:middle;width:auto;}");
+            sb.Append("table.matrix td{border:none;padding:2px 10px;text-align:center;}");
+            sb.Append("table.matrix.matrix-bracketed{border-left:2px solid #162233;border-right:2px solid #162233;}");
+            sb.Append(".frac{display:inline-block;text-align:center;vertical-align:middle;margin:0 3px;}");
+            sb.Append(".fracnum{display:block;border-bottom:1px solid #162233;padding:0 4px;line-height:1.3;}");
+            sb.Append(".fracden{display:block;padding:0 4px;line-height:1.3;}");
             sb.Append("</style></head><body>");
             if (!string.IsNullOrWhiteSpace(passageText) || !string.IsNullOrWhiteSpace(passageImage))
             {
@@ -1245,12 +1364,12 @@ namespace SchoolDom.StudentCbt.Win7
                 if (!string.IsNullOrWhiteSpace(passageTitle))
                     sb.Append("<p class='ptitle'>").Append(HtmlSafeText(passageTitle)).Append("</p>");
                 if (!string.IsNullOrWhiteSpace(passageText))
-                    sb.Append(LooksLikeHtml(passageText) ? passageText : "<p>" + HtmlSafeText(passageText).Replace("\n", "<br>") + "</p>");
+                    sb.Append(LooksLikeHtml(passageText) ? passageText : "<p>" + NormalizeMathText(passageText) + "</p>");
                 AppendImageTag(sb, passageImage);
                 sb.Append("</div>");
             }
             if (!string.IsNullOrWhiteSpace(questionText))
-                sb.Append(LooksLikeHtml(questionText) ? questionText : "<p>" + HtmlSafeText(questionText).Replace("\n", "<br>") + "</p>");
+                sb.Append(LooksLikeHtml(questionText) ? questionText : "<p>" + NormalizeMathText(questionText) + "</p>");
             AppendImageTag(sb, questionImage);
             sb.Append("</body></html>");
             return sb.ToString();
@@ -1277,6 +1396,158 @@ namespace SchoolDom.StudentCbt.Win7
         private static string HtmlSafeText(string text)
         {
             return (text ?? "").Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+        }
+
+        // Ported from backend/frontend/src/components/RichQuizText.jsx's normalizeMathText -
+        // the web app's own LaTeX-ish-to-readable converter for exactly this same
+        // teacher-authored question text. Kept the same Greek-letter/operator table and
+        // overall regex pipeline for consistency (so the same question reads the same way on
+        // both platforms), but since this is a real embedded browser engine rather than
+        // React's plain-DOM text nodes, matrices and fractions are built as real HTML
+        // (<table>, stacked <span>s) instead of the web's flat text fallback ("(a)/(b)",
+        // nothing at all for matrices - that construct doesn't exist anywhere else in this
+        // codebase yet).
+        private static readonly Regex MatrixRegex = new Regex(
+            @"\\begin\{(?<kind>matrix|pmatrix|bmatrix|vmatrix)\}(?<body>.*?)\\end\{\k<kind>\}",
+            RegexOptions.Singleline | RegexOptions.Compiled);
+
+        private static readonly Regex FractionRegex = new Regex(
+            @"\\(?:dfrac|tfrac|frac)\{(?<num>[^{}]+)\}\{(?<den>[^{}]+)\}",
+            RegexOptions.Compiled);
+
+        private static readonly Tuple<Regex, string>[] MathSymbolReplacements =
+        {
+            Tuple.Create(new Regex(@"\\cup\b"), "∪"), Tuple.Create(new Regex(@"\\cap\b"), "∩"),
+            Tuple.Create(new Regex(@"\\emptyset\b"), "∅"), Tuple.Create(new Regex(@"\\times\b"), "×"),
+            Tuple.Create(new Regex(@"\\div\b"), "÷"), Tuple.Create(new Regex(@"\\cdot\b"), "·"),
+            Tuple.Create(new Regex(@"\\pm\b"), "±"), Tuple.Create(new Regex(@"\\approx\b"), "≈"),
+            Tuple.Create(new Regex(@"\\propto\b"), "∝"), Tuple.Create(new Regex(@"\\rightarrow\b"), "→"),
+            Tuple.Create(new Regex(@"\\to\b"), "→"), Tuple.Create(new Regex(@"\\leq\b"), "≤"),
+            Tuple.Create(new Regex(@"\\geq\b"), "≥"), Tuple.Create(new Regex(@"\\neq\b"), "≠"),
+            Tuple.Create(new Regex(@"\\infty\b"), "∞"), Tuple.Create(new Regex(@"\\in\b"), "∈"),
+            Tuple.Create(new Regex(@"\\notin\b"), "∉"), Tuple.Create(new Regex(@"\\subseteq\b"), "⊆"),
+            Tuple.Create(new Regex(@"\\subset\b"), "⊂"), Tuple.Create(new Regex(@"\\supseteq\b"), "⊇"),
+            Tuple.Create(new Regex(@"\\supset\b"), "⊃"), Tuple.Create(new Regex(@"\\degree\b"), "°"),
+            Tuple.Create(new Regex(@"\\circ\b"), "°"), Tuple.Create(new Regex(@"\\Omega\b"), "Ω"),
+            Tuple.Create(new Regex(@"\\omega\b"), "ω"), Tuple.Create(new Regex(@"\\mu\b"), "μ"),
+            Tuple.Create(new Regex(@"\\alpha\b"), "α"), Tuple.Create(new Regex(@"\\beta\b"), "β"),
+            Tuple.Create(new Regex(@"\\gamma\b"), "γ"), Tuple.Create(new Regex(@"\\delta\b"), "δ"),
+            Tuple.Create(new Regex(@"\\Delta\b"), "Δ"), Tuple.Create(new Regex(@"\\theta\b"), "θ"),
+            Tuple.Create(new Regex(@"\\lambda\b"), "λ"), Tuple.Create(new Regex(@"\\rho\b"), "ρ"),
+            Tuple.Create(new Regex(@"\\pi\b"), "π"), Tuple.Create(new Regex(@"\\sigma\b"), "σ"),
+            Tuple.Create(new Regex(@"\\qquad\b"), " "), Tuple.Create(new Regex(@"\\quad\b"), " "),
+            Tuple.Create(new Regex(@"\\%"), "%"), Tuple.Create(new Regex(@"\\,"), " "),
+            Tuple.Create(new Regex(@"\\;"), " "), Tuple.Create(new Regex(@"\\:"), " "),
+        };
+
+        // internal (not private) so a same-assembly test can exercise it directly, same
+        // reasoning as CloudSyncService.ApplyProcessedResults in the admin app.
+        internal static string NormalizeMathText(string text)
+        {
+            var value = text ?? "";
+
+            // Same OCR/encoding-mojibake fixups normalizeMathText carries - same source data.
+            value = value
+                .Replace("â€¢", "-").Replace("â€“", "-").Replace("â€”", "-")
+                .Replace("â€˜", "'").Replace("â€™", "'")
+                .Replace("â€œ", "\"").Replace("â€\u009d", "\"").Replace("â€¦", "...")
+                .Replace("Â°", "°").Replace("Â±", "±").Replace("Ã—", "×").Replace("Ã·", "÷");
+
+            // Math-mode delimiters just mark "this is LaTeX" - no content of their own once
+            // this text is already being treated as math.
+            value = Regex.Replace(value, @"\${2}([^$]+)\${2}", "$1");
+            value = Regex.Replace(value, @"\$([^$\n]+)\$", "$1");
+            value = Regex.Replace(value, @"\\\((.*?)\\\)", "$1");
+            value = Regex.Replace(value, @"\\\[(.*?)\\\]", "$1", RegexOptions.Singleline);
+            value = Regex.Replace(value, @"\\left\b", "");
+            value = Regex.Replace(value, @"\\right\b", "");
+
+            // Matrices and fractions are pulled out into placeholders built from control
+            // characters only (never a letter or digit alone) so none of the later
+            // letter/digit-pattern regexes below (superscripts, chemistry-style subscripts)
+            // can ever partially match inside a placeholder and corrupt it before it's
+            // restored - and so each one's own cell/operand text gets HTML-escaped
+            // individually, while the <table>/<span> markup wrapping it never does.
+            var matrixHtml = new List<string>();
+            value = MatrixRegex.Replace(value, match =>
+            {
+                matrixHtml.Add(BuildMatrixTable(match.Groups["body"].Value, match.Groups["kind"].Value));
+                return "\u0001" + (matrixHtml.Count - 1) + "\u0001";
+            });
+
+            var fractionHtml = new List<string>();
+            value = FractionRegex.Replace(value, match =>
+            {
+                var numerator = HtmlSafeText(match.Groups["num"].Value.Trim());
+                var denominator = HtmlSafeText(match.Groups["den"].Value.Trim());
+                fractionHtml.Add("<span class='frac'><span class='fracnum'>" + numerator + "</span><span class='fracden'>" + denominator + "</span></span>");
+                return "\u0002" + (fractionHtml.Count - 1) + "\u0002";
+            });
+
+            value = Regex.Replace(value, @"\\sqrt\{([^{}]+)\}", "√($1)");
+            value = Regex.Replace(value, @"\\(?:text|mathrm|mathbf|textbf|operatorname|ce)\{([^{}]+)\}", "$1");
+            value = value.Replace("\\{", "{").Replace("\\}", "}");
+            value = Regex.Replace(value, @"#(?=\d)", "N");
+            value = Regex.Replace(value, @"\\\s+", " ");
+
+            foreach (var replacement in MathSymbolReplacements)
+            {
+                value = replacement.Item1.Replace(value, replacement.Item2);
+            }
+
+            value = Regex.Replace(value, @"\\([#$%&_^{}])", "$1");
+            value = Regex.Replace(value, @"\\([A-Za-z]+)", "$1");
+
+            // Everything above operated on raw text; escape what's left for safe HTML
+            // embedding before the exponent/subscript patterns below, which only ever match
+            // plain punctuation/alphanumerics that HtmlSafeText never touches either way.
+            value = HtmlSafeText(value);
+
+            value = Regex.Replace(value, @"\^\{([^{}]+)\}", "<sup>$1</sup>");
+            value = Regex.Replace(value, @"_\{([^{}]+)\}", "<sub>$1</sub>");
+            value = Regex.Replace(value, @"\^([+-]?\d+(?:\.\d+)?)", "<sup>$1</sup>");
+            value = Regex.Replace(value, @"_([A-Za-z0-9]+)", "<sub>$1</sub>");
+            value = Regex.Replace(value, @"\b([A-Za-z]+)/?s(-?\d+)\b", "$1s<sup>$2</sup>");
+            value = Regex.Replace(value, @"\b((?:c|d)?m)3\b", "$1<sup>3</sup>", RegexOptions.IgnoreCase);
+            value = Regex.Replace(value, @"\b(mol|dm|cm|mm)3\b", "$1<sup>3</sup>", RegexOptions.IgnoreCase);
+            value = Regex.Replace(value, @"\)(\d+)", ")<sub>$1</sub>");
+            value = Regex.Replace(value, @"([A-Z][a-z]?)(\d+)", "$1<sub>$2</sub>");
+            value = Regex.Replace(value, @"[{}]", "");
+            value = Regex.Replace(value, @"[ \t]{2,}", " ");
+            value = value.Replace("\n", "<br>");
+
+            for (var i = 0; i < matrixHtml.Count; i++) value = value.Replace("\u0001" + i + "\u0001", matrixHtml[i]);
+            for (var i = 0; i < fractionHtml.Count; i++) value = value.Replace("\u0002" + i + "\u0002", fractionHtml[i]);
+
+            return value;
+        }
+
+        // Rows separated by \\, cells by & - the standard LaTeX array syntax. "matrix" has no
+        // brackets at all (per LaTeX's own convention); pmatrix/bmatrix/vmatrix all get the
+        // same simple vertical-line bracket here rather than trying to distinguish round vs.
+        // square vs. bar shapes in plain CSS - "render clearly" doesn't require pixel-perfect
+        // LaTeX fidelity, just an unambiguous, readable matrix instead of raw source text.
+        private static string BuildMatrixTable(string body, string kind)
+        {
+            var rows = Regex.Split((body ?? "").Trim(), @"\\\\")
+                .Select(row => row.Trim())
+                .Where(row => row.Length > 0)
+                .ToList();
+            if (rows.Count == 0) return "";
+            var bracketed = !string.Equals(kind, "matrix", StringComparison.OrdinalIgnoreCase);
+            var sb = new StringBuilder();
+            sb.Append("<table class=\"matrix").Append(bracketed ? " matrix-bracketed" : "").Append("\"><tbody>");
+            foreach (var row in rows)
+            {
+                sb.Append("<tr>");
+                foreach (var cell in row.Split('&'))
+                {
+                    sb.Append("<td>").Append(HtmlSafeText(cell.Trim())).Append("</td>");
+                }
+                sb.Append("</tr>");
+            }
+            sb.Append("</tbody></table>");
+            return sb.ToString();
         }
 
         // The Instructions screen shows this in a plain TextBox, not the WebBrowser used for
@@ -1447,22 +1718,16 @@ namespace SchoolDom.StudentCbt.Win7
                 AutoSubmit("Time is up. Your exam has been submitted.", "Time up");
                 return;
             }
-            if (_offlineSince.HasValue && (now - _offlineSince.Value).TotalSeconds >= 15)
-            {
-                _pendingAutoSubmit = true;
-                UpdateLanLabel("LAN: Disconnected - submitting when available", Palette.Coral);
-                if (!_submitting)
-                {
-                    _submitting = true;
-                    SubmitInBackground(
-                        onSuccess: () => FinishSubmitted("LAN was lost for 15 seconds. The exam has been submitted.", "Connection lost"),
-                        onFailure: _ =>
-                        {
-                            _submitting = false;
-                            UpdateLanLabel("LAN: Waiting to reconnect", Palette.Coral);
-                        });
-                }
-            }
+            // A LAN outage pauses, it never submits: a disconnected student keeps answering
+            // (the UI was never locked), their answers keep landing in the local backup every
+            // tick (SaveCurrentAnswer/SaveAnswersLocally above, unconditional), and the
+            // autosave attempt just above already retries the LAN connection every second on
+            // its own, updating the "LAN: Offline Ns"/"Reconnected" label via
+            // MarkLanDisconnected/MarkLanConnected regardless of how long the outage runs.
+            // There used to be a second block here that force-submitted the exam once offline
+            // for 15s - ending a student's attempt over a network blip, not a real finish. It
+            // added nothing else once that submit was removed, so it's gone rather than kept
+            // around as dead weight.
         }
 
         private void AutoSubmit(string message, string title)
@@ -1505,8 +1770,10 @@ namespace SchoolDom.StudentCbt.Win7
         private void MarkLanDisconnected(DateTime now)
         {
             if (!_offlineSince.HasValue) _offlineSince = now;
-            var elapsed = Math.Min(15, (int)(now - _offlineSince.Value).TotalSeconds);
-            UpdateLanLabel("LAN: Offline " + elapsed + "s", Palette.Coral);
+            // Uncapped - a long outage is meant to be visible (and survivable), not hidden
+            // behind a display that used to freeze at "15s" once the old auto-submit kicked in.
+            var elapsed = (int)(now - _offlineSince.Value).TotalSeconds;
+            UpdateLanLabel("LAN: Offline " + elapsed + "s - your answers are saved, reconnecting automatically", Palette.Coral);
         }
 
         private void UpdateLanLabel(string text, Color color)

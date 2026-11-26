@@ -254,6 +254,29 @@ namespace SchoolDom.StudentCbt.Win7
                 new Dictionary<string, object> { { "answers", answers } });
         }
 
+        /// <summary>
+        /// Downloads a binary file (the admin's bundled Student CBT build, for the LAN
+        /// self-update check) straight to disk - unlike every other call here, the response
+        /// isn't JSON, so this bypasses Get/GetWithRetry entirely rather than forcing a
+        /// binary payload through JsonUtil.Object. One-shot, no retry: this only ever runs
+        /// once at startup before the login screen, and a failure here just means this
+        /// launch skips the update and tries again next time.
+        /// </summary>
+        public void DownloadFile(string path, string destPath)
+        {
+            if (string.IsNullOrWhiteSpace(BaseUrl))
+                throw new InvalidOperationException("Base URL not set. Call Discover() first.");
+
+            var request = CreateRequest(BaseUrl + path);
+            request.Method = "GET";
+            using (var response = (HttpWebResponse)request.GetResponse())
+            using (var responseStream = response.GetResponseStream())
+            using (var fileStream = new FileStream(destPath, FileMode.Create, FileAccess.Write))
+            {
+                if (responseStream != null) responseStream.CopyTo(fileStream);
+            }
+        }
+
         public void FocusLoss(string sessionId)
         {
             if (string.IsNullOrWhiteSpace(sessionId)) return;
