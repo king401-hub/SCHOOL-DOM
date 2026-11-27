@@ -244,6 +244,17 @@ namespace SchoolDom.StudentCbt.Win7
         /// is no admin standing at an unattended exam-hall kiosk to show an error to, and the
         /// existing manual "Install Student App" flow on the admin side still works as a
         /// fallback regardless of whether this ever succeeds.
+        ///
+        /// CRITICAL: every distinct version is attempted at most ONCE, ever, recorded to disk
+        /// BEFORE the download/relaunch even starts. A station installed via the full Inno
+        /// Setup installer runs from Program Files, which a non-elevated process normally
+        /// cannot overwrite - the relaunch script's "copy" step then silently fails, but it
+        /// unconditionally relaunches the (unchanged, still-old) exe regardless. Without this
+        /// guard, that relaunched process sees the exact same "update available" on its own
+        /// next startup and tries again - forever, every ~2 seconds (the script's own wait),
+        /// which looks exactly like constant freezing/restarting and is worse than never
+        /// having this feature at all. This shipped without that guard initially and a school
+        /// hit precisely this; the fix caps it at one silent, safe attempt per version.
         /// </summary>
         private void TryApplyLanUpdate(Dictionary<string, object> health)
         {
@@ -254,6 +265,25 @@ namespace SchoolDom.StudentCbt.Win7
                 var downloadPath = JsonUtil.Text(health.ContainsKey("student_app_download_path") ? health["student_app_download_path"] : null);
                 if (string.IsNullOrWhiteSpace(latestVersion) || string.IsNullOrWhiteSpace(downloadPath)) return;
                 if (!IsNewerVersion(latestVersion, Application.ProductVersion)) return;
+
+                // Checked first and deliberately NOT recorded as an "attempt" below - a
+                // station installed via the full Inno Setup installer runs from Program
+                // Files, which a non-elevated process normally can't write to at all. Catching
+                // that here means never downloading anything or touching the per-version cap
+                // for a station that can never succeed anyway (cheap enough to just recheck
+                // every launch, so it starts working immediately if an admin ever fixes the
+                // folder's permissions or reinstalls it somewhere writable).
+                var installDir = Path.GetDirectoryName(Application.ExecutablePath) ?? "";
+                if (!CanWriteToDirectory(installDir)) return;
+
+                if (string.Equals(_localSettings.LastAttemptedLanUpdateVersion, latestVersion, StringComparison.OrdinalIgnoreCase)) return;
+
+                // Persisted immediately, before anything that can fail - this is what makes
+                // the one-attempt cap hold even if the process is about to Environment.Exit
+                // or crash partway through, not just on a clean failure this method itself
+                // catches below.
+                _localSettings.LastAttemptedLanUpdateVersion = latestVersion;
+                LocalSettingsStore.Save(_localSettings);
 
                 var tempDir = Path.Combine(Path.GetTempPath(), "SchoolDomStudentCbtUpdate");
                 Directory.CreateDirectory(tempDir);
@@ -268,10 +298,24 @@ namespace SchoolDom.StudentCbt.Win7
                 // that entirely - this process just needs to be gone before the copy runs.
                 var currentExePath = Application.ExecutablePath;
                 var scriptPath = Path.Combine(tempDir, "apply-update.cmd");
+                // Retries the copy itself a few times (this process' own exe file can take a
+                // moment to actually release after Environment.Exit, same class of transient
+                // file-lock timing issue the admin installer needs "Try Again" clicks for) -
+                // separate from and in addition to the outer per-version attempt cap above,
+                // which is what actually prevents a real ACL failure from looping forever.
+                // Whatever happens, this always relaunches at the end: on success that's the
+                // new build, on failure it's just the unchanged old one starting normally.
                 var scriptContent =
                     "@echo off\r\n" +
+                    "setlocal\r\n" +
+                    "set RETRIES=5\r\n" +
+                    ":retry\r\n" +
                     "ping -n 2 127.0.0.1 >nul\r\n" +
                     "copy /y \"" + downloadedPath + "\" \"" + currentExePath + "\" >nul\r\n" +
+                    "if errorlevel 1 (\r\n" +
+                    "  set /a RETRIES-=1\r\n" +
+                    "  if %RETRIES% gtr 0 goto retry\r\n" +
+                    ")\r\n" +
                     "start \"\" \"" + currentExePath + "\"\r\n" +
                     "del \"%~f0\"\r\n";
                 File.WriteAllText(scriptPath, scriptContent);
@@ -299,6 +343,22 @@ namespace SchoolDom.StudentCbt.Win7
             catch
             {
                 return string.Compare(latest ?? "", current ?? "", StringComparison.OrdinalIgnoreCase) > 0;
+            }
+        }
+
+        private static bool CanWriteToDirectory(string directory)
+        {
+            if (string.IsNullOrWhiteSpace(directory)) return false;
+            try
+            {
+                var probePath = Path.Combine(directory, ".schooldom_write_test_" + Guid.NewGuid().ToString("N") + ".tmp");
+                File.WriteAllBytes(probePath, new byte[] { 0 });
+                File.Delete(probePath);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 

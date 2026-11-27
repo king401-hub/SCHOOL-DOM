@@ -9,6 +9,12 @@ namespace SchoolDom.StudentCbt.Win7
     {
         public string SettingsPinHash { get; set; }
         public string LastLanServerUrl { get; set; }
+        // The exact version string MainForm.TryApplyLanUpdate has already attempted to
+        // self-update to - set BEFORE that attempt touches the filesystem, specifically so
+        // it's persisted even if the attempt fails or this process exits abnormally. Caps
+        // every distinct version at exactly one automatic attempt, ever, regardless of
+        // outcome - see the long comment on TryApplyLanUpdate for why this exists.
+        public string LastAttemptedLanUpdateVersion { get; set; }
     }
 
     // Persists the admin-only Settings PIN and the last-known LAN server address to this
@@ -31,7 +37,8 @@ namespace SchoolDom.StudentCbt.Win7
                 return new LocalSettingsData
                 {
                     SettingsPinHash = raw.ContainsKey("SettingsPinHash") ? JsonUtil.Text(raw["SettingsPinHash"]) : null,
-                    LastLanServerUrl = raw.ContainsKey("LastLanServerUrl") ? JsonUtil.Text(raw["LastLanServerUrl"]) : null
+                    LastLanServerUrl = raw.ContainsKey("LastLanServerUrl") ? JsonUtil.Text(raw["LastLanServerUrl"]) : null,
+                    LastAttemptedLanUpdateVersion = raw.ContainsKey("LastAttemptedLanUpdateVersion") ? JsonUtil.Text(raw["LastAttemptedLanUpdateVersion"]) : null
                 };
             }
             catch
@@ -48,7 +55,8 @@ namespace SchoolDom.StudentCbt.Win7
                 var json = JsonUtil.Serialize(new System.Collections.Generic.Dictionary<string, object>
                 {
                     { "SettingsPinHash", data.SettingsPinHash ?? "" },
-                    { "LastLanServerUrl", data.LastLanServerUrl ?? "" }
+                    { "LastLanServerUrl", data.LastLanServerUrl ?? "" },
+                    { "LastAttemptedLanUpdateVersion", data.LastAttemptedLanUpdateVersion ?? "" }
                 });
                 File.WriteAllText(SettingsPath, json);
             }
